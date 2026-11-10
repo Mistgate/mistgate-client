@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/stun"
 )
 
 func TestDNSReplacementRules(t *testing.T) {
@@ -50,9 +51,9 @@ func TestSTUNParserAndNATVerdict(t *testing.T) {
 	response[25] = 1
 	binary.BigEndian.PutUint16(response[26:28], 54321^0x2112)
 	for i, value := range []byte{203, 0, 113, 9} {
-		response[24+4+i] = value ^ requestCookie[i]
+		response[24+4+i] = value ^ []byte{0x21, 0x12, 0xa4, 0x42}[i]
 	}
-	mapped, ok := parseSTUNResponse(request, response)
+	mapped, ok := stun.ParseResponse(request, response)
 	if !ok || mapped.Port != 54321 || mapped.Address.String() != "203.0.113.9" {
 		t.Fatalf("mapped = %#v, ok=%t", mapped, ok)
 	}
@@ -60,8 +61,6 @@ func TestSTUNParserAndNATVerdict(t *testing.T) {
 		t.Fatal("unexpected NAT verdict")
 	}
 }
-
-var requestCookie = []byte{0x21, 0x12, 0xa4, 0x42}
 
 func TestUDPAndForeignVerdicts(t *testing.T) {
 	if udpVerdict(false, false, false, false) != "unknown" ||

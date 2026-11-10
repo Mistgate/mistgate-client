@@ -11,5 +11,7 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell-tray .ty-scr { width: 100vw; height: 100vh; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
 /* no entrance: the window itself appears, and a paused entrance would leave the panel invisible */
 html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; animation: none !important; opacity: 1; transform: none; }
+/* Routes: drawn for the finished product, not in this build yet: "Only selected" and the catalogue. */
+.shell .mrow.soon, .shell .lcard { opacity: .45; pointer-events: none; }
 /* A server whose name carries no flag has no picture: keep its place, show nothing. */
 .shell img:not([src]), .shell-tray img:not([src]) { visibility: hidden; }

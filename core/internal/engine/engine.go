@@ -24,6 +24,7 @@ type Target struct {
 type Info struct {
 	Server   string
 	Protocol string
+	Route    string
 }
 
 type Traffic struct {

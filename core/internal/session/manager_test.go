@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
@@ -30,9 +32,76 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "settings changes apply hold transitions", run: testSettingsChangesApplyHoldTransitions},
 		{name: "off reconnect does not hold", run: testOffReconnectDoesNotHold},
 		{name: "connected settings reapply firewall", run: testConnectedSettingsReapplyFirewall},
+		{name: "route change reconnects held only when effective route changes", run: testRouteChangeReconnectsHeld},
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)
+	}
+}
+
+func testRouteChangeReconnectsHeld(t *testing.T) {
+	store := testSettings(t, "off")
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	var available atomic.Bool
+	var version atomic.Uint64
+	routeState := RouteState{
+		Effective: func(configured settings.Settings) string {
+			if configured.RouteMode == "smart" && configured.RouteRegion == "ru" && available.Load() {
+				return "smart:ru"
+			}
+			return "all"
+		},
+		Snapshot: func() geo.Routes {
+			configured := store.Get()
+			effective := "none"
+			if available.Load() {
+				effective = "ru"
+			}
+			return geo.Routes{Mode: configured.RouteMode, Region: configured.RouteRegion, Effective: effective, Available: available.Load(), Version: version.Load()}
+		},
+	}
+	manager := NewManager(fake, store.Get, routeState)
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "server-a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if _, err := store.Set(map[string]json.RawMessage{
+		"route_mode":   json.RawMessage(`"smart"`),
+		"route_region": json.RawMessage(`"ru"`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager.SettingsChanged()
+	time.Sleep(25 * time.Millisecond)
+	if fake.StartCount() != 1 {
+		t.Fatalf("unavailable region caused reconnect: starts=%d", fake.StartCount())
+	}
+	available.Store(true)
+	manager.SettingsChanged()
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" && status.Route == "smart:ru" })
+	targets := fake.Targets()
+	if len(targets) != 2 || !targets[1].Hold {
+		t.Fatalf("route reconnect targets = %#v, want second Start with Hold true", targets)
+	}
+	version.Add(1)
+	manager.RoutesChanged()
+	deadline := time.After(time.Second)
+	for fake.StartCount() < 3 {
+		select {
+		case <-deadline:
+			t.Fatal("refreshed route did not reconnect")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "connected" && status.Route == "smart:ru" })
+	if targets = fake.Targets(); len(targets) != 3 || !targets[2].Hold {
+		t.Fatalf("refreshed route targets = %#v, want third Start with Hold true", targets)
 	}
 }
 

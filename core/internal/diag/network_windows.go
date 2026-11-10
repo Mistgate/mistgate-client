@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
@@ -34,8 +33,6 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
-
-const ipUnicastIf = 31
 
 type interfaceInfo struct {
 	Index uint32
@@ -84,30 +81,14 @@ func interfaceFor(destination netip.Addr, fallback interfaceInfo) interfaceInfo 
 	return fallback
 }
 
-func socketControl(index uint32) func(string, string, syscall.RawConn) error {
-	return func(_, _ string, raw syscall.RawConn) error {
-		var optionErr error
-		if err := raw.Control(func(fd uintptr) {
-			optionErr = windows.SetsockoptInt(windows.Handle(fd), windows.IPPROTO_IP, ipUnicastIf, int(int32(reverseBytes32(index))))
-		}); err != nil {
-			return err
-		}
-		return optionErr
-	}
-}
-
-func reverseBytes32(value uint32) uint32 {
-	return value>>24 | value>>8&0x0000ff00 | value<<8&0x00ff0000 | value<<24
-}
-
 func listenPacketBound(ctx context.Context, physical interfaceInfo) (net.PacketConn, error) {
 	var config net.ListenConfig
-	config.Control = socketControl(physical.Index)
+	config.Control = netcfg.SocketControl(physical.Index)
 	return config.ListenPacket(ctx, "udp4", ":0")
 }
 
 func boundDialer(physical interfaceInfo) *net.Dialer {
-	return &net.Dialer{Control: socketControl(physical.Index)}
+	return &net.Dialer{Control: netcfg.SocketControl(physical.Index)}
 }
 
 func dialBound(ctx context.Context, network, address string, physical interfaceInfo) (net.Conn, error) {

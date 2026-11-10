@@ -7,19 +7,19 @@ import (
 	"errors"
 	"io"
 	"net"
-	"strconv"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
-	"github.com/apernet/hysteria/core/v2/client"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -29,27 +29,29 @@ import (
 const hy2UDPIdleTimeout = 60 * time.Second
 
 type gvisorBridge struct {
-	tun    tun.Device
-	client client.Client
-	stack  *stack.Stack
-	link   *channel.Endpoint
-	ctx    context.Context
-	cancel context.CancelFunc
+	tun          tun.Device
+	vpn          outbound
+	direct       outbound
+	shouldDirect func(netip.Addr) bool
+	stack        *stack.Stack
+	link         *channel.Endpoint
+	ctx          context.Context
+	cancel       context.CancelFunc
 
 	mu     sync.Mutex
 	closed bool
-	flows  map[*hy2UDPFlow]struct{}
+	flows  map[*udpFlow]struct{}
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, hclient client.Client) (*gvisorBridge, error) {
-	if hclient == nil {
-		return nil, errors.New("Hysteria2 client is unavailable")
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr) bool) (*gvisorBridge, error) {
+	if vpn == nil {
+		return nil, errors.New("VPN outbound is unavailable")
 	}
 	ctx, cancel := context.WithCancel(parent)
 	link := channel.New(1024, uint32(mtu), "")
 	st := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 	fail := func() {
@@ -69,16 +71,21 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, hcli
 		fail()
 		return nil, errors.New("enable gVisor address spoofing")
 	}
-	st.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
+	st.SetRouteTable([]tcpip.Route{
+		{Destination: header.IPv4EmptySubnet, NIC: 1},
+		{Destination: header.IPv6EmptySubnet, NIC: 1},
+	})
 
 	bridge := &gvisorBridge{
-		tun:    tunDevice,
-		client: hclient,
-		stack:  st,
-		link:   link,
-		ctx:    ctx,
-		cancel: cancel,
-		flows:  make(map[*hy2UDPFlow]struct{}),
+		tun:          tunDevice,
+		vpn:          vpn,
+		direct:       direct,
+		shouldDirect: shouldDirect,
+		stack:        st,
+		link:         link,
+		ctx:          ctx,
+		cancel:       cancel,
+		flows:        make(map[*udpFlow]struct{}),
 	}
 	tcpForwarder := tcp.NewForwarder(st, 0, 1024, bridge.forwardTCP)
 	udpForwarder := udp.NewForwarder(st, bridge.forwardUDP)
@@ -106,12 +113,17 @@ func (b *gvisorBridge) readTun() {
 		}
 		for i := 0; i < n; i++ {
 			size := sizes[i]
-			if size <= 0 || size > len(buffers[i]) || buffers[i][0]>>4 != 4 {
+			if size <= 0 || size > len(buffers[i]) {
 				continue
 			}
 			data := append([]byte(nil), buffers[i][:size]...)
 			packet := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(data)})
-			b.link.InjectInbound(ipv4.ProtocolNumber, packet)
+			switch data[0] >> 4 {
+			case 4:
+				b.link.InjectInbound(ipv4.ProtocolNumber, packet)
+			case 6:
+				b.link.InjectInbound(ipv6.ProtocolNumber, packet)
+			}
 			packet.DecRef()
 		}
 	}
@@ -149,8 +161,13 @@ func (b *gvisorBridge) startForward(fn func()) bool {
 
 func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 	id := req.ID()
-	target := net.JoinHostPort(net.IP(id.LocalAddress.AsSlice()).String(), strconv.Itoa(int(id.LocalPort)))
-	remote, err := b.client.TCP(target)
+	address, ok := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+	if !ok {
+		req.Complete(true)
+		return
+	}
+	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
+	remote, err := b.dialTCP(b.ctx, target)
 	if err != nil {
 		req.Complete(true)
 		return
@@ -188,20 +205,26 @@ func proxyTCP(local, remote net.Conn) {
 
 func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 	id := req.ID()
+	address, ok := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+	if !ok {
+		return
+	}
+	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
+	flowCtx, cancel := context.WithCancel(b.ctx)
+	remote, dialErr := b.listenUDP(flowCtx, target)
+	if dialErr != nil {
+		cancel()
+		return
+	}
 	var queue waiter.Queue
 	endpoint, err := req.CreateEndpoint(&queue)
 	if err != nil {
+		_ = remote.Close()
+		cancel()
 		return
 	}
 	local := gonet.NewUDPConn(b.stack, &queue, endpoint)
-	remote, dialErr := b.client.UDP()
-	if dialErr != nil {
-		_ = local.Close()
-		return
-	}
-	target := net.JoinHostPort(net.IP(id.LocalAddress.AsSlice()).String(), strconv.Itoa(int(id.LocalPort)))
-	flowCtx, cancel := context.WithCancel(b.ctx)
-	flow := &hy2UDPFlow{
+	flow := &udpFlow{
 		local:  local,
 		remote: remote,
 		target: target,
@@ -226,23 +249,23 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 	}
 }
 
-func (b *gvisorBridge) removeFlow(flow *hy2UDPFlow) {
+func (b *gvisorBridge) removeFlow(flow *udpFlow) {
 	b.mu.Lock()
 	delete(b.flows, flow)
 	b.mu.Unlock()
 }
 
-type hy2UDPFlow struct {
+type udpFlow struct {
 	local        *gonet.UDPConn
-	remote       client.HyUDPConn
-	target       string
+	remote       packetFlow
+	target       netip.AddrPort
 	ctx          context.Context
 	cancel       context.CancelFunc
 	lastActivity atomic.Int64
 	once         sync.Once
 }
 
-func (f *hy2UDPFlow) run() {
+func (f *udpFlow) run() {
 	defer f.close()
 	done := make(chan struct{}, 2)
 	go func() {
@@ -265,7 +288,7 @@ func (f *hy2UDPFlow) run() {
 			}
 			f.lastActivity.Store(time.Now().UnixNano())
 			payload := append([]byte(nil), buf[:n]...)
-			if err := f.remote.Send(payload, f.target); err != nil {
+			if err := f.remote.WriteTo(payload, f.target); err != nil {
 				done <- struct{}{}
 				return
 			}
@@ -273,10 +296,13 @@ func (f *hy2UDPFlow) run() {
 	}()
 	go func() {
 		for {
-			payload, _, err := f.remote.Receive()
+			payload, source, err := f.remote.ReadFrom()
 			if err != nil {
 				done <- struct{}{}
 				return
+			}
+			if source != f.target {
+				continue
 			}
 			f.lastActivity.Store(time.Now().UnixNano())
 			if _, err := f.local.Write(payload); err != nil {
@@ -308,7 +334,7 @@ func (f *hy2UDPFlow) run() {
 	}
 }
 
-func (f *hy2UDPFlow) close() {
+func (f *udpFlow) close() {
 	f.once.Do(func() {
 		f.cancel()
 		_ = f.remote.Close()
@@ -326,7 +352,7 @@ func (b *gvisorBridge) Close() {
 		return
 	}
 	b.closed = true
-	flows := make([]*hy2UDPFlow, 0, len(b.flows))
+	flows := make([]*udpFlow, 0, len(b.flows))
 	for flow := range b.flows {
 		flows = append(flows, flow)
 	}
@@ -340,4 +366,27 @@ func (b *gvisorBridge) Close() {
 	b.stack.Close()
 	_ = b.tun.Close()
 	b.wg.Wait()
+}
+
+func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
+	return selectOutbound(target, b.shouldDirect, b.vpn, b.direct).DialTCP(ctx, target)
+}
+
+func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort) (packetFlow, error) {
+	return selectOutbound(target, b.shouldDirect, b.vpn, b.direct).ListenUDP(ctx)
+}
+
+func selectOutbound(target netip.AddrPort, shouldDirect func(netip.Addr) bool, vpn, direct outbound) outbound {
+	address := target.Addr()
+	// Keep the adapter's configured DNS resolver on the VPN.
+	inRegion := shouldDirect != nil && shouldDirect(address)
+	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && inRegion {
+		return direct
+	}
+	return vpn
+}
+
+func directAddressAllowed(address netip.Addr) bool {
+	return address.Is4() && !address.IsPrivate() && !address.IsLoopback() && !address.IsLinkLocalUnicast() &&
+		!address.IsLinkLocalMulticast() && !address.IsMulticast() && !address.IsUnspecified()
 }

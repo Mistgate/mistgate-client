@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
@@ -101,7 +102,8 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 	}
 	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}), store.Get)
 	defer manager.Close()
-	server := &Server{Manager: manager, Settings: store}
+	wantRoutes := geo.Routes{Mode: "smart", Region: "auto", Effective: "ru", Available: true, Entries: 100, UpdatedUnix: 123}
+	server := &Server{Manager: manager, Settings: store, Routes: func() geo.Routes { return wantRoutes }}
 
 	request, parseErr := ParseRequest([]byte(`{"id":1,"method":"settings.get","params":{}}`))
 	if parseErr != nil {
@@ -117,7 +119,7 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 		t.Fatal(parseErr)
 	}
 	result, _, rpcErr = server.dispatch(context.Background(), request, true)
-	want := settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto"}
+	want := settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "all", RouteRegion: "auto"}
 	if rpcErr != nil || result != want {
 		t.Fatalf("settings.set = %#v, %#v; want %#v", result, rpcErr, want)
 	}
@@ -125,6 +127,8 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 	for _, raw := range []string{
 		`{"id":3,"method":"settings.set","params":{"unknown":true}}`,
 		`{"id":4,"method":"settings.set","params":{"game":null}}`,
+		`{"id":7,"method":"settings.set","params":{"route_mode":"region"}}`,
+		`{"id":8,"method":"settings.set","params":{"route_region":"RU"}}`,
 	} {
 		request, parseErr = ParseRequest([]byte(raw))
 		if parseErr != nil {
@@ -133,6 +137,20 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 		if _, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr == nil || rpcErr.Code != "bad_params" {
 			t.Fatalf("settings.set dispatch error = %#v, want bad_params", rpcErr)
 		}
+	}
+	request, parseErr = ParseRequest([]byte(`{"id":9,"method":"settings.set","params":{"route_mode":"smart","route_region":"ru"}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "smart", RouteRegion: "ru"}) {
+		t.Fatalf("route settings.set = %#v, %#v", result, rpcErr)
+	}
+	request, parseErr = ParseRequest([]byte(`{"id":10,"method":"routes.get","params":{}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != wantRoutes {
+		t.Fatalf("routes.get = %#v, %#v; want %#v", result, rpcErr, wantRoutes)
 	}
 
 	request, parseErr = ParseRequest([]byte(`{"id":5,"method":"settings.set","params":{"lan":true}}`))
@@ -143,7 +161,7 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 		t.Fatalf("untrusted settings.set error = %#v, want not_trusted", rpcErr)
 	}
 
-	request, parseErr = ParseRequest([]byte(`{"id":6,"method":"subscribe","params":{"events":["settings"]}}`))
+	request, parseErr = ParseRequest([]byte(`{"id":6,"method":"subscribe","params":{"events":["settings","routes"]}}`))
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -160,6 +178,15 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("settings event was not forwarded")
+	}
+	manager.Events().Publish("routes", wantRoutes)
+	select {
+	case event := <-events.C:
+		if event.Name != "routes" || event.Data != wantRoutes {
+			t.Fatalf("routes event = %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("routes event was not forwarded")
 	}
 }
 

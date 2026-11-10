@@ -2,9 +2,7 @@ package diag
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/stun"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -54,7 +53,7 @@ func checkSTUN(ctx context.Context, physical interfaceInfo, config Config) []uin
 		if err != nil {
 			continue
 		}
-		request, err := makeSTUNRequest()
+		request, err := stun.MakeRequest()
 		if err != nil {
 			continue
 		}
@@ -71,7 +70,7 @@ func checkSTUN(ctx context.Context, physical interfaceInfo, config Config) []uin
 				continue
 			}
 			if attempt == 1 {
-				data, err := makeSTUNRequest()
+				data, err := stun.MakeRequest()
 				if err != nil {
 					continue
 				}
@@ -100,7 +99,7 @@ func checkSTUN(ctx context.Context, physical interfaceInfo, config Config) []uin
 			if !ok {
 				continue
 			}
-			if mapped, ok := parseSTUNResponse(request.data, packet); ok {
+			if mapped, ok := stun.ParseResponse(request.data, packet); ok {
 				answers[request.server] = mapped.Port
 				delete(pending, key)
 			}
@@ -113,82 +112,6 @@ func checkSTUN(ctx context.Context, physical interfaceInfo, config Config) []uin
 		}
 	}
 	return ports
-}
-
-type stunMapping struct {
-	Address netip.Addr
-	Port    uint16
-}
-
-func makeSTUNRequest() ([]byte, error) {
-	request := make([]byte, 20)
-	binary.BigEndian.PutUint16(request[:2], 0x0001)
-	binary.BigEndian.PutUint32(request[4:8], 0x2112A442)
-	if _, err := rand.Read(request[8:20]); err != nil {
-		return nil, err
-	}
-	return request, nil
-}
-
-func parseSTUNResponse(request, response []byte) (stunMapping, bool) {
-	if len(request) < 20 || len(response) < 20 || binary.BigEndian.Uint16(response[:2]) != 0x0101 ||
-		binary.BigEndian.Uint32(response[4:8]) != 0x2112A442 || !equalBytes(request[8:20], response[8:20]) {
-		return stunMapping{}, false
-	}
-	messageLen := int(binary.BigEndian.Uint16(response[2:4]))
-	if messageLen > len(response)-20 {
-		return stunMapping{}, false
-	}
-	for offset := 20; offset+4 <= 20+messageLen; {
-		attribute := binary.BigEndian.Uint16(response[offset : offset+2])
-		length := int(binary.BigEndian.Uint16(response[offset+2 : offset+4]))
-		start, end := offset+4, offset+4+length
-		if end > 20+messageLen {
-			return stunMapping{}, false
-		}
-		if attribute == 0x0020 && length >= 4 {
-			value := response[start:end]
-			family := value[1]
-			port := binary.BigEndian.Uint16(value[2:4]) ^ 0x2112
-			switch family {
-			case 1:
-				if length != 8 {
-					return stunMapping{}, false
-				}
-				cookie := []byte{0x21, 0x12, 0xa4, 0x42}
-				var raw [4]byte
-				for i := range raw {
-					raw[i] = value[4+i] ^ cookie[i]
-				}
-				return stunMapping{Address: netip.AddrFrom4(raw), Port: port}, true
-			case 2:
-				if length != 20 {
-					return stunMapping{}, false
-				}
-				mask := append([]byte{0x21, 0x12, 0xa4, 0x42}, request[8:20]...)
-				var raw [16]byte
-				for i := range raw {
-					raw[i] = value[4+i] ^ mask[i]
-				}
-				return stunMapping{Address: netip.AddrFrom16(raw), Port: port}, true
-			default:
-				return stunMapping{}, false
-			}
-		}
-		offset = start + ((length + 3) &^ 3)
-	}
-	return stunMapping{}, false
-}
-
-func equalBytes(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var mismatch byte
-	for i := range a {
-		mismatch |= a[i] ^ b[i]
-	}
-	return mismatch == 0
 }
 
 func checkDNS(ctx context.Context, physical interfaceInfo, config Config) (map[string]dnsAnswer, map[string]dnsAnswer) {

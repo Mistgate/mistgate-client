@@ -21,13 +21,16 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
+	"github.com/amnezia-vpn/amneziawg-go/v3/tun/netstack"
 	"github.com/apernet/hysteria/core/v2/client"
 	coreerrs "github.com/apernet/hysteria/core/v2/errors"
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/mistgate/mistgate-client/core/internal/firewall"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
+	"github.com/mistgate/mistgate-client/core/internal/stun"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
@@ -37,14 +40,19 @@ var killSwitchWarning sync.Once
 type Real struct {
 	load        func() ([]profile.Profile, error)
 	getSettings func() settings.Settings
+	geo         *geo.Store
 	verify      string
 
-	lifecycle sync.Mutex
-	mu        sync.Mutex
-	current   *realRun
-	resolved  map[string]netip.Addr
-	changed   chan struct{}
-	routeCB   *winipcfg.RouteChangeCallback
+	lifecycle            sync.Mutex
+	mu                   sync.Mutex
+	current              *realRun
+	resolved             map[string]netip.Addr
+	autoRegion           string
+	autoRefreshing       bool
+	autoRefreshAgain     bool
+	autoRefreshCallbacks []func()
+	changed              chan struct{}
+	routeCB              *winipcfg.RouteChangeCallback
 }
 
 type realRun struct {
@@ -71,12 +79,12 @@ type realTunnel struct {
 	awg     *device.Device
 }
 
-func NewReal(load func() ([]profile.Profile, error), getSettings func() settings.Settings, verifyOverride ...string) *Real {
+func NewReal(load func() ([]profile.Profile, error), getSettings func() settings.Settings, geoStore *geo.Store, verifyOverride ...string) *Real {
 	verify := ""
 	if len(verifyOverride) != 0 {
 		verify = verifyOverride[0]
 	}
-	r := &Real{load: load, getSettings: getSettings, verify: verify, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
+	r := &Real{load: load, getSettings: getSettings, geo: geoStore, verify: verify, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
 	callback, err := winipcfg.RegisterRouteChangeCallback(func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
 		if route == nil || route.DestinationPrefix.Prefix().Bits() != 0 {
 			return
@@ -105,6 +113,153 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 }
 
 func (r *Real) Changed() <-chan struct{} { return r.changed }
+
+func (r *Real) EffectiveRoute(configured settings.Settings) string {
+	if configured.RouteMode != "smart" {
+		return "all"
+	}
+	region := configured.RouteRegion
+	if region == "" {
+		region = "auto"
+	}
+	if region == "auto" {
+		r.mu.Lock()
+		region = r.autoRegion
+		r.mu.Unlock()
+		if region == "" || region == "none" {
+			return "all"
+		}
+	}
+	if region == "none" || !geo.ValidRegion(region) || r.geo == nil {
+		return "all"
+	}
+	if _, available := r.geo.Region(region); !available {
+		return "all"
+	}
+	return "smart:" + region
+}
+
+func (r *Real) Routes(configured settings.Settings) geo.Routes {
+	r.mu.Lock()
+	autoRegion := r.autoRegion
+	r.mu.Unlock()
+	return r.geo.Routes(configured.RouteMode, configured.RouteRegion, autoRegion)
+}
+
+func (r *Real) setAutoRegion(region string) {
+	r.mu.Lock()
+	r.autoRegion = region
+	r.mu.Unlock()
+}
+
+func (r *Real) RefreshAutoRegion(onChange func()) {
+	configured := r.settings()
+	r.mu.Lock()
+	if onChange != nil {
+		r.autoRefreshCallbacks = append(r.autoRefreshCallbacks, onChange)
+	}
+	if r.autoRefreshing {
+		r.autoRefreshAgain = true
+		r.mu.Unlock()
+		return
+	}
+	if configured.RouteMode != "smart" || !autoRoute(configured.RouteRegion) || r.autoRegion != "" && r.autoRegion != "none" {
+		callbacks := r.autoRefreshCallbacks
+		r.autoRefreshCallbacks = nil
+		r.mu.Unlock()
+		for _, callback := range callbacks {
+			callback()
+		}
+		return
+	}
+	r.autoRefreshing = true
+	r.mu.Unlock()
+	go r.refreshAutoRegion()
+}
+
+func (r *Real) refreshAutoRegion() {
+	for {
+		configured := r.settings()
+		if configured.RouteMode == "smart" && autoRoute(configured.RouteRegion) {
+			region := "none"
+			if public, err := publicAddress(context.Background()); err == nil && r.geo != nil {
+				if detected := r.geo.Detect(public, []string{"ru", "by", "kz", "cn", "ir", "tr"}); detected != "" {
+					region = detected
+				}
+			}
+			r.mu.Lock()
+			r.autoRegion = region
+			r.mu.Unlock()
+		}
+		r.mu.Lock()
+		if r.autoRefreshAgain {
+			r.autoRefreshAgain = false
+			r.mu.Unlock()
+			continue
+		}
+		r.autoRefreshing = false
+		callbacks := r.autoRefreshCallbacks
+		r.autoRefreshCallbacks = nil
+		r.mu.Unlock()
+		for _, callback := range callbacks {
+			callback()
+		}
+		return
+	}
+}
+
+func autoRoute(region string) bool { return region == "" || region == "auto" }
+
+func publicAddress(ctx context.Context) (netip.Addr, error) {
+	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resolver := &net.Resolver{PreferGo: true}
+	resolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		server, err := netip.ParseAddr(strings.Trim(host, "[]"))
+		if err == nil && server.Is4() {
+			index, err := netcfg.PhysicalInterfaceIndexFor(server)
+			if err != nil {
+				return nil, err
+			}
+			return (&net.Dialer{Control: netcfg.SocketControl(index)}).DialContext(ctx, network, address)
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}
+	addresses, err := resolver.LookupNetIP(lookupCtx, "ip4", "stun.l.google.com")
+	if err != nil {
+		return netip.Addr{}, errors.New("cannot resolve STUN server")
+	}
+	var server netip.Addr
+	for _, address := range addresses {
+		if address.Is4() {
+			server = address
+			break
+		}
+	}
+	if !server.IsValid() {
+		return netip.Addr{}, errors.New("STUN server has no IPv4 address")
+	}
+	index, err := netcfg.PhysicalInterfaceIndexFor(server)
+	if err != nil {
+		return netip.Addr{}, errors.New("no physical route to STUN server")
+	}
+	var listen net.ListenConfig
+	listen.Control = netcfg.SocketControl(index)
+	conn, err := listen.ListenPacket(lookupCtx, "udp4", ":0")
+	if err != nil {
+		return netip.Addr{}, errors.New("cannot open physical STUN socket")
+	}
+	defer conn.Close()
+	public, err := stun.Query(lookupCtx, conn, netip.AddrPortFrom(server, 19302), 2*time.Second)
+	if err != nil {
+		return netip.Addr{}, errors.New("STUN did not return an address")
+	}
+	return public, nil
+}
 
 func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (info Info, retErr error) {
 	runCtx, run, startErr := r.startRun(ctx, target.Hold)
@@ -161,10 +316,51 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		return Info{}, err
 	}
 	endpoint := netip.AddrPortFrom(serverIP, port)
+	r.setAutoRegion("")
+	route := "all"
+	var routeSet *geo.Set
+	if configured.RouteMode == "smart" {
+		region := configured.RouteRegion
+		if region == "" {
+			region = "auto"
+		}
+		if region == "auto" {
+			r.setAutoRegion("none")
+			if public, err := publicAddress(runCtx); err == nil && r.geo != nil {
+				if detected := r.geo.Detect(public, []string{"ru", "by", "kz", "cn", "ir", "tr"}); detected != "" {
+					r.setAutoRegion(detected)
+				}
+			}
+			r.mu.Lock()
+			region = r.autoRegion
+			r.mu.Unlock()
+		}
+		if region != "none" && geo.ValidRegion(region) && r.geo != nil {
+			if set, available := r.geo.Region(region); available {
+				routeSet = set
+				route = "smart:" + region
+			}
+		}
+	}
+	var shouldDirect func(netip.Addr) bool
+	if routeSet != nil {
+		shouldDirect = routeSet.Contains
+	}
+
+	var awgNet *netstack.Net
+	var hy2Client client.Client
+	var awgDNS []netip.Addr
+	if selected.Protocol == "awg" {
+		awgDNS = selected.AWG.DNS
+		if len(awgDNS) == 0 {
+			// ponytail: fixed resolvers until settings and the subscription carry them.
+			awgDNS = []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
+		}
+	}
 
 	step(report, StepHandshake)
 	if selected.Protocol == "hysteria2" {
-		hclient, err := startHy2(runCtx, selected.Hy2, endpoint)
+		hy2Client, err = startHy2(runCtx, selected.Hy2, endpoint)
 		if err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
@@ -175,7 +371,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			}
 			return Info{}, failure("no_server_answers", "Hysteria2 handshake")
 		}
-		if !run.tunnel.setClient(hclient) {
+		if !run.tunnel.setClient(hy2Client) {
 			return Info{}, context.Canceled
 		}
 	} else {
@@ -186,7 +382,20 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if !run.tunnel.setAdapter(adapter) {
 			return Info{}, context.Canceled
 		}
-		err = startAWGHandshake(runCtx, adapter.Device(), selected.AWG, endpoint, run.tunnel)
+		awgTun := adapter.Device()
+		if routeSet != nil {
+			// ponytail: two stacks in a row cost throughput; a packet-level split would be faster.
+			addresses := make([]netip.Addr, 0, len(selected.AWG.Addresses))
+			for _, address := range selected.AWG.Addresses {
+				addresses = append(addresses, address.Addr())
+			}
+			var err error
+			awgTun, awgNet, err = netstack.CreateNetTUN(addresses, awgDNS, selected.AWG.MTU)
+			if err != nil {
+				return Info{}, failure("tunnel_failed", "AmneziaWG tunnel: create userspace stack")
+			}
+		}
+		err = startAWGHandshake(runCtx, awgTun, selected.AWG, endpoint, run.tunnel)
 		if err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
@@ -236,7 +445,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), 1500); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), 1500, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -246,11 +455,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if adapter == nil {
 			return Info{}, context.Canceled
 		}
-		dns := selected.AWG.DNS
-		if len(dns) == 0 {
-			// ponytail: fixed resolvers until settings and the subscription carry them.
-			dns = []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
-		}
+		dns := awgDNS
 		configured = r.settings()
 		if err := r.setFirewall(run, configured.KillSwitch == "off", adapter.LUID(), dns, configured.LAN); err != nil {
 			if runCtx.Err() != nil {
@@ -273,6 +478,17 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				return Info{}, failure("offline", "AmneziaWG tunnel: no bypass route")
 			}
 			return Info{}, failure("tunnel_failed", "AmneziaWG tunnel configuration")
+		}
+		if routeSet != nil {
+			if awgNet == nil {
+				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
+			}
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), selected.AWG.MTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect); err != nil {
+				if runCtx.Err() != nil {
+					return Info{}, runCtx.Err()
+				}
+				return Info{}, failure("tunnel_failed", "AmneziaWG tunnel bridge")
+			}
 		}
 	}
 
@@ -297,7 +513,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if serverName == "" {
 		serverName = selected.ID
 	}
-	info = Info{Server: serverName, Protocol: selected.Protocol}
+	info = Info{Server: serverName, Protocol: selected.Protocol, Route: route}
 	r.mu.Lock()
 	if r.current != run || runCtx.Err() != nil {
 		r.mu.Unlock()
@@ -583,13 +799,13 @@ func (t *realTunnel) setClient(hclient client.Client) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr) bool) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return context.Canceled
 	}
-	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, t.client)
+	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect)
 	if err != nil {
 		return err
 	}
@@ -795,6 +1011,7 @@ func startHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort) (cli
 
 func startAWGHandshake(ctx context.Context, tunDevice tun.Device, p *profile.AWG, endpoint netip.AddrPort, tunnel *realTunnel) error {
 	if err := ctx.Err(); err != nil {
+		_ = tunDevice.Close()
 		return err
 	}
 	gated := newGatedTun(tunDevice)

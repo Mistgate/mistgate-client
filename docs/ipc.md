@@ -41,7 +41,7 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `status` | — | Status |
 | `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg", "sub": "<subscription id>"}` (all optional) | Status |
 | `disconnect` | — | Status |
-| `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings", "diag"]}` | `{}`; the events then arrive on this connection |
+| `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings", "diag", "routes"]}` | `{}`; the events then arrive on this connection |
 | `subs.list` | — | `{"subs": [Subscription…]}` |
 | `subs.preview` | `{"text": "<URL, links, or AWG config>"}` | Subscription, not saved (`id` is empty) |
 | `subs.add` | `{"text": "<URL, links, or AWG config>"}` | Subscription |
@@ -49,6 +49,7 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
+| `routes.get` | none | `{"mode": "all", "region": "auto", "effective": "none", "available": false, "entries": 0, "updated_unix": 0}` |
 | `diag.run` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | Diagnostic State |
 | `diag.get` | none | Diagnostic State |
 | `diag.cancel` | none | Diagnostic State |
@@ -60,7 +61,7 @@ While connecting, `server` and `protocol` reflect the request. Once connected, t
 protocol that are actually in use.
 
 ```json
-{"state": "off", "step": "", "since_unix": 0, "server": "", "protocol": "", "error": ""}
+{"state": "off", "step": "", "since_unix": 0, "server": "", "protocol": "", "route": "", "error": ""}
 ```
 
 `state`: `off` · `connecting` · `connected` · `reconnecting` · `error` · `blocked`.
@@ -80,7 +81,8 @@ with the attempt's error code.
 Settings are saved as plain JSON in `<data directory>\settings.json`; a missing or broken file starts with defaults.
 `kill_switch` is `off`, `while`, or `always` (default `while`); `lan` allows private and link-local addresses through
 the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, or `awg` (default `auto`); `game` prefers AWG
-when protocol selection is automatic (default `false`). `settings.set` accepts only these keys, updates only the keys
+when protocol selection is automatic (default `false`); `route_mode` is `all` or `smart` (default `all`), and
+`route_region` is `auto`, `none`, or a two-letter lower-case country code (default `auto`). `settings.set` accepts only these keys, updates only the keys
 provided, and returns `bad_params` for an unknown key or invalid value. Changes apply immediately to the active
 firewall policy and are pushed to subscribers of `settings` as a Settings object. When `connect.protocol` is omitted
 or `auto`, automatic selection uses the configured `protocol`; when that is also `auto`, `game: true` prefers AWG if
@@ -99,10 +101,30 @@ persistent firewall rules are not installed. A console run has no service SID, s
 `ERROR_NO_SUCH_GROUP`; it cannot hold the network. It warns once and reports ordinary `off` or `error` status instead
 of claiming the network is blocked.
 
+Routing: `all` sends all connections through the VPN. `smart` sends IPv4 connections to addresses in the selected
+region directly over the physical network and sends other addresses through the VPN. `none`, an unavailable region
+list, or an unresolved `auto` selection behaves as `all`. Private, loopback, link-local, multicast and port 53 DNS
+flows stay out of the direct path. Routing uses addresses only: it does not inspect site names or choose by application,
+and it does not route IPv6 directly.
+
+Country lists are fetched from `https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/<cc>.list`,
+with `https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/<cc>.list` as the fallback. Plain cached
+files are kept at `<data directory>\geo\<cc>.list` and refreshed after 24 hours over ordinary sockets, so refreshes
+use the VPN when it is connected. A stale list remains in use if refresh fails. For `route_region: "auto"`, the
+service checks one STUN answer against `ru`, `by`, `kz`, `cn`, `ir` and `tr`. The public address is used only for that
+local country lookup, then discarded; it is never stored, logged or returned.
+
+`routes.get` and the `routes` event share this object: `mode` and `region` are the configured settings; `effective`
+is the selected country (`none` when auto has no match); `available` reports whether its list is cached; `entries`
+is the number of IPv4 prefixes in that list; and `updated_unix` is the cached file time, or `0` when no file exists.
+When `mode` is `smart` and `available` is false, connections behave as `all`. `status.route` is `all` or
+`smart:<cc>` while connected, and empty otherwise. A route setting change or an update to the active region list
+reconnects the same target with the network held when the effective address set changes.
+
 Events: `status` (a Status, on every change), `traffic` (`{"rx_bps": 0, "tx_bps": 0, "rtt_ms": 0}`, once a second while
 connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`), `subs` (`{"subs": [Subscription…]}`)
-after subscription data changes, and `settings` (a Settings object) after settings change. Subscribe to `subs` or
-`settings` to receive those updates.
+after subscription data changes, `settings` (a Settings object) after settings change, and `routes` (the same object
+as `routes.get`) after any route state changes. Subscribe to `subs`, `settings` or `routes` to receive those updates.
 
 Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `offline`,
 `fetch_failed`, and `unknown_subscription`. `connect` returns `no_subscription` if the selected subscription or

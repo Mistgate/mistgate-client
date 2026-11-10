@@ -13,6 +13,7 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
@@ -29,6 +30,7 @@ type Server struct {
 	Diag      *diag.Runner
 	Subs      *subs.Store
 	Settings  *settings.Store
+	Routes    func() geo.Routes
 	Logs      *LogStore
 	Logger    *slog.Logger
 	QueueSize int
@@ -194,6 +196,14 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "settings store is unavailable"}
 		}
 		return s.Settings.Get(), nil, nil
+	case "routes.get":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Routes == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route state is unavailable"}
+		}
+		return s.Routes(), nil, nil
 	case "settings.set":
 		var patch map[string]json.RawMessage
 		if !decodeParams(request.Params, &patch) || patch == nil {
@@ -431,13 +441,13 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Logs: logs}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Routes: routes, Logs: logs}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}
@@ -462,6 +472,18 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 				case <-settingsStore.Changes():
 					manager.SettingsChanged()
 					manager.Events().Publish("settings", settingsStore.Get())
+				}
+			}
+		}()
+	}
+	if geoStore != nil {
+		go func() {
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-geoStore.Changes():
+					manager.RoutesChanged()
 				}
 			}
 		}()

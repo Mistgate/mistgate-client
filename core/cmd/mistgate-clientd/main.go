@@ -15,6 +15,7 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/ipc"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
@@ -103,15 +104,32 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 		fmt.Fprintln(os.Stderr, "cannot open settings:", err)
 		return err
 	}
+	geoStore, err := geo.Open(dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cannot open geo cache:", err)
+		return err
+	}
 	slog.SetDefault(logger.With("src", "engine"))
 	go store.Run(ctx)
 	var eng engine.Engine
+	var routeState session.RouteState
+	var routes func() geo.Routes
 	if useFake {
 		eng = engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
+		routeState.Effective = func(settings.Settings) string { return "all" }
+		routes = func() geo.Routes {
+			configured := settingsStore.Get()
+			return geoStore.Routes(configured.RouteMode, configured.RouteRegion, "")
+		}
 	} else {
-		eng = engine.NewReal(store.Profiles, settingsStore.Get, verify)
+		real := engine.NewReal(store.Profiles, settingsStore.Get, geoStore, verify)
+		eng = real
+		routeState.Effective = real.EffectiveRoute
+		routeState.Refresh = real.RefreshAutoRegion
+		routes = func() geo.Routes { return real.Routes(settingsStore.Get()) }
 	}
-	manager := session.NewManager(eng, settingsStore.Get)
+	routeState.Snapshot = func() geo.Routes { return routes() }
+	manager := session.NewManager(eng, settingsStore.Get, routeState)
 	defer manager.Close()
 	eventMu.Lock()
 	eventHub = manager.Events()
@@ -125,7 +143,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
 		manager.Events().Publish("diag", state)
 	})
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs); err != nil {
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes); err != nil {
 		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}

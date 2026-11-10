@@ -78,7 +78,7 @@ export function words() {
   const w = WORDS[document.documentElement.lang] ?? WORDS.en;
   const number = new Intl.NumberFormat(w.locale, { maximumFractionDigits: 1 });
   const day = new Intl.DateTimeFormat(w.locale, { day: 'numeric', month: w === WORDS.en ? 'short' : 'long' });
-  const clock = new Intl.DateTimeFormat(w.locale, { hour: '2-digit', minute: '2-digit' });
+  const clock = new Intl.DateTimeFormat(w.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   return {
     ...w,
     date: (unix: number) => day.format(unix * 1000),

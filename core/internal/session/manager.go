@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
@@ -16,7 +17,14 @@ type Status struct {
 	SinceUnix int64  `json:"since_unix"`
 	Server    string `json:"server"`
 	Protocol  string `json:"protocol"`
+	Route     string `json:"route"`
 	Error     string `json:"error"`
+}
+
+type RouteState struct {
+	Effective func(settings.Settings) string
+	Snapshot  func() geo.Routes
+	Refresh   func(func())
 }
 
 type CodeError struct {
@@ -28,6 +36,9 @@ func (e *CodeError) Error() string { return e.Code }
 type Manager struct {
 	engine        engine.Engine
 	getSettings   func() settings.Settings
+	routes        RouteState
+	lastRoutes    geo.Routes
+	hasRoutes     bool
 	hub           *Hub
 	commands      chan any
 	done          chan struct{}
@@ -70,20 +81,23 @@ type actorState struct {
 	runCancel        context.CancelFunc
 	probeCancel      context.CancelFunc
 	workerDone       <-chan struct{}
+	routeSettings    settings.Settings
+	attemptRoute     string
+	holdReconnect    bool
 	probeFailures    int
 	probePending     bool
 	probePendingFast bool
 	retryIndex       int
 }
 
-func NewManager(eng engine.Engine, getSettings func() settings.Settings) *Manager {
+func NewManager(eng engine.Engine, getSettings func() settings.Settings, routes ...RouteState) *Manager {
 	return newManager(eng, getSettings, 5*time.Second, []time.Duration{
 		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
 		15 * time.Second, 30 * time.Second,
-	})
+	}, routes...)
 }
 
-func newManager(eng engine.Engine, getSettings func() settings.Settings, probeInterval time.Duration, backoff []time.Duration) *Manager {
+func newManager(eng engine.Engine, getSettings func() settings.Settings, probeInterval time.Duration, backoff []time.Duration, routes ...RouteState) *Manager {
 	if probeInterval <= 0 {
 		probeInterval = 5 * time.Second
 	}
@@ -99,6 +113,9 @@ func newManager(eng engine.Engine, getSettings func() settings.Settings, probeIn
 		probeInterval: probeInterval,
 		backoff:       append([]time.Duration(nil), backoff...),
 	}
+	if len(routes) != 0 {
+		m.routes = routes[0]
+	}
 	go m.run()
 	return m
 }
@@ -109,6 +126,14 @@ func (m *Manager) SettingsChanged() {
 	select {
 	case m.commands <- settingsChangedRequest{}:
 	case <-m.done:
+	}
+}
+
+func (m *Manager) RoutesChanged() {
+	if m.routes.Refresh != nil {
+		m.routes.Refresh(m.SettingsChanged)
+	} else {
+		m.SettingsChanged()
 	}
 }
 
@@ -189,6 +214,10 @@ func (m *Manager) run() {
 	defer close(m.done)
 	defer m.hub.Close()
 	state := actorState{status: Status{State: "off"}}
+	if m.routes.Snapshot != nil {
+		m.lastRoutes = m.routes.Snapshot()
+		m.hasRoutes = true
+	}
 	if m.engine != nil && m.currentSettings().KillSwitch == "always" && m.engine.Hold() {
 		state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
 		m.hub.Publish("status", state.status)
@@ -291,12 +320,18 @@ func (m *Manager) run() {
 					state.status.Error = ""
 					state.status.Server = request.info.Server
 					state.status.Protocol = request.info.Protocol
+					state.status.Route = request.info.Route
+					if state.status.Route == "" && m.routes.Effective != nil {
+						state.status.Route = m.routes.Effective(m.currentSettings())
+					}
 					state.status.SinceUnix = time.Now().Unix()
 					state.probeFailures = 0
 					state.retryIndex = 0
+					state.holdReconnect = false
 					m.hub.Publish("status", state.status)
 					resetTimer(&healthTimer, &healthC, m.probeInterval)
 				}
+				m.publishRoutes(&state)
 			case probeResult:
 				if request.generation != state.generation || state.status.State != "connected" {
 					continue
@@ -317,6 +352,7 @@ func (m *Manager) run() {
 					clearTimer(&healthTimer, &healthC)
 					state.status.State = "reconnecting"
 					state.status.Step = ""
+					state.status.Route = ""
 					state.status.Error = ""
 					state.status.SinceUnix = time.Now().Unix()
 					state.probeFailures = 0
@@ -327,7 +363,7 @@ func (m *Manager) run() {
 					}
 					m.hub.Publish("status", state.status)
 					target := state.target
-					target.Hold = holdFor(m.currentSettings(), true)
+					target.Hold = state.holdReconnect || holdFor(m.currentSettings(), true)
 					m.startAttempt(&state, target)
 					continue
 				}
@@ -360,7 +396,7 @@ func (m *Manager) run() {
 			retryC = nil
 			if state.status.State == "reconnecting" && state.runCancel == nil {
 				target := state.target
-				target.Hold = holdFor(m.currentSettings(), true)
+				target.Hold = state.holdReconnect || holdFor(m.currentSettings(), true)
 				m.startAttempt(&state, target)
 			}
 		case _, ok := <-changed:
@@ -379,7 +415,7 @@ func (m *Manager) run() {
 			} else if state.status.State == "reconnecting" && state.runCancel == nil {
 				clearTimer(&retryTimer, &retryC)
 				target := state.target
-				target.Hold = holdFor(m.currentSettings(), true)
+				target.Hold = state.holdReconnect || holdFor(m.currentSettings(), true)
 				m.startAttempt(&state, target)
 			}
 		}
@@ -402,7 +438,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	if target.Protocol == "" {
 		target.Protocol = "auto"
 	}
-	target.Hold = holdFor(m.currentSettings(), reconnecting)
+	target.Hold = state.holdReconnect || holdFor(m.currentSettings(), reconnecting)
 	if m.engine == nil {
 		state.generation++
 		state.status = Status{State: "error", SinceUnix: time.Now().Unix(), Server: target.Server, Protocol: target.Protocol, Error: "no_subscription"}
@@ -445,6 +481,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 		state.probeCancel = nil
 	}
 	state.target = target
+	state.holdReconnect = false
 	state.probeFailures = 0
 	state.probePending, state.probePendingFast = false, false
 	state.retryIndex = 0
@@ -467,6 +504,10 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	ctx, cancel := context.WithCancel(context.Background())
 	state.runCancel = cancel
 	state.target = target
+	state.routeSettings = m.currentSettings()
+	if m.routes.Effective != nil {
+		state.attemptRoute = m.routes.Effective(state.routeSettings)
+	}
 	if state.status.Step != string(engine.StepResolve) {
 		state.status.Step = string(engine.StepResolve)
 		m.hub.Publish("status", state.status)
@@ -542,15 +583,42 @@ func (m *Manager) stop(state *actorState) {
 	state.probeFailures = 0
 	state.probePending, state.probePendingFast = false, false
 	state.retryIndex = 0
+	state.holdReconnect = false
 	m.hub.Publish("status", state.status)
 }
 
 func (m *Manager) settingsChanged(state *actorState) {
 	configured := m.currentSettings()
+	routeSettingsChanged := state.routeSettings.RouteMode != configured.RouteMode || state.routeSettings.RouteRegion != configured.RouteRegion
 	switch state.status.State {
 	case "connected":
-		if m.engine != nil {
-			m.engine.Reapply()
+		if m.routes.Effective != nil && state.status.Route != m.routes.Effective(configured) {
+			m.reconnectRoute(state, configured)
+		} else {
+			state.routeSettings = configured
+			if m.engine != nil {
+				m.engine.Reapply()
+			}
+		}
+	case "connecting", "reconnecting":
+		if m.routes.Effective != nil && state.attemptRoute != m.routes.Effective(configured) {
+			m.reconnectRoute(state, configured)
+		} else {
+			state.routeSettings = configured
+		}
+		state.target.Hold = state.holdReconnect || holdFor(configured, true)
+		if configured.KillSwitch == "off" && !state.holdReconnect && state.status.State == "reconnecting" {
+			wasRunning := state.runCancel != nil
+			if wasRunning {
+				state.runCancel()
+				state.runCancel = nil
+			}
+			if m.engine != nil {
+				m.engine.Stop()
+			}
+			if wasRunning {
+				m.startAttempt(state, state.target)
+			}
 		}
 	case "off", "error":
 		if configured.KillSwitch == "always" && m.engine != nil && m.engine.Hold() {
@@ -569,21 +637,63 @@ func (m *Manager) settingsChanged(state *actorState) {
 		} else if configured.KillSwitch == "always" && m.engine != nil {
 			m.engine.Reapply()
 		}
-	case "reconnecting":
-		state.target.Hold = holdFor(configured, true)
-		if configured.KillSwitch == "off" {
-			wasRunning := state.runCancel != nil
-			if wasRunning {
-				state.runCancel()
-				state.runCancel = nil
-			}
-			if m.engine != nil {
-				m.engine.Stop()
-			}
-			if wasRunning {
-				m.startAttempt(state, state.target)
-			}
+	}
+	if routeSettingsChanged && configured.RouteMode == "smart" && (configured.RouteRegion == "" || configured.RouteRegion == "auto") && m.routes.Refresh != nil {
+		go m.routes.Refresh(m.SettingsChanged)
+	}
+	m.publishRoutes(state)
+}
+
+func (m *Manager) reconnectRoute(state *actorState, configured settings.Settings) {
+	target := state.target
+	target.Hold = true
+	wasConnected := state.status.State == "connected"
+	wasHeld := state.holdReconnect
+	state.holdReconnect = true
+	state.routeSettings = configured
+	if m.engine != nil && (wasConnected || !wasHeld) {
+		m.engine.Hold()
+	}
+	if state.runCancel != nil {
+		state.runCancel()
+		state.runCancel = nil
+	}
+	if state.probeCancel != nil {
+		state.probeCancel()
+		state.probeCancel = nil
+	}
+	if wasConnected {
+		state.status.State = "reconnecting"
+		state.status.SinceUnix = time.Now().Unix()
+		state.status.Error = ""
+		state.status.Step = ""
+		state.status.Route = ""
+		m.hub.Publish("status", state.status)
+	}
+	state.retryIndex = 0
+	m.startAttempt(state, target)
+}
+
+func (m *Manager) publishRoutes(state *actorState) {
+	if m.routes.Snapshot == nil {
+		return
+	}
+	routes := m.routes.Snapshot()
+	versionChanged := m.hasRoutes && m.lastRoutes.Effective == routes.Effective && m.lastRoutes.Available && routes.Available &&
+		m.lastRoutes.Mode == "smart" && routes.Mode == "smart" && m.lastRoutes.Version != routes.Version
+	objectChanged := !m.hasRoutes || m.lastRoutes.Mode != routes.Mode || m.lastRoutes.Region != routes.Region ||
+		m.lastRoutes.Effective != routes.Effective || m.lastRoutes.Available != routes.Available ||
+		m.lastRoutes.Entries != routes.Entries || m.lastRoutes.UpdatedUnix != routes.UpdatedUnix
+	m.lastRoutes, m.hasRoutes = routes, true
+	if versionChanged && state != nil {
+		route := "smart:" + routes.Effective
+		if state.status.State == "connected" && state.status.Route == route ||
+			(state.status.State == "connecting" || state.status.State == "reconnecting") && state.attemptRoute == route {
+			m.reconnectRoute(state, m.currentSettings())
 		}
+	}
+	if objectChanged {
+		m.hub.Publish("routes", routes)
 	}
 }
 

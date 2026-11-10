@@ -30,7 +30,7 @@ const inTray = inApp && (window as any).__TAURI_INTERNALS__.metadata?.currentWin
 if (inTray) document.documentElement.classList.add('shell-tray');
 if (inApp && !inTray) void import('./shell').then((m) => m.attachWindow());
 // In the app window Home talks to the service; in a browser it stays the design's mock.
-const live = inApp ? Promise.all([import('./live'), import('./live-settings'), import('./live-tray'), import('./live-diag')]) : null;
+const live = inApp ? Promise.all([import('./live'), import('./live-settings'), import('./live-tray'), import('./live-diag'), import('./live-routes')]) : null;
 
 // A window nobody looks at draws nothing: its animations stop while it is hidden or out of focus.
 // (The quick panel is only on screen while it has the focus: it never rests.)
@@ -41,7 +41,7 @@ rest();
 
 void Promise.all([loadScreens(lang), live]).then(([screens, l]) => {
   if (l) {
-    const [home, rest, tray, diag] = l;
+    const [home, rest, tray, diag, routes] = l;
     if (inTray) screens.Tray = tray.liveTray(screens.Tray);
     else {
       tray.startTrayIcon(screens.Tray);
@@ -49,7 +49,7 @@ void Promise.all([loadScreens(lang), live]).then(([screens, l]) => {
     }
     screens.Main = home.liveHome(screens.Main);
     screens.Settings = rest.liveSettings(screens.Settings);
-    screens.Routes = rest.liveChip(screens.Routes);
+    screens.Routes = routes.liveRoutes(screens.Routes);
     screens.Diag = diag.liveDiag(screens.Diag);
   }
   function App() {

@@ -12,10 +12,12 @@ import (
 const fileName = "settings.json"
 
 type Settings struct {
-	KillSwitch string `json:"kill_switch"`
-	LAN        bool   `json:"lan"`
-	Protocol   string `json:"protocol"`
-	Game       bool   `json:"game"`
+	KillSwitch  string `json:"kill_switch"`
+	LAN         bool   `json:"lan"`
+	Protocol    string `json:"protocol"`
+	Game        bool   `json:"game"`
+	RouteMode   string `json:"route_mode"`
+	RouteRegion string `json:"route_region"`
 	// Connect when the service starts, to the target of the last connect call.
 	Autoconnect bool   `json:"autoconnect"`
 	LastServer  string `json:"last_server"`
@@ -32,7 +34,7 @@ type Store struct {
 var ErrBadParams = errors.New("bad settings parameters")
 
 func Defaults() Settings {
-	return Settings{KillSwitch: "while", LAN: true, Protocol: "auto"}
+	return Settings{KillSwitch: "while", LAN: true, Protocol: "auto", RouteMode: "all", RouteRegion: "auto"}
 }
 
 func Open(dir string) (*Store, error) {
@@ -122,6 +124,18 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.Game = v
+	case "route_mode":
+		var v string
+		if json.Unmarshal(raw, &v) != nil || v != "all" && v != "smart" {
+			return false
+		}
+		value.RouteMode = v
+	case "route_region":
+		var v string
+		if json.Unmarshal(raw, &v) != nil || v != "auto" && v != "none" && !validCountry(v) {
+			return false
+		}
+		value.RouteRegion = v
 	case "autoconnect":
 		var v bool
 		if !strictBool(raw, &v) {
@@ -142,6 +156,10 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 		return false
 	}
 	return true
+}
+
+func validCountry(value string) bool {
+	return len(value) == 2 && value[0] >= 'a' && value[0] <= 'z' && value[1] >= 'a' && value[1] <= 'z'
 }
 
 func strictBool(raw json.RawMessage, value *bool) bool {
