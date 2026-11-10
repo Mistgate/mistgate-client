@@ -139,3 +139,9 @@ and NDP, optionally the local network (private and link-local ranges; not its DN
 DNS to the tunnel's resolvers. With `off`, a connected tunnel keeps only its DNS rules. The rules name the service
 SID, so a console run cannot install them. The dynamic session ends with the process, so a service crash opens the
 network.
+
+## Auto-connect
+
+`settings.set {"autoconnect": true}`: when the service starts it connects to the target of the last `connect` call
+(the service keeps it as `last_server` / `last_sub` in the settings). The window's half of "connect when Windows
+starts" is its own: it puts itself into the user's Run key.

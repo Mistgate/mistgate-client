@@ -10,8 +10,12 @@ export function attachWindow() {
     void win.startDragging();
   });
   document.addEventListener('click', (e) => {
-    const label = (e.target as Element).closest('.cap button')?.getAttribute('aria-label');
-    if (label === 'Minimize') void win.minimize();
-    if (label === 'Close') void win.close(); // ponytail: closes the window; hide-to-tray comes with the tray
+    // by place, not by label: the labels differ between screens and languages. The middle one (maximize) does
+    // nothing: the window has one size.
+    const button = (e.target as Element).closest('.cap button');
+    if (!button) return;
+    const all = [...button.parentElement!.querySelectorAll('button')];
+    if (button === all[0]) void win.minimize();
+    if (button === all[all.length - 1]) void win.close(); // the shell hides to the tray or quits, by the setting
   });
 }

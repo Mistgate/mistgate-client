@@ -25,19 +25,28 @@ document.documentElement.lang = lang;
 
 const inApp = '__TAURI_INTERNALS__' in window;
 if (inApp || shell !== undefined) document.documentElement.classList.add('shell');
-if (inApp) void import('./shell').then((m) => m.attachWindow());
+// the quick panel is this same app in a second, small window
+const inTray = inApp && (window as any).__TAURI_INTERNALS__.metadata?.currentWindow?.label === 'tray';
+if (inTray) document.documentElement.classList.add('shell-tray');
+if (inApp && !inTray) void import('./shell').then((m) => m.attachWindow());
 // In the app window Home talks to the service; in a browser it stays the design's mock.
-const live = inApp ? Promise.all([import('./live'), import('./live-settings')]) : null;
+const live = inApp ? Promise.all([import('./live'), import('./live-settings'), import('./live-tray')]) : null;
 
 // A window nobody looks at draws nothing: its animations stop while it is hidden or out of focus.
-const rest = () => document.documentElement.classList.toggle('idle', document.hidden || !document.hasFocus());
+// (The quick panel is only on screen while it has the focus: it never rests.)
+const rest = () => document.documentElement.classList.toggle('idle', !inTray && (document.hidden || !document.hasFocus()));
 for (const ev of ['focus', 'blur']) window.addEventListener(ev, rest);
 document.addEventListener('visibilitychange', rest);
 rest();
 
 void Promise.all([loadScreens(lang), live]).then(([screens, l]) => {
   if (l) {
-    const [home, rest] = l;
+    const [home, rest, tray] = l;
+    if (inTray) screens.Tray = tray.liveTray(screens.Tray);
+    else {
+      tray.startTrayIcon(screens.Tray);
+      rest.startShell();
+    }
     screens.Main = home.liveHome(screens.Main);
     screens.Settings = rest.liveSettings(screens.Settings);
     for (const name of ['Routes', 'Diag']) screens[name] = rest.liveChip(screens[name]);
@@ -49,7 +58,10 @@ void Promise.all([loadScreens(lang), live]).then(([screens, l]) => {
     React.useEffect(() => {
       const on = (e: Event) => setTheme((e as CustomEvent<string>).detail);
       window.addEventListener('mg-theme', on);
-      return () => window.removeEventListener('mg-theme', on);
+      // the tray's panel and menu open the window on a screen
+      const nav = (e: Event) => setScreen((e as CustomEvent<string>).detail);
+      window.addEventListener('mg-nav', nav);
+      return () => { window.removeEventListener('mg-theme', on); window.removeEventListener('mg-nav', nav); };
     }, []);
     const Screen = screens[screen] ?? screens.Main;
     return <NavContext.Provider value={setScreen}><Screen key={screen} {...props} {...(theme ? { theme } : {})} /></NavContext.Provider>;

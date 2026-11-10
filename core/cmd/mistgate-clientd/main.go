@@ -98,6 +98,9 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 	}
 	manager := session.NewManager(eng, settingsStore.Get)
 	defer manager.Close()
+	if configured := settingsStore.Get(); configured.Autoconnect && configured.LastServer != "" {
+		_, _ = manager.Connect(ctx, engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub})
+	}
 	logger := ipc.NewEventLogger(func(data any) { manager.Events().Publish("log", data) })
 	slog.SetDefault(logger)
 	if err := ipc.Run(ctx, manager, logger, store, settingsStore); err != nil {

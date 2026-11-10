@@ -16,6 +16,10 @@ type Settings struct {
 	LAN        bool   `json:"lan"`
 	Protocol   string `json:"protocol"`
 	Game       bool   `json:"game"`
+	// Connect when the service starts, to the target of the last connect call.
+	Autoconnect bool   `json:"autoconnect"`
+	LastServer  string `json:"last_server"`
+	LastSub     string `json:"last_sub"`
 }
 
 type Store struct {
@@ -118,6 +122,22 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.Game = v
+	case "autoconnect":
+		var v bool
+		if !strictBool(raw, &v) {
+			return false
+		}
+		value.Autoconnect = v
+	case "last_server", "last_sub":
+		var v string
+		if json.Unmarshal(raw, &v) != nil || len(v) > 128 {
+			return false
+		}
+		if key == "last_server" {
+			value.LastServer = v
+		} else {
+			value.LastSub = v
+		}
 	default:
 		return false
 	}

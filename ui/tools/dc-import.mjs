@@ -41,3 +41,8 @@ console.log('imported', count, 'screens in', Object.keys(LANGS).length, 'languag
 const flags = readFileSync(join(src, 'Main.dc.html'), 'utf8').match(/const FLAGS = (\{[^}]*\})/);
 if (!flags) throw new Error('Main.dc.html: no FLAGS table');
 writeFileSync(join(ui, 'src', 'design', 'flags.json'), blob(flags[1]) + '\n');
+// the tray icon's five glyphs: the app draws the one for the current state
+const glyphs = {};
+for (const m of readFileSync(join(src, 'TrayIcons.dc.html'), 'utf8').matchAll(/<article class="ki-c ts-(\w+)"><div class="ki-big"><svg[^>]*>([\s\S]*?)<\/svg>/g)) glyphs[m[1]] = m[2];
+if (Object.keys(glyphs).length !== 5) throw new Error('TrayIcons.dc.html: expected five tray glyphs');
+writeFileSync(join(ui, 'src', 'design', 'tray-icons.json'), JSON.stringify(glyphs, null, 1) + '\n');

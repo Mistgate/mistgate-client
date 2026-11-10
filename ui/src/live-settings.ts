@@ -6,7 +6,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 
 type Status = { state: string; server: string };
-type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean };
+type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean; autoconnect: boolean };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
 
@@ -23,6 +23,20 @@ export function setTheme(theme: string) {
 function setLang(lang: string) {
   pref.set('lang', lang);
   location.reload();
+}
+
+// What the shell (the Rust side) keeps for the window: whether the × hides to the tray, and the Run key.
+// "Connect when Windows starts" is both halves: the window starts with Windows, and the service connects on its own.
+const flag = (key: string, fallback: boolean) => (pref.get(key) ? pref.get(key) === '1' : fallback);
+export const shellPrefs = () => ({ auto: flag('auto', false), min: flag('min', true), tray: flag('tray', true) });
+function applyShell(changed?: 'auto' | 'min' | 'tray') {
+  const p = shellPrefs();
+  void invoke('shell_prefs', { closeToTray: p.tray });
+  if (changed === 'auto' || changed === 'min') void invoke('autostart', { enabled: p.auto, minimized: p.min }).catch(() => {});
+}
+export function startShell() {
+  applyShell();
+  void listen<string>('mg://nav', (e) => window.dispatchEvent(new CustomEvent('mg-nav', { detail: e.payload })));
 }
 
 // The chip in the title bar of every screen but Home: connected or not, where to, and a button for it.
@@ -73,7 +87,7 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
     apply(s: Settings) {
       this.setState((old: any) => ({
         ks: s.kill_switch, ksAsk: false, pr: PR_BACK[s.protocol] ?? 'auto',
-        on: Object.assign({}, old?.on, { lan: s.lan, game: s.game }),
+        on: Object.assign({}, old?.on, { lan: s.lan, game: s.game, auto: s.autoconnect, min: shellPrefs().min, tray: shellPrefs().tray }),
       }));
     }
     save(patch: Partial<Settings>) {
@@ -87,6 +101,16 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       v.ksYes = () => this.save({ kill_switch: 'always' }); // "always" goes through the design's confirmation first
       v.tg.lan = () => this.save({ lan: !on.lan });
       v.tg.game = () => this.save({ game: !on.game });
+      // the window's own switches live with the window; "auto" is also the service's auto-connect
+      const shell = shellPrefs();
+      const flip = (key: 'auto' | 'min' | 'tray') => {
+        pref.set(key, shell[key] ? '0' : '1');
+        applyShell(key);
+        this.setState((old: any) => ({ on: Object.assign({}, old?.on, { [key]: !shell[key] }) }));
+      };
+      v.tg.auto = () => { flip('auto'); this.save({ autoconnect: !shell.auto }); };
+      v.tg.min = () => flip('min');
+      v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
       v.prSet.vless = () => {}; // drawn for the finished product; not in this build
       v.tmSet.dark = () => setTheme('dark');

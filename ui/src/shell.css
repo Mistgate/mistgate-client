@@ -4,5 +4,12 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell .desk { width: 100vw; height: 100vh; background: none; }
 .shell .dev { display: none; }
 .shell .app { box-shadow: none; }
+/* The quick panel's window is the panel alone: no sample desktop around it. */
+.shell-tray, .shell-tray body { background: transparent; }
+.shell-tray .desk { width: 100vw; height: 100vh; background: none; display: block; }
+.shell-tray .dev, .shell-tray .ty-wp, .shell-tray .ty-bar { display: none; }
+.shell-tray .ty-scr { width: 100vw; height: 100vh; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
+/* no entrance: the window itself appears, and a paused entrance would leave the panel invisible */
+html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; animation: none !important; opacity: 1; transform: none; }
 /* A server whose name carries no flag has no picture: keep its place, show nothing. */
-.shell img:not([src]) { visibility: hidden; }
+.shell img:not([src]), .shell-tray img:not([src]) { visibility: hidden; }

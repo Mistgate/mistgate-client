@@ -1,7 +1,7 @@
 {
   "identifier": "default",
-  "description": "What the main window may ask of the shell: move, minimize and close itself.",
-  "windows": ["main"],
+  "description": "What the windows may ask of the shell: the main one moves, minimizes and closes itself; both listen to the service's events.",
+  "windows": ["main", "tray"],
   "permissions": [
     "core:default",
     "core:event:allow-listen",

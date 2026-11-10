@@ -158,6 +158,12 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 				return nil, nil, badParams()
 			}
 		}
+		if s.Settings != nil {
+			// what "connect when Windows starts" will connect to
+			server, _ := json.Marshal(target.Server)
+			sub, _ := json.Marshal(target.Sub)
+			_, _ = s.Settings.Set(map[string]json.RawMessage{"last_server": server, "last_sub": sub})
+		}
 		status, err := s.Manager.Connect(ctx, target)
 		if err != nil {
 			code := "service_error"
