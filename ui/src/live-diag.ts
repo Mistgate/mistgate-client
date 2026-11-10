@@ -13,6 +13,7 @@ type Verdict = 'ok' | 'blocked' | 'down' | 'config' | 'app' | 'slow';
 type Result = {
   at_unix: number; sub: string; network: { kind: string };
   servers: { id: string; name: string; protocol: string; verdict: Verdict; reason: string; rtt_ms: number }[];
+  route: { verdict: string; hop: number; total: number };
   udp: { verdict: string }; nat: { verdict: string };
   dns: { verdict: string; checked: number; replaced: number };
   foreign: { verdict: string; total: number; open: number };
@@ -80,10 +81,14 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         const { flag, text } = flagOf(n.name);
         const m = n.verdict === 'ok' ? `${n.rtt_ms} ms` : why[n.reason] ?? '';
         const meta = n.verdict === 'ok' ? `${way(n.protocol).split(' · ')[0]} · ${n.rtt_ms} ms` : n.verdict === 'down' ? I.srvRows[3].meta : n.verdict === 'config' ? I.srvRows[4].meta : m;
-        return { kind: 'srv', flag, name: text, v: n.verdict, alt: '', meta, paths: [{ n: way(n.protocol), v: n.verdict, m }], lines: [] as string[], g: '', tone: '', term: '', act: [] as string[], hasFlag: true };
+        return { kind: 'srv', flag, name: text, v: n.verdict, alt: '', meta, paths: [{ n: way(n.protocol), v: n.verdict, m }], lines: [] as string[], hops: [] as any[], g: '', tone: '', term: '', act: [] as string[], hasFlag: true };
       });
       const net: any[] = [];
       const row = (sample: any, over: object) => net.push({ kind: 'net', flag: '', paths: [], hasFlag: false, conf: '', hops: [], act: [], ...sample, ...over });
+      // the design draws eleven hops: a longer path keeps its last cells for the end
+      const cells = (bad: number) => Array.from({ length: 11 }, (_, i) => ({ n: String(i + 1), c: bad && i + 1 === Math.min(bad, 11) ? 'bad' : bad && i + 1 > Math.min(bad, 11) ? 'off' : 'ok' }));
+      if (r.route?.verdict === 'ok') row(G.netRows[0], { lines: [nums(G.netRows[0].lines[0], r.route.total)], hops: cells(0) });
+      else if (r.route?.verdict === 'blocked') row(I.netRows[0], { alt: nums(I.netRows[0].alt, r.route.hop), meta: firstSentence(I.netRows[0].meta), lines: [nums(I.netRows[0].lines[0], r.route.hop, r.route.total), I.netRows[0].lines[1]], hops: cells(r.route.hop) });
       if (r.udp.verdict === 'ok') row(G.netRows[1], { lines: [] });
       else if (r.udp.verdict === 'blocked') row(I.netRows[1], { meta: firstSentence(I.netRows[1].meta), lines: [I.netRows[1].lines[0]], conf: '' });
       if (r.nat.verdict === 'open') row(G.netRows[2], {});
@@ -117,11 +122,11 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         const dress = (x: any, id: string) => {
           const L = look[x.v] ?? look.ok;
           const o = !!open[id];
-          const hasD = !!(x.lines.length || x.paths.length);
+          const hasD = !!(x.lines.length || x.paths.length || x.hops.length);
           const ps = [0, 1, 2, 3].map((k) => { const q = x.paths[k]; const lq = q && (look[q.v] ?? look.ok); return q ? { c: '', n: q.n, m: q.m, vc: lq.vc, vi: lq.vi, vt: lq.vt } : { c: 'hide', n: '', m: '', vc: '', vi: '', vt: '' }; });
           const game = x.act.length > 0; // the one action this build has: "Turn on Game mode"
           return {
-            ...x, vt: x.alt || L.vt, vi: L.vi, vc: L.vc, hc: [], hpc: 'hide', ppc: x.paths.length ? '' : 'hide',
+            ...x, vt: x.alt || L.vt, vi: L.vi, vc: L.vc, hc: x.hops.map((h: any) => h.c), hpc: x.hops.length ? '' : 'hide', ppc: x.paths.length ? '' : 'hide',
             p0: ps[0], p1: ps[1], p2: ps[2], p3: ps[3], l0: x.lines[0] ?? '', l1: x.lines[1] ?? '', l0c: x.lines[0] ? '' : 'hide', l1c: x.lines[1] ? '' : 'hide',
             cc: 'hide', ddc: hasD ? '' : 'hide', isOpen: o && hasD, oc: (o && hasD ? 'open' : '') + (hasD ? '' : ' nod'), ox: o ? 'true' : 'false',
             fc: x.hasFlag ? 'flag' : '', ic: x.hasFlag ? '' : 'hide', gc: x.hasFlag ? 'hide' : '', termC: x.term ? '' : 'hide',
@@ -136,7 +141,7 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         const okSrv = srv.filter((x) => x.v === 'ok').length;
         const badNet = net.filter((x) => x.v !== 'ok');
         const worst = all.find((x) => x.v !== 'ok');
-        const blocking = all.some((x) => x.v === 'blocked');
+        const blocking = net.some((x) => x.v === 'blocked'); // the network's, not one server's
         const games = net.find((x) => x.term === 'NAT');
         const kind = r.network.kind === 'wifi' ? G.R.facts[0][2].split(' · ')[0] : r.network.kind === 'mobile' ? I.R.facts[0][2].split(' · ')[0] : r.network.kind === 'ethernet' ? 'Ethernet' : '—';
         const srvSum = nums(I.R.srvSum, okSrv, srv.length);

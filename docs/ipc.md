@@ -204,6 +204,14 @@ DNS to the tunnel's resolvers. With `off`, a connected tunnel keeps only its DNS
 SID, so a console run cannot install them. The dynamic session ends with the process, so a service crash opens the
 network.
 
+## The route step of the network check
+
+`result.route` is `{verdict: ok|blocked|unknown, hop, total}`: `blocked` means packets to addresses that are certainly
+blocked (Russia's references, as in the panel's TSPU probe) die behind hop `hop - 1` while a control address passes
+on; `ok` means a blocked reference reached its end in `total` hops; `unknown` when the method does not apply or the
+VPN is up (the step is skipped then). The probes are ICMP echoes with a TTL, sent through the system's ICMP
+interface.
+
 ## Auto-connect
 
 `settings.set {"autoconnect": true}`: when the service starts it connects to the target of the last `connect` call

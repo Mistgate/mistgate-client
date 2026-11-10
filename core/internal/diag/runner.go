@@ -32,7 +32,13 @@ type Result struct {
 		Kind string `json:"kind"`
 	} `json:"network"`
 	Servers []Server `json:"servers"`
-	UDP     struct {
+	// Route: blocking by address on the way out. Hop is the first silent hop when blocked, the path length when ok.
+	Route struct {
+		Verdict string `json:"verdict"`
+		Hop     int    `json:"hop"`
+		Total   int    `json:"total"`
+	} `json:"route"`
+	UDP struct {
 		Verdict string `json:"verdict"`
 	} `json:"udp"`
 	NAT struct {
@@ -236,7 +242,14 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r.log("route", "skipped")
+	result.Route.Verdict = "unknown"
+	if r.config.Tunnel != nil && r.config.Tunnel() {
+		// ponytail: with the VPN up an echo would leave through the tunnel; upgrade = host routes for the references
+		r.log("route", "skipped: the VPN is up")
+	} else {
+		result.Route.Verdict, result.Route.Hop, result.Route.Total = checkRoute(ctx, icmpEcho)
+		r.log("route", fmt.Sprintf("verdict=%s hop=%d total=%d", result.Route.Verdict, result.Route.Hop, result.Route.Total))
+	}
 	r.advance(2, 40)
 	if err := ctx.Err(); err != nil {
 		return nil, err
