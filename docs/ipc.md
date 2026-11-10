@@ -87,7 +87,8 @@ service beside the window binary (`ui/src-tauri/target/debug/`); `run -fake` the
 with an unrestricted service SID and starts it; `mistgate-clientd uninstall` stops and removes it.
 
 While a connection is up, the firewall (WFP, a dynamic session) lets through only the tunnel adapter, loopback, DHCP
-and NDP and the service's own sockets, and DNS only to the tunnel's resolvers. The local network is closed too. The
+and NDP, the local network (private and link-local ranges; not its DNS) and the service's own sockets, and DNS only
+to the tunnel's resolvers. The
 rules name the service SID, so they need the installed service: a console run has no kill switch and says so in the
 log. The session ends on disconnect and with the process; holding the network closed after an unexpected drop (state
 `blocked`) is not there yet.
