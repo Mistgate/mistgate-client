@@ -14,6 +14,7 @@ type FakeConfig struct {
 	FailAt        Step
 	FailCode      string
 	FailStartCode string
+	HoldResult    *bool
 	ProbeErr      error
 	Changed       chan struct{}
 }
@@ -27,6 +28,8 @@ type Fake struct {
 	targets       []Target
 	starts        atomic.Uint64
 	probes        atomic.Uint64
+	holds         atomic.Uint64
+	reapplies     atomic.Uint64
 }
 
 func NewFake(config FakeConfig) *Fake {
@@ -80,6 +83,18 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 
 func (*Fake) Stop() {}
 
+func (f *Fake) Hold() bool {
+	f.holds.Add(1)
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.config.HoldResult == nil {
+		return true
+	}
+	return *f.config.HoldResult
+}
+
+func (f *Fake) Reapply() { f.reapplies.Add(1) }
+
 func (*Fake) Stats() Traffic { return Traffic{} }
 
 func (f *Fake) Probe(ctx context.Context) error {
@@ -110,6 +125,16 @@ func (f *Fake) SetFailStartCode(code string) {
 func (f *Fake) StartCount() uint64 { return f.starts.Load() }
 
 func (f *Fake) ProbeCount() uint64 { return f.probes.Load() }
+
+func (f *Fake) HoldCount() uint64 { return f.holds.Load() }
+
+func (f *Fake) ReapplyCount() uint64 { return f.reapplies.Load() }
+
+func (f *Fake) SetHoldResult(hold bool) {
+	f.mu.Lock()
+	f.config.HoldResult = &hold
+	f.mu.Unlock()
+}
 
 func (f *Fake) Targets() []Target {
 	f.mu.RLock()

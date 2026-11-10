@@ -13,6 +13,7 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/session"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
 func TestReadLineFramingAndLimit(t *testing.T) {
@@ -48,7 +49,7 @@ func TestReadLineFramingAndLimit(t *testing.T) {
 }
 
 func TestParseRequestAndDispatchErrors(t *testing.T) {
-	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}))
+	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}), settings.Defaults)
 	defer manager.Close()
 	server := &Server{Manager: manager, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	tests := []struct {
@@ -93,9 +94,78 @@ func TestParseRequestAndDispatchErrors(t *testing.T) {
 	}
 }
 
+func TestSettingsMethodsAndEvent(t *testing.T) {
+	store, err := settings.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}), store.Get)
+	defer manager.Close()
+	server := &Server{Manager: manager, Settings: store}
+
+	request, parseErr := ParseRequest([]byte(`{"id":1,"method":"settings.get","params":{}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	result, _, rpcErr := server.dispatch(context.Background(), request, true)
+	if rpcErr != nil || result != store.Get() {
+		t.Fatalf("settings.get = %#v, %#v; want %#v", result, rpcErr, store.Get())
+	}
+
+	request, parseErr = ParseRequest([]byte(`{"id":2,"method":"settings.set","params":{"lan":false,"kill_switch":"off"}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	result, _, rpcErr = server.dispatch(context.Background(), request, true)
+	want := settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto"}
+	if rpcErr != nil || result != want {
+		t.Fatalf("settings.set = %#v, %#v; want %#v", result, rpcErr, want)
+	}
+
+	for _, raw := range []string{
+		`{"id":3,"method":"settings.set","params":{"unknown":true}}`,
+		`{"id":4,"method":"settings.set","params":{"game":null}}`,
+	} {
+		request, parseErr = ParseRequest([]byte(raw))
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if _, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr == nil || rpcErr.Code != "bad_params" {
+			t.Fatalf("settings.set dispatch error = %#v, want bad_params", rpcErr)
+		}
+	}
+
+	request, parseErr = ParseRequest([]byte(`{"id":5,"method":"settings.set","params":{"lan":true}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	if _, _, rpcErr = server.dispatch(context.Background(), request, false); rpcErr == nil || rpcErr.Code != "not_trusted" {
+		t.Fatalf("untrusted settings.set error = %#v, want not_trusted", rpcErr)
+	}
+
+	request, parseErr = ParseRequest([]byte(`{"id":6,"method":"subscribe","params":{"events":["settings"]}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	_, events, rpcErr := server.dispatch(context.Background(), request, true)
+	if rpcErr != nil || events == nil {
+		t.Fatalf("settings subscribe = %#v, %#v", events, rpcErr)
+	}
+	defer events.Close()
+	manager.Events().Publish("settings", store.Get())
+	select {
+	case event := <-events.C:
+		if event.Name != "settings" || event.Data != store.Get() {
+			t.Fatalf("settings event = %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("settings event was not forwarded")
+	}
+}
+
 func TestSubscriptionEventAndConnectSelector(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{})
-	manager := session.NewManager(fake)
+	manager := session.NewManager(fake, settings.Defaults)
 	defer manager.Close()
 	server := &Server{Manager: manager}
 
@@ -142,7 +212,7 @@ func TestSubscriptionEventAndConnectSelector(t *testing.T) {
 }
 
 func TestSlowClientIsDroppedWhenWriteQueueFills(t *testing.T) {
-	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}))
+	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}), settings.Defaults)
 	defer manager.Close()
 	server := &Server{Manager: manager, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), QueueSize: 1}
 	serverConn, clientConn := netPipe(t)

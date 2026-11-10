@@ -13,6 +13,7 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/session"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
 )
 
@@ -25,6 +26,7 @@ const (
 type Server struct {
 	Manager   *session.Manager
 	Subs      *subs.Store
+	Settings  *settings.Store
 	Logger    *slog.Logger
 	QueueSize int
 }
@@ -175,6 +177,30 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "connection could not be stopped"}
 		}
 		return status, nil, nil
+	case "settings.get":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Settings == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "settings store is unavailable"}
+		}
+		return s.Settings.Get(), nil, nil
+	case "settings.set":
+		var patch map[string]json.RawMessage
+		if !decodeParams(request.Params, &patch) || patch == nil {
+			return nil, nil, badParams()
+		}
+		if s.Settings == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "settings store is unavailable"}
+		}
+		configured, err := s.Settings.Set(patch)
+		if errors.Is(err, settings.ErrBadParams) {
+			return nil, nil, badParams()
+		}
+		if err != nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "settings could not be saved"}
+		}
+		return configured, nil, nil
 	case "subscribe":
 		var params struct {
 			Events []string `json:"events"`
@@ -365,10 +391,10 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	server := &Server{Manager: manager, Logger: logger, Subs: store}
+	server := &Server{Manager: manager, Logger: logger, Subs: store, Settings: settingsStore}
 	if store != nil {
 		go func() {
 			for {
@@ -377,6 +403,19 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 					return
 				case <-store.Changes():
 					manager.Events().Publish("subs", map[string]any{"subs": store.List()})
+				}
+			}
+		}()
+	}
+	if settingsStore != nil {
+		go func() {
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-settingsStore.Changes():
+					manager.SettingsChanged()
+					manager.Events().Publish("settings", settingsStore.Get())
 				}
 			}
 		}()

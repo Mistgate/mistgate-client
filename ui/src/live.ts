@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import FLAGS from './design/flags.json';
 import { words } from './live-i18n';
+import { pref } from './live-settings';
 
 type Status = { state: string; step: string; since_unix: number; server: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
@@ -57,7 +58,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? this.sync() : this.setState({ cs: 'svc', wave: false }))),
       ];
       document.addEventListener('paste', this.onPaste, true);
-      this.sync();
+      // the choice made before the window went to another screen, or was closed
+      this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined }, () => this.sync());
     }
     componentWillUnmount() {
       super.componentWillUnmount();
@@ -103,6 +105,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       // the design's own switches: which sample plan it thinks is shown (5 none, 4 expired) and whether it has servers
       const expired = !!sub && sub.expire_unix > 0 && sub.expire_unix * 1000 < Date.now();
       const sel = sub?.servers.some((s) => s.id === this.st().sel) ? this.st().sel : 'auto';
+      pref.set('sub', sub?.id ?? '');
+      pref.set('server', sel);
       this.setState({ si: !sub ? 5 : expired ? 4 : 0, svN: sub?.servers.length ? 8 : 0, subst: 'ok', liveSub: sub?.id, sel });
     }
     connect() {
@@ -110,6 +114,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       this.ask('connect', { server: sel && sel !== 'auto' ? sel : 'auto', sub: this.sub()?.id ?? '' });
     }
     choose(id: string) {
+      pref.set('server', id);
       this.setState({ sel: id, pop: false }, () => {
         if (this.live && ['connected', 'connecting', 'reconnecting'].includes(this.live.state)) this.connect();
       });
@@ -164,7 +169,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         v.up = mbps(this.traffic.tx_bps);
         v.msTxt.cur = v.cur.ms = String(this.traffic.rtt_ms);
       } else if (on) v.down = v.up = '0.0';
-      v.csUnblock = () => this.ask('disconnect'); // "Unblock": open the network, stay off
+      // "Unblock": open the network, stay off. Held by the "always" kill switch, that means stepping it down:
+      // the service opens the network and reports off.
+      v.csUnblock = () => (s?.error === 'kill_switch' ? void rpc('settings.set', { kill_switch: 'while' }).catch(() => {}) : this.ask('disconnect'));
       v.det = { on: false }; // the detector's chip is the design's sample until the detectors exist
       if (v.isErr) v.csS = ''; // the design's line counts tried servers; the service does not report that yet
       if (this.subsList) this.subsVals(v, on ? s : null);

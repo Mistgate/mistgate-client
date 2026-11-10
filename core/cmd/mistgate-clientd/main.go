@@ -15,6 +15,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/ipc"
 	"github.com/mistgate/mistgate-client/core/internal/session"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
 )
 
@@ -83,18 +84,23 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 		fmt.Fprintln(os.Stderr, "cannot open the data directory:", err)
 		return err
 	}
+	settingsStore, err := settings.Open(dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cannot open settings:", err)
+		return err
+	}
 	go store.Run(ctx)
 	var eng engine.Engine
 	if useFake {
 		eng = engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
 	} else {
-		eng = engine.NewReal(store.Profiles, verify)
+		eng = engine.NewReal(store.Profiles, settingsStore.Get, verify)
 	}
-	manager := session.NewManager(eng)
+	manager := session.NewManager(eng, settingsStore.Get)
 	defer manager.Close()
 	logger := ipc.NewEventLogger(func(data any) { manager.Events().Publish("log", data) })
 	slog.SetDefault(logger)
-	if err := ipc.Run(ctx, manager, logger, store); err != nil {
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore); err != nil {
 		logger.Error("service stopped", "error", err)
 		return err
 	}

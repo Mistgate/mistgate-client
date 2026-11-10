@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
 type Status struct {
@@ -26,6 +27,7 @@ func (e *CodeError) Error() string { return e.Code }
 
 type Manager struct {
 	engine        engine.Engine
+	getSettings   func() settings.Settings
 	hub           *Hub
 	commands      chan any
 	done          chan struct{}
@@ -44,6 +46,7 @@ type connectReply struct {
 	err    error
 }
 type disconnectRequest struct{ reply chan Status }
+type settingsChangedRequest struct{}
 type attemptStep struct {
 	generation uint64
 	step       engine.Step
@@ -73,14 +76,14 @@ type actorState struct {
 	retryIndex       int
 }
 
-func NewManager(eng engine.Engine) *Manager {
-	return newManager(eng, 5*time.Second, []time.Duration{
+func NewManager(eng engine.Engine, getSettings func() settings.Settings) *Manager {
+	return newManager(eng, getSettings, 5*time.Second, []time.Duration{
 		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
 		15 * time.Second, 30 * time.Second,
 	})
 }
 
-func newManager(eng engine.Engine, probeInterval time.Duration, backoff []time.Duration) *Manager {
+func newManager(eng engine.Engine, getSettings func() settings.Settings, probeInterval time.Duration, backoff []time.Duration) *Manager {
 	if probeInterval <= 0 {
 		probeInterval = 5 * time.Second
 	}
@@ -89,6 +92,7 @@ func newManager(eng engine.Engine, probeInterval time.Duration, backoff []time.D
 	}
 	m := &Manager{
 		engine:        eng,
+		getSettings:   getSettings,
 		hub:           NewHub(DefaultEventQueue),
 		commands:      make(chan any, 32),
 		done:          make(chan struct{}),
@@ -100,6 +104,13 @@ func newManager(eng engine.Engine, probeInterval time.Duration, backoff []time.D
 }
 
 func (m *Manager) Events() *Hub { return m.hub }
+
+func (m *Manager) SettingsChanged() {
+	select {
+	case m.commands <- settingsChangedRequest{}:
+	case <-m.done:
+	}
+}
 
 func (m *Manager) Status(ctx context.Context) (Status, error) {
 	reply := make(chan Status, 1)
@@ -178,6 +189,10 @@ func (m *Manager) run() {
 	defer close(m.done)
 	defer m.hub.Close()
 	state := actorState{status: Status{State: "off"}}
+	if m.engine != nil && m.currentSettings().KillSwitch == "always" && m.engine.Hold() {
+		state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
+		m.hub.Publish("status", state.status)
+	}
 	traffic := time.NewTicker(time.Second)
 	defer traffic.Stop()
 	var healthTimer, retryTimer *time.Timer
@@ -228,6 +243,8 @@ func (m *Manager) run() {
 				clearTimer(&retryTimer, &retryC)
 				m.stop(&state)
 				request.reply <- state.status
+			case settingsChangedRequest:
+				m.settingsChanged(&state)
 			case attemptStep:
 				if request.generation == state.generation && (state.status.State == "connecting" || state.status.State == "reconnecting") && state.status.Step != string(request.step) {
 					state.status.Step = string(request.step)
@@ -244,7 +261,15 @@ func (m *Manager) run() {
 						state.runCancel = nil
 					}
 					code := engine.ErrorCode(request.err)
-					if state.status.State == "reconnecting" {
+					if m.currentSettings().KillSwitch == "always" {
+						if m.engine != nil && m.engine.Hold() {
+							state.status.State = "blocked"
+						} else {
+							state.status.State = "error"
+						}
+						state.status.Error = code
+						clearTimer(&retryTimer, &retryC)
+					} else if state.status.State == "reconnecting" {
 						state.status.Error = code
 						if fatalReconnectCode(code) {
 							state.status.State = "blocked"
@@ -302,7 +327,7 @@ func (m *Manager) run() {
 					}
 					m.hub.Publish("status", state.status)
 					target := state.target
-					target.Hold = true
+					target.Hold = holdFor(m.currentSettings(), true)
 					m.startAttempt(&state, target)
 					continue
 				}
@@ -335,7 +360,7 @@ func (m *Manager) run() {
 			retryC = nil
 			if state.status.State == "reconnecting" && state.runCancel == nil {
 				target := state.target
-				target.Hold = true
+				target.Hold = holdFor(m.currentSettings(), true)
 				m.startAttempt(&state, target)
 			}
 		case _, ok := <-changed:
@@ -354,7 +379,7 @@ func (m *Manager) run() {
 			} else if state.status.State == "reconnecting" && state.runCancel == nil {
 				clearTimer(&retryTimer, &retryC)
 				target := state.target
-				target.Hold = true
+				target.Hold = holdFor(m.currentSettings(), true)
 				m.startAttempt(&state, target)
 			}
 		}
@@ -362,8 +387,8 @@ func (m *Manager) run() {
 }
 
 func (m *Manager) connect(state *actorState, target engine.Target) (Status, error) {
-	reconnecting := state.status.State == "reconnecting" || state.status.State == "blocked"
-	if reconnecting {
+	reconnecting := state.status.State == "reconnecting" || state.status.State == "blocked" && state.status.Error != "kill_switch"
+	if reconnecting || state.status.State == "blocked" {
 		if target.Server == "" || target.Server == "auto" {
 			target.Server = state.target.Server
 		}
@@ -377,7 +402,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	if target.Protocol == "" {
 		target.Protocol = "auto"
 	}
-	target.Hold = reconnecting
+	target.Hold = holdFor(m.currentSettings(), reconnecting)
 	if m.engine == nil {
 		state.generation++
 		state.status = Status{State: "error", SinceUnix: time.Now().Unix(), Server: target.Server, Protocol: target.Protocol, Error: "no_subscription"}
@@ -409,7 +434,11 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	if state.runCancel != nil {
 		state.runCancel()
 		state.runCancel = nil
-		m.engine.Stop()
+		if target.Hold {
+			m.engine.Hold()
+		} else {
+			m.engine.Stop()
+		}
 	}
 	if state.probeCancel != nil {
 		state.probeCancel()
@@ -499,16 +528,74 @@ func (m *Manager) stop(state *actorState) {
 		state.probeCancel()
 		state.probeCancel = nil
 	}
-	if m.engine != nil {
-		m.engine.Stop()
-	}
+	held := m.engine != nil && m.currentSettings().KillSwitch == "always" && m.engine.Hold()
 	state.generation++
-	state.status = Status{State: "off"}
-	state.target = engine.Target{}
+	if held {
+		state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
+	} else {
+		if m.engine != nil {
+			m.engine.Stop()
+		}
+		state.status = Status{State: "off"}
+		state.target = engine.Target{}
+	}
 	state.probeFailures = 0
 	state.probePending, state.probePendingFast = false, false
 	state.retryIndex = 0
 	m.hub.Publish("status", state.status)
+}
+
+func (m *Manager) settingsChanged(state *actorState) {
+	configured := m.currentSettings()
+	switch state.status.State {
+	case "connected":
+		if m.engine != nil {
+			m.engine.Reapply()
+		}
+	case "off", "error":
+		if configured.KillSwitch == "always" && m.engine != nil && m.engine.Hold() {
+			state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
+			m.hub.Publish("status", state.status)
+		}
+	case "blocked":
+		if state.status.Error == "kill_switch" && configured.KillSwitch != "always" {
+			if m.engine != nil {
+				m.engine.Stop()
+			}
+			state.generation++
+			state.status = Status{State: "off"}
+			state.target = engine.Target{}
+			m.hub.Publish("status", state.status)
+		} else if configured.KillSwitch == "always" && m.engine != nil {
+			m.engine.Reapply()
+		}
+	case "reconnecting":
+		state.target.Hold = holdFor(configured, true)
+		if configured.KillSwitch == "off" {
+			wasRunning := state.runCancel != nil
+			if wasRunning {
+				state.runCancel()
+				state.runCancel = nil
+			}
+			if m.engine != nil {
+				m.engine.Stop()
+			}
+			if wasRunning {
+				m.startAttempt(state, state.target)
+			}
+		}
+	}
+}
+
+func (m *Manager) currentSettings() settings.Settings {
+	if m.getSettings == nil {
+		return settings.Defaults()
+	}
+	return m.getSettings()
+}
+
+func holdFor(configured settings.Settings, reconnecting bool) bool {
+	return configured.KillSwitch == "always" || reconnecting && configured.KillSwitch != "off"
 }
 
 func (m *Manager) backoffAt(index int) time.Duration {

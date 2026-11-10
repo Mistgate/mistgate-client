@@ -41,7 +41,7 @@ func NewHub(queueSize int) *Hub {
 func (h *Hub) Subscribe(names []string) (*Subscription, error) {
 	wants := make(map[string]struct{}, len(names))
 	for _, name := range names {
-		if name != "status" && name != "traffic" && name != "log" && name != "subs" {
+		if name != "status" && name != "traffic" && name != "log" && name != "subs" && name != "settings" {
 			return nil, errors.New("unsupported event")
 		}
 		wants[name] = struct{}{}

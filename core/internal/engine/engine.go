@@ -36,6 +36,8 @@ type Engine interface {
 	Start(ctx context.Context, target Target, report func(Step)) (Info, error)
 	// Stop must be safe to call while Start is running and opens the network.
 	Stop()
+	Hold() bool
+	Reapply()
 	Stats() Traffic
 	Probe(ctx context.Context) error
 	Changed() <-chan struct{}

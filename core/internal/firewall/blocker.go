@@ -100,7 +100,7 @@ func registerBaseObjects(session uintptr) (*baseObjects, error) {
 	return bo, nil
 }
 
-func EnableFirewall(luid uint64, doNotRestrict bool, restrictToDNSServers []netip.Addr) error {
+func EnableFirewall(luid uint64, doNotRestrict, allowLAN bool, restrictToDNSServers []netip.Addr) error {
 	wfpSessionMu.Lock()
 	defer wfpSessionMu.Unlock()
 
@@ -115,17 +115,21 @@ func EnableFirewall(luid uint64, doNotRestrict bool, restrictToDNSServers []neti
 			return wrapErr(err)
 		}
 
-		err = permitWireGuardService(session, baseObjects, 15)
-		if err != nil {
-			return wrapErr(err)
+		if !doNotRestrict {
+			err = permitWireGuardService(session, baseObjects, 15)
+			if err != nil {
+				return wrapErr(err)
+			}
 		}
 
-		if !doNotRestrict {
+		if !doNotRestrict || len(restrictToDNSServers) > 0 {
 			err = blockDNS(restrictToDNSServers, session, baseObjects, 15, 14)
 			if err != nil {
 				return wrapErr(err)
 			}
+		}
 
+		if !doNotRestrict {
 			err = permitLoopback(session, baseObjects, 13)
 			if err != nil {
 				return wrapErr(err)
@@ -146,9 +150,11 @@ func EnableFirewall(luid uint64, doNotRestrict bool, restrictToDNSServers []neti
 				return wrapErr(err)
 			}
 
-			err = permitLAN(session, baseObjects, 12)
-			if err != nil {
-				return wrapErr(err)
+			if allowLAN {
+				err = permitLAN(session, baseObjects, 12)
+				if err != nil {
+					return wrapErr(err)
+				}
 			}
 
 			err = permitNdp(session, baseObjects, 12)

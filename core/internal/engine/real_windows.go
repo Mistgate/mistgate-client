@@ -27,6 +27,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/firewall"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
@@ -34,8 +35,9 @@ import (
 var killSwitchWarning sync.Once
 
 type Real struct {
-	load   func() ([]profile.Profile, error)
-	verify string
+	load        func() ([]profile.Profile, error)
+	getSettings func() settings.Settings
+	verify      string
 
 	lifecycle sync.Mutex
 	mu        sync.Mutex
@@ -52,6 +54,8 @@ type realRun struct {
 	verify  string
 	probeIP netip.Addr
 	rtt     time.Duration
+	luid    uint64
+	dns     []netip.Addr
 
 	lastRX      uint64
 	lastTX      uint64
@@ -67,12 +71,12 @@ type realTunnel struct {
 	awg     *device.Device
 }
 
-func NewReal(load func() ([]profile.Profile, error), verifyOverride ...string) *Real {
+func NewReal(load func() ([]profile.Profile, error), getSettings func() settings.Settings, verifyOverride ...string) *Real {
 	verify := ""
 	if len(verifyOverride) != 0 {
 		verify = verifyOverride[0]
 	}
-	r := &Real{load: load, verify: verify, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
+	r := &Real{load: load, getSettings: getSettings, verify: verify, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
 	callback, err := winipcfg.RegisterRouteChangeCallback(func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
 		if route == nil || route.DestinationPrefix.Prefix().Bits() != 0 {
 			return
@@ -110,7 +114,10 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		}
 	}()
 	if startErr != nil {
-		return Info{}, startErr
+		if runCtx.Err() != nil {
+			return Info{}, runCtx.Err()
+		}
+		return Info{}, failure("tunnel_failed", "enable firewall rules")
 	}
 	if err := runCtx.Err(); err != nil {
 		return Info{}, err
@@ -126,7 +133,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if err := runCtx.Err(); err != nil {
 		return Info{}, err
 	}
-	selected, ok := profile.Pick(profiles, target.Server, target.Protocol, target.Sub)
+	configured := r.settings()
+	selected, ok := profile.PickForSettings(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game)
 	if !ok {
 		return Info{}, failure("no_subscription", "select profile")
 	}
@@ -201,11 +209,14 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return Info{}, context.Canceled
 		}
 		dns := []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
-		if err := r.setFirewall(run, true, adapter.LUID(), dns); err != nil {
+		configured = r.settings()
+		if err := r.setFirewall(run, configured.KillSwitch == "off", adapter.LUID(), dns, configured.LAN); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
-			return Info{}, failure("tunnel_failed", "enable kill switch")
+			if !consoleFirewallUnavailable(err) || configured.KillSwitch == "always" {
+				return Info{}, failure("tunnel_failed", "enable firewall rules")
+			}
 		}
 		if err := adapter.Configure(netcfg.Config{
 			MTU:       1500,
@@ -240,11 +251,14 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			// ponytail: fixed resolvers until settings and the subscription carry them.
 			dns = []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
 		}
-		if err := r.setFirewall(run, true, adapter.LUID(), dns); err != nil {
+		configured = r.settings()
+		if err := r.setFirewall(run, configured.KillSwitch == "off", adapter.LUID(), dns, configured.LAN); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
-			return Info{}, failure("tunnel_failed", "enable kill switch")
+			if !consoleFirewallUnavailable(err) || configured.KillSwitch == "always" {
+				return Info{}, failure("tunnel_failed", "enable firewall rules")
+			}
 		}
 		if err := adapter.Configure(netcfg.Config{
 			MTU:       selected.AWG.MTU,
@@ -306,14 +320,18 @@ func (r *Real) startRun(ctx context.Context, hold bool) (context.Context, *realR
 	r.mu.Unlock()
 	var err error
 	if hold {
-		err = r.setFirewall(run, true, 0, nil)
+		settings := r.settings()
+		err = r.setFirewall(run, false, 0, nil, settings.LAN)
+		if consoleFirewallUnavailable(err) && settings.KillSwitch != "always" {
+			err = nil
+		}
 	}
 	if old != nil {
 		old.cancel()
 		old.tunnel.Close()
 	}
 	if !hold {
-		_ = r.setFirewall(run, false, 0, nil)
+		firewall.DisableFirewall()
 	}
 	r.lifecycle.Unlock()
 	return runCtx, run, err
@@ -327,7 +345,7 @@ func (r *Real) finish(run *realRun) {
 	r.mu.Unlock()
 	if current {
 		if !run.hold {
-			_ = r.setFirewall(run, false, 0, nil)
+			firewall.DisableFirewall()
 		}
 		r.mu.Lock()
 		if r.current == run {
@@ -349,28 +367,97 @@ func (r *Real) Stop() {
 		run.cancel()
 		run.tunnel.Close()
 	}
-	_ = r.setFirewall(nil, false, 0, nil)
+	firewall.DisableFirewall()
 	r.lifecycle.Unlock()
 }
 
-func (r *Real) setFirewall(run *realRun, enable bool, luid uint64, dns []netip.Addr) error {
+// ponytail: always is open before service startup and after a crash; upgrade = persistent (non-dynamic) rules installed by the service.
+func (r *Real) Hold() bool {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	_, cancel := context.WithCancel(context.Background())
+	run := &realRun{cancel: cancel, tunnel: &realTunnel{}, hold: true, lastStatsAt: time.Now()}
+	r.mu.Lock()
+	old := r.current
+	r.current = run
+	r.mu.Unlock()
+	configured := r.settings()
+	err := r.setFirewall(run, false, 0, nil, configured.LAN)
+	if old != nil {
+		old.cancel()
+		old.tunnel.Close()
+	}
+	if err != nil {
+		consoleFirewallUnavailable(err)
+		r.mu.Lock()
+		if r.current == run {
+			r.current = nil
+		}
+		r.mu.Unlock()
+		cancel()
+		run.tunnel.Close()
+		firewall.DisableFirewall()
+		return false
+	}
+	return true
+}
+
+func (r *Real) Reapply() {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	configured := r.settings()
+	r.mu.Lock()
+	run := r.current
+	if run == nil {
+		r.mu.Unlock()
+		return
+	}
+	adapter := run.tunnel.adapterSnapshot()
+	luid := run.luid
+	if adapter != nil {
+		luid = adapter.LUID()
+	}
+	dns := append([]netip.Addr(nil), run.dns...)
+	doNotRestrict := adapter != nil && configured.KillSwitch == "off"
+	if adapter == nil && run.hold {
+		doNotRestrict = false
+	}
+	if adapter == nil && !run.hold {
+		r.mu.Unlock()
+		return
+	}
+	r.mu.Unlock()
+	if err := r.setFirewall(run, doNotRestrict, luid, dns, configured.LAN); err != nil && !consoleFirewallUnavailable(err) {
+		slog.Error("could not reapply firewall rules", "error", err)
+	}
+}
+
+func (r *Real) setFirewall(run *realRun, doNotRestrict bool, luid uint64, dns []netip.Addr, allowLAN bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if run != nil && r.current != run {
 		return context.Canceled
 	}
-	if !enable {
-		firewall.DisableFirewall()
-		return nil
+	if run != nil {
+		run.luid = luid
+		run.dns = append([]netip.Addr(nil), dns...)
 	}
-	if err := firewall.EnableFirewall(luid, false, dns); err != nil {
-		if errors.Is(err, windows.ERROR_NO_SUCH_GROUP) {
-			killSwitchWarning.Do(func() { slog.Warn("kill switch is off: not running as the Windows service") })
-			return nil
-		}
-		return err
+	return firewall.EnableFirewall(luid, doNotRestrict, allowLAN, dns)
+}
+
+func (r *Real) settings() settings.Settings {
+	if r.getSettings != nil {
+		return r.getSettings()
 	}
-	return nil
+	return settings.Defaults()
+}
+
+func consoleFirewallUnavailable(err error) bool {
+	if errors.Is(err, windows.ERROR_NO_SUCH_GROUP) {
+		killSwitchWarning.Do(func() { slog.Warn("kill switch is off: not running as the Windows service") })
+		return true
+	}
+	return false
 }
 
 func (r *Real) Stats() Traffic {

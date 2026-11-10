@@ -471,3 +471,22 @@ func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 	}
 	return Profile{}, false
 }
+
+func PickForSettings(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool) (Profile, bool) {
+	if server != "" && server != "auto" {
+		return Pick(profiles, server, "auto", sub)
+	}
+	protocol := requestedProtocol
+	if protocol == "" || protocol == "auto" {
+		protocol = configuredProtocol
+	}
+	if protocol != "" && protocol != "auto" {
+		return Pick(profiles, server, protocol, sub)
+	}
+	if game {
+		if selected, ok := Pick(profiles, server, "awg", sub); ok {
+			return selected, true
+		}
+	}
+	return Pick(profiles, server, "auto", sub)
+}

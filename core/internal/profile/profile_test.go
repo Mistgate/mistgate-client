@@ -178,6 +178,30 @@ func TestPick(t *testing.T) {
 	}
 }
 
+func TestPickForSettingsGameModePrefersAWG(t *testing.T) {
+	profiles := []Profile{
+		{ID: "hy2", Protocol: "hysteria2", Sub: "one"},
+		{ID: "awg", Protocol: "awg", Sub: "one"},
+		{ID: "other-awg", Protocol: "awg", Sub: "two"},
+		{ID: "only-hy2", Protocol: "hysteria2", Sub: "three"},
+	}
+	if got, ok := PickForSettings(profiles, "auto", "auto", "one", "auto", true); !ok || got.ID != "awg" {
+		t.Fatalf("game selection = %#v, %v; want awg", got, ok)
+	}
+	if got, ok := PickForSettings(profiles, "auto", "auto", "one", "hysteria2", true); !ok || got.ID != "hy2" {
+		t.Fatalf("configured protocol selection = %#v, %v; want hy2", got, ok)
+	}
+	if got, ok := PickForSettings(profiles, "awg", "hysteria2", "one", "hysteria2", true); !ok || got.ID != "awg" {
+		t.Fatalf("concrete server selection = %#v, %v; want awg", got, ok)
+	}
+	if got, ok := PickForSettings(profiles, "auto", "auto", "one", "auto", true); !ok || got.ID == "other-awg" {
+		t.Fatalf("subscription selection = %#v, %v; selected server from another subscription", got, ok)
+	}
+	if got, ok := PickForSettings(profiles, "auto", "auto", "three", "auto", true); !ok || got.ID != "only-hy2" {
+		t.Fatalf("game fallback = %#v, %v; want the only available server", got, ok)
+	}
+}
+
 func TestParseUintRange(t *testing.T) {
 	for input, expected := range map[string]string{"5": "5", "20-63": "20-63", "0003-0004": "3-4"} {
 		got, err := parseUintRange(input, 16)

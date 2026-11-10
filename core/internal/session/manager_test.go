@@ -2,11 +2,13 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
 func TestSessionScenarios(t *testing.T) {
@@ -22,14 +24,221 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "fatal retry blocks and connect retries", run: testFatalRetryBlocksAndConnectRetries},
 		{name: "route change makes probe failure immediate", run: testRouteChangeMakesProbeFailureImmediate},
 		{name: "disconnect cancels retry wait", run: testDisconnectCancelsRetryWait},
+		{name: "always holds at start and through disconnect", run: testAlwaysHoldsAtStartAndDisconnect},
+		{name: "always failed connect blocks without retries", run: testAlwaysFailedConnectBlocks},
+		{name: "always unavailable hold is not reported as blocked", run: testAlwaysUnavailableHoldIsNotBlocked},
+		{name: "settings changes apply hold transitions", run: testSettingsChangesApplyHoldTransitions},
+		{name: "off reconnect does not hold", run: testOffReconnectDoesNotHold},
+		{name: "connected settings reapply firewall", run: testConnectedSettingsReapplyFirewall},
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)
 	}
 }
 
+func testAlwaysHoldsAtStartAndDisconnect(t *testing.T) {
+	store := testSettings(t, "always")
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	manager := NewManager(fake, store.Get)
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	status, err := manager.Status(context.Background())
+	if err != nil || status.State != "blocked" || status.Error != "kill_switch" {
+		t.Fatalf("startup status = %#v, %v; want blocked/kill_switch", status, err)
+	}
+	if got := fake.HoldCount(); got != 1 {
+		t.Fatalf("startup Hold() calls = %d, want 1", got)
+	}
+	status, err = manager.Disconnect(context.Background())
+	if err != nil || status.State != "blocked" || status.Error != "kill_switch" {
+		t.Fatalf("Disconnect() = %#v, %v; want blocked/kill_switch", status, err)
+	}
+	status, err = manager.Connect(context.Background(), engine.Target{Server: "server-a"})
+	if err != nil || status.State != "connecting" {
+		t.Fatalf("Connect() = %#v, %v; want normal connect", status, err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if targets := fake.Targets(); len(targets) != 1 || !targets[0].Hold {
+		t.Fatalf("Start targets = %#v, want Hold true", targets)
+	}
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := receiveStatus(t, subscription.C); got.State != "blocked" || got.Error != "kill_switch" {
+		t.Fatalf("disconnect event = %#v, want blocked/kill_switch", got)
+	}
+	fake.SetFailStartCode("offline")
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "server-b"}); err != nil {
+		t.Fatal(err)
+	}
+	blocked := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "offline" })
+	if blocked.Error != "offline" {
+		t.Fatalf("failed retry status = %#v, want blocked/offline", blocked)
+	}
+}
+
+func testAlwaysFailedConnectBlocks(t *testing.T) {
+	store := testSettings(t, "always")
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
+	manager := NewManager(fake, store.Get)
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	blocked := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "offline" })
+	if blocked.Error != "offline" {
+		t.Fatalf("blocked error = %q, want offline", blocked.Error)
+	}
+	if got := fake.StartCount(); got != 1 {
+		t.Fatalf("Start() calls = %d, want no automatic retry", got)
+	}
+}
+
+func testAlwaysUnavailableHoldIsNotBlocked(t *testing.T) {
+	store := testSettings(t, "always")
+	holdResult := false
+	fake := engine.NewFake(engine.FakeConfig{HoldResult: &holdResult, FailStartCode: "offline"})
+	manager := NewManager(fake, store.Get)
+	defer manager.Close()
+	status, err := manager.Status(context.Background())
+	if err != nil || status.State != "off" {
+		t.Fatalf("startup status = %#v, %v; want ordinary off", status, err)
+	}
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	status = waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "error" })
+	if status.Error != "offline" {
+		t.Fatalf("failure status = %#v, want ordinary error/offline", status)
+	}
+	if got := fake.HoldCount(); got < 2 {
+		t.Fatalf("Hold() calls = %d, want startup and failed attempt", got)
+	}
+}
+
+func testSettingsChangesApplyHoldTransitions(t *testing.T) {
+	store := testSettings(t, "while")
+	fake := engine.NewFake(engine.FakeConfig{})
+	manager := NewManager(fake, store.Get)
+	defer manager.Close()
+	setKillSwitch(t, store, "always")
+	manager.SettingsChanged()
+	status := waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "blocked" })
+	if status.Error != "kill_switch" {
+		t.Fatalf("status = %#v, want blocked/kill_switch", status)
+	}
+	setKillSwitch(t, store, "while")
+	manager.SettingsChanged()
+	status = waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "off" })
+	if status.Error != "" {
+		t.Fatalf("status after leaving always = %#v, want off", status)
+	}
+}
+
+func testOffReconnectDoesNotHold(t *testing.T) {
+	store := testSettings(t, "off")
+	changed := make(chan struct{}, 1)
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, Changed: changed})
+	manager := newManager(fake, store.Get, time.Hour, []time.Duration{time.Second})
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	fake.SetProbeErr(errors.New("dead tunnel"))
+	changed <- struct{}{}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" })
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if targets := fake.Targets(); len(targets) != 2 || targets[0].Hold || targets[1].Hold {
+		t.Fatalf("Start targets = %#v, want unheld initial and retry", targets)
+	}
+}
+
+func testConnectedSettingsReapplyFirewall(t *testing.T) {
+	store := testSettings(t, "while")
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	manager := NewManager(fake, store.Get)
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if _, err := store.Set(map[string]json.RawMessage{"lan": json.RawMessage(`false`)}); err != nil {
+		t.Fatal(err)
+	}
+	manager.SettingsChanged()
+	deadline := time.After(time.Second)
+	for fake.ReapplyCount() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("Reapply() was not called")
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
+func testSettings(t *testing.T, killSwitch string) *settings.Store {
+	t.Helper()
+	store, err := settings.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if killSwitch != "while" {
+		setKillSwitch(t, store, killSwitch)
+	}
+	return store
+}
+
+func setKillSwitch(t *testing.T, store *settings.Store, value string) {
+	t.Helper()
+	if _, err := store.Set(map[string]json.RawMessage{"kill_switch": json.RawMessage(`"` + value + `"`)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitForManagerStatus(t *testing.T, manager *Manager, match func(Status) bool) Status {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		status, err := manager.Status(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if match(status) {
+			return status
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("timed out waiting for manager status")
+	return Status{}
+}
+
 func testConnectDisconnectEventOrder(t *testing.T) {
-	manager := NewManager(engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond}))
+	manager := NewManager(engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond}), settings.Defaults)
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -65,7 +274,7 @@ func testConnectDisconnectEventOrder(t *testing.T) {
 }
 
 func testConnectingAttemptIsReplaced(t *testing.T) {
-	manager := NewManager(engine.NewFake(engine.FakeConfig{StepDelay: 35 * time.Millisecond}))
+	manager := NewManager(engine.NewFake(engine.FakeConfig{StepDelay: 35 * time.Millisecond}), settings.Defaults)
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -100,7 +309,7 @@ func testConnectingAttemptIsReplaced(t *testing.T) {
 }
 
 func testEngineFailureSetsErrorCode(t *testing.T) {
-	manager := NewManager(engine.NewFake(engine.FakeConfig{FailAt: engine.StepHandshake, FailCode: "offline"}))
+	manager := NewManager(engine.NewFake(engine.FakeConfig{FailAt: engine.StepHandshake, FailCode: "offline"}), settings.Defaults)
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -128,7 +337,7 @@ func testEngineFailureSetsErrorCode(t *testing.T) {
 }
 
 func testMissingEngineReturnsNoSubscription(t *testing.T) {
-	manager := NewManager(nil)
+	manager := NewManager(nil, settings.Defaults)
 	defer manager.Close()
 	status, err := manager.Connect(context.Background(), engine.Target{})
 	codeError, ok := err.(*CodeError)
@@ -142,7 +351,7 @@ func testMissingEngineReturnsNoSubscription(t *testing.T) {
 
 func testDeadTunnelReconnectsWithEventOrder(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: 5 * time.Millisecond})
-	manager := newManager(fake, 5*time.Millisecond, []time.Duration{10 * time.Millisecond})
+	manager := newManager(fake, settings.Defaults, 5*time.Millisecond, []time.Duration{10 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -193,7 +402,7 @@ func testDeadTunnelReconnectsWithEventOrder(t *testing.T) {
 
 func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
-	manager := newManager(fake, 5*time.Millisecond, []time.Duration{10 * time.Millisecond})
+	manager := newManager(fake, settings.Defaults, 5*time.Millisecond, []time.Duration{10 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -234,7 +443,7 @@ func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 func testRouteChangeMakesProbeFailureImmediate(t *testing.T) {
 	changed := make(chan struct{}, 1)
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, Changed: changed})
-	manager := newManager(fake, time.Hour, []time.Duration{time.Second})
+	manager := newManager(fake, settings.Defaults, time.Hour, []time.Duration{time.Second})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -260,7 +469,7 @@ func testRouteChangeMakesProbeFailureImmediate(t *testing.T) {
 
 func testDisconnectCancelsRetryWait(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
-	manager := newManager(fake, 5*time.Millisecond, []time.Duration{40 * time.Millisecond})
+	manager := newManager(fake, settings.Defaults, 5*time.Millisecond, []time.Duration{40 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {

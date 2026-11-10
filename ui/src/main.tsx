@@ -27,7 +27,7 @@ const inApp = '__TAURI_INTERNALS__' in window;
 if (inApp || shell !== undefined) document.documentElement.classList.add('shell');
 if (inApp) void import('./shell').then((m) => m.attachWindow());
 // In the app window Home talks to the service; in a browser it stays the design's mock.
-const live = inApp ? import('./live') : null;
+const live = inApp ? Promise.all([import('./live'), import('./live-settings')]) : null;
 
 // A window nobody looks at draws nothing: its animations stop while it is hidden or out of focus.
 const rest = () => document.documentElement.classList.toggle('idle', document.hidden || !document.hasFocus());
@@ -36,11 +36,23 @@ document.addEventListener('visibilitychange', rest);
 rest();
 
 void Promise.all([loadScreens(lang), live]).then(([screens, l]) => {
-  if (l) screens.Main = l.liveHome(screens.Main);
+  if (l) {
+    const [home, rest] = l;
+    screens.Main = home.liveHome(screens.Main);
+    screens.Settings = rest.liveSettings(screens.Settings);
+    for (const name of ['Routes', 'Diag']) screens[name] = rest.liveChip(screens[name]);
+  }
   function App() {
     const [screen, setScreen] = React.useState(first);
+    // the theme is the window's, not one screen's: Settings changes it, every screen gets it
+    const [theme, setTheme] = React.useState(() => { try { return localStorage.getItem('theme'); } catch { return null; } });
+    React.useEffect(() => {
+      const on = (e: Event) => setTheme((e as CustomEvent<string>).detail);
+      window.addEventListener('mg-theme', on);
+      return () => window.removeEventListener('mg-theme', on);
+    }, []);
     const Screen = screens[screen] ?? screens.Main;
-    return <NavContext.Provider value={setScreen}><Screen key={screen} {...props} /></NavContext.Provider>;
+    return <NavContext.Provider value={setScreen}><Screen key={screen} {...props} {...(theme ? { theme } : {})} /></NavContext.Provider>;
   }
   createRoot(document.getElementById('root')!).render(<App />);
 });

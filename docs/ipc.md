@@ -41,12 +41,14 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `status` | — | Status |
 | `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg", "sub": "<subscription id>"}` (all optional) | Status |
 | `disconnect` | — | Status |
-| `subscribe` | `{"events": ["status", "traffic", "log", "subs"]}` | `{}`; the events then arrive on this connection |
+| `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings"]}` | `{}`; the events then arrive on this connection |
 | `subs.list` | — | `{"subs": [Subscription…]}` |
 | `subs.preview` | `{"text": "<URL, links, or AWG config>"}` | Subscription, not saved (`id` is empty) |
 | `subs.add` | `{"text": "<URL, links, or AWG config>"}` | Subscription |
 | `subs.refresh` | `{"id": "<subscription id>"}` | Subscription |
 | `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
+| `settings.get` | — | Settings |
+| `settings.set` | the settings keys to change | Settings |
 
 Status:
 
@@ -59,17 +61,44 @@ protocol that are actually in use.
 
 `state`: `off` · `connecting` · `connected` · `reconnecting` · `error` · `blocked`.
 `step` while connecting or retrying: `resolve` · `handshake` · `tunnel` · `verify`. `error`: a code such as `no_server_answers`,
-`no_subscription`, `offline`, `server_not_found`, `auth_rejected`, `tunnel_failed`, `verify_failed`, `unsupported_os`.
+`no_subscription`, `offline`, `server_not_found`, `auth_rejected`, `tunnel_failed`, `verify_failed`, `unsupported_os`,
+or `kill_switch`.
 
-`reconnecting` means the service detected a dead tunnel and is retrying while keeping the network closed; `error` may
-contain the most recent failed retry code. `blocked` means a retry failed with `auth_rejected`, `no_subscription` or
-`unsupported_os`, so no automatic retries remain. Calling `connect` in `reconnecting` or `blocked` retries immediately
-while keeping the network closed. Calling `disconnect` in any state stops retries and opens the network. A first
-user-initiated `connect` failure ends in `error` with the network open.
+`reconnecting` means the service detected a dead tunnel and is retrying; whether the network stays closed depends on
+`kill_switch`. `error` may contain the most recent failed retry code. `blocked` means a retry failed with
+`auth_rejected`, `no_subscription` or `unsupported_os`, or the `always` kill switch is holding the network. Calling
+`connect` in `reconnecting` or a failure-blocked state retries immediately; from `blocked` with `kill_switch`, it
+starts a normal connect with the network held. Calling `disconnect` stops retries; in `always` it leaves the network
+held and reports `blocked` with `kill_switch`, otherwise it opens the network. A first
+user-initiated `connect` failure ends in `error` with the network open, except in `always`, where it ends in `blocked`
+with the attempt's error code.
+
+Settings are saved as plain JSON in `<data directory>\settings.json`; a missing or broken file starts with defaults.
+`kill_switch` is `off`, `while`, or `always` (default `while`); `lan` allows private and link-local addresses through
+the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, or `awg` (default `auto`); `game` prefers AWG
+when protocol selection is automatic (default `false`). `settings.set` accepts only these keys, updates only the keys
+provided, and returns `bad_params` for an unknown key or invalid value. Changes apply immediately to the active
+firewall policy and are pushed to subscribers of `settings` as a Settings object. When `connect.protocol` is omitted
+or `auto`, automatic selection uses the configured `protocol`; when that is also `auto`, `game: true` prefers AWG if
+the selected subscription has one. A concrete server id always uses that server's protocol.
+
+| `kill_switch` | connected | tunnel died / retrying | off or first connect failed | service start |
+|---|---|---|---|---|
+| `off` | DNS rules only | network open; retries are unheld | open | open |
+| `while` | full rules | held | open | open |
+| `always` | full rules | held; failed attempt becomes `blocked` | held; `blocked` with failure code or `kill_switch` | held at once |
+
+`off` still denies DNS outside the tunnel's resolvers while connected. `lan: false` removes the local network permits
+from full rules, including while held. `always` uses the dynamic WFP session, so its rules start when the service
+starts and disappear if the service crashes. The network is open from boot until service startup and after a crash;
+persistent firewall rules are not installed. A console run has no service SID, so Windows rejects the rules with
+`ERROR_NO_SUCH_GROUP`; it cannot hold the network. It warns once and reports ordinary `off` or `error` status instead
+of claiming the network is blocked.
 
 Events: `status` (a Status, on every change), `traffic` (`{"rx_bps": 0, "tx_bps": 0, "rtt_ms": 0}`, once a second while
-connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`), and `subs` (`{"subs": [Subscription…]}`)
-after subscription data changes. Subscribe to `subs` to receive those updates.
+connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`), `subs` (`{"subs": [Subscription…]}`)
+after subscription data changes, and `settings` (a Settings object) after settings change. Subscribe to `subs` or
+`settings` to receive those updates.
 
 Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `offline`,
 `fetch_failed`, and `unknown_subscription`. `connect` returns `no_subscription` if the selected subscription or
@@ -105,9 +134,8 @@ and does not need `wintun.dll`.
 `mistgate-clientd install [run flags]` (elevated) registers the binary as the LocalSystem service `MistgateClient`
 with an unrestricted service SID and starts it; `mistgate-clientd uninstall` stops and removes it.
 
-While connected, reconnecting or blocked, the firewall (WFP, a dynamic session) lets through only the tunnel adapter,
-loopback, DHCP and NDP, the local network (private and link-local ranges; not its DNS), the service's own sockets,
-and DNS to the tunnel's resolvers. The rules name the service SID, so they need the installed service: a console run
-has no kill switch and says so in the
-log. The held session stays closed during reconnects and in `blocked`; disconnect opens the network. The dynamic
-session ends with the process, so a service crash opens the network.
+With `while` or `always`, the firewall (WFP, a dynamic session) lets through only the tunnel adapter, loopback, DHCP
+and NDP, optionally the local network (private and link-local ranges; not its DNS), the service's own sockets, and
+DNS to the tunnel's resolvers. With `off`, a connected tunnel keeps only its DNS rules. The rules name the service
+SID, so a console run cannot install them. The dynamic session ends with the process, so a service crash opens the
+network.
