@@ -5,12 +5,14 @@ package netcfg
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"sync"
 	"sync/atomic"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"golang.org/x/sys/windows"
+	"golang.zx2c4.com/wireguard/windows/tunnel/firewall"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
@@ -35,6 +37,7 @@ type Adapter struct {
 	device       *countingDevice
 	luid         winipcfg.LUID
 	closed       bool
+	firewall     bool
 	configured   bool
 	bypassPrefix netip.Prefix
 	bypassNext   netip.Addr
@@ -81,6 +84,18 @@ func (a *Adapter) Configure(cfg Config) error {
 	}
 	if !hasIPv4 {
 		return errors.New("Wintun configuration has no IPv4 address")
+	}
+	// The kill switch. While this adapter lives, the network is open only to the tunnel, loopback, DHCP and NDP and to
+	// this service's own sockets, and DNS only to cfg.DNS. It is a dynamic firewall session: it ends with Close or with
+	// the process, so a crash never leaves the machine without a network.
+	// ponytail: a crash therefore opens the network; holding it (state "blocked") comes with the health watcher.
+	if err := firewall.EnableFirewall(uint64(a.luid), false, cfg.DNS); err == nil {
+		a.firewall = true
+	} else if errors.Is(err, windows.ERROR_NO_SUCH_GROUP) {
+		// the rules name the service SID; a console run (development) has none
+		slog.Warn("kill switch is off: not running as the Windows service")
+	} else {
+		return fmt.Errorf("enable kill switch: %w", err)
 	}
 	if err := setInterface(a.luid, windows.AF_INET, cfg.MTU); err != nil {
 		return fmt.Errorf("configure Wintun IPv4 interface: %w", err)
@@ -241,6 +256,9 @@ func (a *Adapter) Close() error {
 		}
 	}
 	deviceErr := a.device.Close()
+	if a.firewall {
+		firewall.DisableFirewall() // after the adapter: nothing leaves beside the tunnel while it is going down
+	}
 	if routeErr != nil {
 		return fmt.Errorf("remove server bypass route: %w", routeErr)
 	}

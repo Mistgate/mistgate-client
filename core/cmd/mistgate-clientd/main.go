@@ -17,9 +17,29 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "run" {
-		fmt.Fprintln(os.Stderr, "usage: mistgate-clientd run [-fake] [-profiles <file>]")
+	usage := func() {
+		fmt.Fprintln(os.Stderr, "usage: mistgate-clientd run [-fake] [-profiles <file>] | install [run flags] | uninstall")
 		os.Exit(2)
+	}
+	if len(os.Args) < 2 {
+		usage()
+	}
+	switch os.Args[1] {
+	case "install", "uninstall":
+		var err error
+		if os.Args[1] == "install" {
+			err = install(os.Args[2:])
+		} else {
+			err = uninstall()
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	case "run":
+	default:
+		usage()
 	}
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	fake := flags.Bool("fake", false, "use the in-process fake engine")
@@ -28,14 +48,21 @@ func main() {
 		os.Exit(2)
 	}
 
+	start := func(ctx context.Context) error { return run(ctx, *fake, *profiles) }
+	if asService, err := runAsService(start); asService {
+		if err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := run(ctx, *fake, *profiles); err != nil {
+	if err := start(ctx); err != nil {
 		os.Exit(1)
 	}
 }
 
-// run owns foreground lifecycle; a future Windows service host can supply its stop context here.
+// run owns the lifecycle; the context ends it (Ctrl+C in a console, a stop request as a Windows service).
 func run(ctx context.Context, useFake bool, profilesPath string) error {
 	var eng engine.Engine
 	if profilesPath != "" {
