@@ -1,0 +1,254 @@
+<div class="desk">
+<div class="mg app t-{{theme}} a-{{accent}}">
+
+  <nav class="rail" aria-label="Sections">
+    <img class="rlogo {{brLogoC}}" src="{{logo}}" alt="{{brAlt}}" width="32" height="32">
+    <a class="rb" href="Main.dc.html" title="Главная"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.2 12 4l8 6.2V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span class="rbl">Главная</span></a>
+    <a class="rb on" href="Routes.dc.html" aria-current="page" title="Маршруты"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg><span class="rbl">Маршруты</span></a>
+    <a class="rb" href="Diag.dc.html" title="Диагностика"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5H21"/></svg><span class="rbl">Диагностика</span><i class="rdot {{rdDiag}}" aria-hidden="true"></i></a>
+    <a class="rb" href="Settings.dc.html" title="Настройки"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="rbl">Настройки</span><i class="rdot {{rdSet}}" aria-hidden="true"></i></a>
+    <a class="rb sub" href="https://vpn.example.com" target="_blank" rel="noopener" title="Opens in your browser"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><span class="rbl">Страница подписки</span></a>
+  </nav>
+
+  <div class="content">
+    <header class="tb">
+    <sc-if value="{{bn.on}}" hint-placeholder-val="{{false}}">
+    <div class="bn {{bn.tone}}" role="status">
+      <a class="bn-m" href="{{bn.href}}"><span class="gl g-{{bn.icon}}" aria-hidden="true"></span><b>{{bn.t}}</b><span class="bn-s {{bn.sC}}">{{bn.s}}</span></a>
+      <sc-if value="{{bn.hasAct}}" hint-placeholder-val="{{false}}"><a class="bn-a" href="{{bn.href}}">{{bn.act}}</a></sc-if>
+      <button class="bn-x" onClick="{{bn.close}}" aria-label="Скрыть"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+    </div>
+    </sc-if>
+    <div class="tbs {{tbs.c}}">
+      <a class="tbs-s" href="Main.dc.html" title="Open Home"><i class="tbs-d" aria-hidden="true"></i><span>{{tbs.t}}</span><span class="tbs-m {{tbs.mc}}">{{tbs.m}}</span></a>
+      <button class="tbs-p" onClick="{{tbs.go}}" aria-label="{{tbs.a}}" title="{{tbs.a}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 7.2a7.5 7.5 0 1 0 10.8 0"/></svg></button>
+    </div>
+    <div class="cap">
+      <button aria-label="Minimize to tray"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      <button aria-label="Maximize"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+      <button aria-label="Close window"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    </header>
+
+    <main class="rt">
+      <section class="rt-l">
+        <h1 class="h1x">Маршруты</h1>
+        <p class="rt-sub">Что пускать через VPN</p>
+        <div class="mgrp" role="radiogroup" aria-label="Routing mode">
+          <div class="mrow {{mExc}}">
+            <button class="mr-b" role="radio" aria-checked="{{isExc}}" onClick="{{setExc}}">
+              <span class="rd" aria-hidden="true"></span>
+              <span class="tx"><b>Умный <span class="rec">Рекомендуем</span></b><span>{{smartDesc}}</span></span>
+            </button>
+            <sc-if value="{{isExc}}" hint-placeholder-val="{{true}}">
+              <div class="reg">
+                <button class="regc" onClick="{{toggleReg}}" aria-expanded="{{regOpen}}" aria-haspopup="listbox" aria-label="Local sites of {{R.name}}. Change region">
+                  <sc-if value="{{R.hasFlag}}" hint-placeholder-val="{{true}}"><img class="rfl" src="{{R.flag}}" alt="" width="20" height="20"></sc-if>
+                  <sc-if value="{{R.noFlag}}" hint-placeholder-val="{{false}}"><span class="rfl none"><span class="gl g-internet" aria-hidden="true"></span></span></sc-if>
+                  <span>{{R.chip}}</span>
+                  <span class="rtag {{regAutoCls}}">Авто</span>
+                  <svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <p class="reg-up {{regUpCls}}">{{regUp}}</p>
+                <sc-if value="{{regOpen}}" hint-placeholder-val="{{false}}">
+                  <div class="regpop" role="listbox" aria-label="Region">
+                    <p class="pop-h">Какие местные сайты идут напрямую</p>
+                    <sc-for list="{{regs}}" as="r" hint-placeholder-count="5">
+                      <button class="ro {{r.cls}}" role="option" aria-selected="{{r.on}}" onClick="{{r.pick}}">
+                        <sc-if value="{{r.hasFlag}}" hint-placeholder-val="{{true}}"><img class="rfl" src="{{r.flag}}" alt="" width="28" height="28"></sc-if>
+                        <sc-if value="{{r.noFlag}}" hint-placeholder-val="{{false}}"><span class="rfl none"><span class="gl g-internet" aria-hidden="true"></span></span></sc-if>
+                        <span class="tx"><b><span class="rn">{{r.name}}</span><span class="dtag {{r.detCls}}">Определено</span></b><span>{{r.meta}}</span></span>
+                        <svg class="i ok" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+                      </button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+          </div>
+          <div class="mrow {{mOnly}}">
+            <button class="mr-b" role="radio" aria-checked="{{isOnly}}" onClick="{{setOnly}}">
+              <span class="rd" aria-hidden="true"></span>
+              <span class="tx"><b>Только выбранное</b><span>VPN только для выбранного</span></span>
+            </button>
+          </div>
+          <div class="mrow {{mAll}}">
+            <button class="mr-b" role="radio" aria-checked="{{isAll}}" onClick="{{setAll}}">
+              <span class="rd" aria-hidden="true"></span>
+              <span class="tx"><b>Всё</b><span>Весь трафик через VPN, без исключений</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="chk2">
+          <label class="search chk-in"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="text" value="{{chk}}" placeholder="Проверить, куда идёт сайт" aria-label="Проверить, куда идёт сайт" spellcheck="false"><button class="cres {{res.cls}}" onClick="{{nextChk}}" title="{{res.why}}"><i aria-hidden="true"></i>{{res.short}}</button></label>
+          <p class="cwhy">{{res.why}}</p>
+        </div>
+      </section>
+
+      <section class="lcard" aria-label="Rules">
+        <sc-if value="{{notAll}}" hint-placeholder-val="{{true}}">
+          <sc-if value="{{notLists}}" hint-placeholder-val="{{true}}">
+          <div class="rh">
+            <div class="rh-t"><b>{{cardTitle}}</b></div>
+            <div class="rh-a">
+              <button class="lsb {{updCls}}" onClick="{{updateNow}}" title="Download fresh lists now · last update 2 hours ago"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span>{{updBtn2}}</span></button>
+              <button class="lsb" onClick="{{openLists}}" title="Manage list sources"><span class="gl g-list" aria-hidden="true"></span><span>Списки</span><span class="k">{{mN}}</span><svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+            </div>
+          </div>
+          <div class="utabs" role="tablist" aria-label="What to route">
+            <button class="{{vCls.col}}" role="tab" aria-selected="{{vOn.col}}" onClick="{{vPick.col}}"><span class="gl g-view-grid" aria-hidden="true"></span>Подборки<span class="k">{{cnt}}</span></button>
+            <button class="{{vCls.apps}}" role="tab" aria-selected="{{vOn.apps}}" onClick="{{vPick.apps}}"><span class="gl g-app-window" aria-hidden="true"></span>Программы<span class="k">{{appCnt}}</span></button>
+            <button class="{{vCls.sites}}" role="tab" aria-selected="{{vOn.sites}}" onClick="{{vPick.sites}}"><span class="gl g-internet" aria-hidden="true"></span>Сайты<span class="k">{{siteCnt}}</span></button>
+          </div>
+          </sc-if>
+
+          <sc-if value="{{isCol}}" hint-placeholder-val="{{true}}">
+            <div class="lc-row">
+              <label class="search lc-s"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="text" placeholder="Поиск по 88 подборкам" aria-label="Search collections"></label>
+            </div>
+            <div class="cats {{catM}}" role="tablist" aria-label="Categories" style="--px:{{catX}}px;--pw:{{catW}}px">
+              <sc-for list="{{cats}}" as="c" hint-placeholder-count="6">
+                <button class="cat {{c.cls}}" role="tab" aria-selected="{{c.on}}" onClick="{{c.pick}}"><span class="gl g-{{c.g}}" aria-hidden="true"></span>{{c.label}}</button>
+              </sc-for>
+            </div>
+            <div class="grid">
+            <sc-for list="{{tiles}}" as="t" hint-placeholder-count="15">
+              <button class="tile {{t.cls}}" aria-pressed="{{t.on}}" onClick="{{t.flip}}">
+                <span class="mono {{t.tone}}"><span class="gl g-{{t.g}}" aria-hidden="true"></span><span class="ok" aria-hidden="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span></span>
+                <span class="tx"><b>{{t.name}}</b><span class="tm"><em class="way {{t.wayC}}">{{t.way}}</em><span class="{{t.mcls}}">{{t.meta}}</span></span></span>
+              </button>
+            </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{isApps}}" hint-placeholder-val="{{false}}">
+            <div class="lc-row">
+              <label class="search lc-s"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="text" placeholder="Поиск по программам: {{appTotal}}" aria-label="Search apps"></label>
+              <button class="lsb" title="Choose a program file"><span class="gl g-folder-plus" aria-hidden="true"></span><span>Добавить .exe</span></button>
+            </div>
+            <sc-if value="{{hasApps}}" hint-placeholder-val="{{true}}">
+              <p class="found"><span class="pulse" aria-hidden="true"></span>Найдено программ: {{appTotal}} · сначала запущенные<button class="lnk">Искать снова</button></p>
+              <div class="grid apps {{appScroll}}">
+            <sc-for list="{{apps}}" as="a" hint-placeholder-count="15">
+              <button class="tile {{a.cls}}" aria-pressed="{{a.on}}" onClick="{{a.flip}}">
+                <span class="mono {{a.tone}}"><span class="gl g-{{a.g}}" aria-hidden="true"></span><span class="ok" aria-hidden="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span></span>
+                <span class="tx"><b>{{a.name}}</b><span class="tm"><em class="way {{a.wayC}}">{{a.way}}</em><span class="{{a.mcls}}">{{a.meta}}</span></span></span>
+              </button>
+            </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{noApps}}" hint-placeholder-val="{{false}}">
+              <div class="empty rise">
+                <span class="e-ic"><span class="gl g-app-window" aria-hidden="true"></span></span>
+                <b>Программы пока не найдены</b>
+                <p>Mistgate замечает программы, когда они выходят в интернет. Откройте нужную программу или добавьте её вручную</p>
+                <div class="e-act"><button class="addb"><span class="gl g-folder-plus" aria-hidden="true"></span>Выбрать .exe</button><button class="lsb"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span>Искать снова</span></button></div>
+              </div>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{isSites}}" hint-placeholder-val="{{false}}">
+            <div class="addrow">
+              <label class="search add-in"><span class="gl g-internet" aria-hidden="true"></span><input type="text" placeholder="Добавьте сайт, например example.com" aria-label="Add a site" spellcheck="false"></label>
+              <button class="addb"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить</button>
+            </div>
+            <p class="hint">Поддомены учитываются. Можно вставить несколько — по одному в строке</p>
+            <sc-if value="{{noSites}}" hint-placeholder-val="{{false}}">
+              <div class="sempty"><span class="e-ic sm"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>Сайтов пока нет</b><span>Введите сайт выше или выберите из замеченных ниже</span></span></div>
+            </sc-if>
+            <sc-if value="{{hasSites}}" hint-placeholder-val="{{true}}">
+            <p class="sec-h">Ваши сайты<span class="n">{{siteCnt}}</span></p>
+            <div class="slist">
+              <sc-for list="{{sites}}" as="s" hint-placeholder-count="2">
+                <div class="site"><span class="mono neu"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>{{s.name}}</b><span>{{s.meta}}</span></span><button class="rm" onClick="{{s.rm}}" aria-label="Remove {{s.name}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+              </sc-for>
+            </div>
+            </sc-if>
+            <p class="sec-h">Подсказки по вашему трафику<span class="n new">авто</span></p>
+            <div class="slist">
+              <sc-for list="{{sugs}}" as="s" hint-placeholder-count="3">
+                <div class="site sug"><span class="mono sand"><span class="gl g-flash" aria-hidden="true"></span></span><span class="tx"><b>{{s.name}}</b><span>{{s.meta}}</span></span><button class="addb sm" onClick="{{s.add}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить</button></div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{isLists}}" hint-placeholder-val="{{false}}">
+            <div class="rh">
+              <button class="back" onClick="{{closeLists}}" aria-label="Back"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+              <div class="rh-t"><b>Списки</b></div>
+              <button class="lsb {{updCls}}" onClick="{{updateNow}}"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span>{{updAll}}</span></button>
+            </div>
+            <div class="merge">
+              <div class="mg-t"><b>{{mUnique}}</b><span>уникальных записей из списков: {{mN}}</span><span class="dup"><span class="gl g-copy" aria-hidden="true"></span>пропущено дубликатов: {{mDup}}</span></div>
+              <div class="mg-bar" aria-hidden="true">
+                <sc-for list="{{mSegs}}" as="g" hint-placeholder-count="3"><i class="{{g.c}}" style="flex:{{g.w}}"></i></sc-for>
+              </div>
+            </div>
+            <div class="addrow">
+              <label class="search add-in"><span class="gl g-link" aria-hidden="true"></span><input type="text" placeholder="Вставьте ссылку на список — .txt, .lst, .srs, geosite" aria-label="List link" spellcheck="false"></label>
+              <button class="addb" onClick="{{addList}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить</button>
+            </div>
+            <p class="hint">Домены, IP и подсети. Дубликаты между списками объединяются автоматически</p>
+            <div class="srcs">
+              <sc-for list="{{srcRows}}" as="o" hint-placeholder-count="5">
+                <div class="src {{o.cls}}">
+                  <span class="mono {{o.tone}}"><span class="gl g-{{o.g}}" aria-hidden="true"></span></span>
+                  <span class="tx"><b><span class="rn">{{o.name}}</span><span class="rtag {{o.biCls}}">Встроенный</span></b><span class="{{o.mcls}}">{{o.meta}}<sc-if value="{{o.err}}" hint-placeholder-val="{{false}}"><button class="lnk" onClick="{{o.retry}}">Повторить</button></sc-if></span></span>
+                  <sc-if value="{{o.custom}}" hint-placeholder-val="{{false}}"><button class="rm" onClick="{{o.rm}}" aria-label="Remove {{o.name}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></sc-if>
+                  <button class="sw {{o.sw}}" role="switch" aria-checked="{{o.on}}" onClick="{{o.flip}}" aria-label="Use {{o.name}}"></button>
+                </div>
+              </sc-for>
+            </div>
+            <div class="lp-auto">
+              <span class="tx"><b>Обновлять автоматически</b><span>Каждый день, в фоне</span></span>
+              <button class="sw {{autoCls}}" role="switch" aria-checked="{{autoOn}}" onClick="{{toggleAuto}}" aria-label="Обновлять автоматически"></button>
+            </div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{isAll}}" hint-placeholder-val="{{false}}">
+          <div class="rh">
+            <div class="rh-t"><b>Весь трафик идёт через VPN</b></div>
+          </div>
+          <div class="sch rise" aria-label="Every app and site goes through the encrypted tunnel; nothing goes direct">
+            <svg viewBox="0 0 520 250" aria-hidden="true">
+              <path class="ln" d="M82 100 H164"/>
+              <path class="tube" d="M236 100 H318"/>
+              <path class="tube-in" d="M236 100 H318"/>
+              <path class="ln" d="M378 100 C412 100 430 35 454 35"/>
+              <path class="ln" d="M378 100 H454"/>
+              <path class="ln" d="M378 100 C412 100 430 165 454 165"/>
+              <circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 35 454 35"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0.45s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L454 100"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0.9s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 165 454 165"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-1.35s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L454 100"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-1.8s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 35 454 35"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-2.25s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 165 454 165"/></circle>
+            </svg>
+            <div class="nd pc" style="left:10%;top:40%"><span class="gl g-laptop" aria-hidden="true"></span></div>
+            <span class="nl" style="left:10%;top:61%">Этот компьютер<small>все программы</small></span>
+            <div class="nd tun" style="left:38.46%;top:40%"><span class="pulse2" aria-hidden="true"></span><img src="{{logo}}" alt="" width="34" height="34"></div>
+            <span class="nl" style="left:38.46%;top:61%">Mistgate<small>зашифрованный туннель</small></span>
+            <div class="nd srv" style="left:66.9%;top:40%"><img src="/blob/b9d142e1783ba5a3056edc5da7cdd20f.svg" alt=""></div>
+            <span class="nl" style="left:66.9%;top:61%">Германия<small>VLESS · TCP</small></span>
+            <div class="bub sky" style="left:91.15%;top:14%" title="Video"><span class="gl g-play" aria-hidden="true"></span></div>
+            <div class="bub lav" style="left:91.15%;top:40%"><span class="gl g-chat-bubble" aria-hidden="true"></span></div>
+            <div class="bub mint" style="left:91.15%;top:66%"><span class="gl g-internet" aria-hidden="true"></span></div>
+          </div>
+          <div class="stats3">
+            <div class="st3"><span class="mono lav"><span class="gl g-shield-check" aria-hidden="true"></span></span><span class="tx"><b>0</b><span>исключений</span></span></div>
+            <div class="st3"><span class="mono sky"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>DNS</b><span>тоже через VPN</span></span></div>
+            <div class="st3"><span class="mono mint"><span class="gl g-lock" aria-hidden="true"></span></span><span class="tx"><b>Kill switch</b><span>вкл · без утечек</span></span></div>
+          </div>
+          <div class="allnote">
+            <span class="tx"><b>{{allNoteT}}</b><span>{{allNote}}</span></span>
+            <button class="lsb" onClick="{{setExc}}">Перейти на «Умный»</button>
+          </div>
+        </sc-if>
+      </section>
+    </main>
+  </div>
+
+</div>
+  <div lang="en" class="dev" role="toolbar" aria-label="Prototype states">
+    <div class="dg"><span class="dl">Apps</span><div class="ds"><button class="{{dv.ap_0}}" onClick="{{dvSet.ap_0}}">None</button><button class="{{dv.ap_1}}" onClick="{{dvSet.ap_1}}">Few</button><button class="{{dv.ap_2}}" onClick="{{dvSet.ap_2}}">Many</button></div></div>
+    <div class="dg"><span class="dl">Sites</span><div class="ds"><button class="{{dv.si_0}}" onClick="{{dvSet.si_0}}">None</button><button class="{{dv.si_1}}" onClick="{{dvSet.si_1}}">Some</button></div></div>
+    <div class="dg"><span class="dl">Region</span><div class="ds"><button class="{{dv.rg_ru}}" onClick="{{dvSet.rg_ru}}">Russia</button><button class="{{dv.rg_cn}}" onClick="{{dvSet.rg_cn}}">China</button><button class="{{dv.rg_other}}" onClick="{{dvSet.rg_other}}">None</button></div></div>
+    <div class="dg"><span class="dl">Theme</span><div class="ds"><button class="{{dv.th_dark}}" onClick="{{dvSet.th_dark}}">Dark</button><button class="{{dv.th_light}}" onClick="{{dvSet.th_light}}">Light</button></div></div>
+  </div>
+</div>

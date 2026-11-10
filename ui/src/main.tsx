@@ -8,21 +8,30 @@ import '@fontsource/onest/800.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';
 import '@fontsource/jetbrains-mono/700.css';
-import './design/app.css';
 import './shell.css';
 import { NavContext } from './dc';
-import { screens } from './screens';
+import { LANGS, loadScreens, type Lang } from './screens';
 
 // ?screen=Tray&state=off… opens one screen with the props of the design: the mock mode the screenshots are taken from.
+// ?lang=ru picks the language (kept for the next start); English is the default.
 const query = Object.fromEntries(new URLSearchParams(location.search));
-const { screen: first = 'Main', ...props } = query;
-if ('__TAURI_INTERNALS__' in window || 'shell' in query) document.documentElement.classList.add('shell');
-if ('__TAURI_INTERNALS__' in window) void import('./shell').then((m) => m.attachWindow());
+const { screen: first = 'Main', lang: asked, shell, ...props } = query;
+const stored = (() => { try { return localStorage.getItem('lang'); } catch { return null; } })();
+const lang = (LANGS as readonly string[]).includes(asked ?? stored ?? '') ? ((asked ?? stored) as Lang) : 'en';
+if (asked) try { localStorage.setItem('lang', lang); } catch { /* a private window: the choice lasts this start */ }
+// No dir on <html>: the Farsi screens set it on their own root, and their digit conversion walks the first [dir=rtl]
+// element — on <html> it would rewrite the digits inside the stylesheets too.
+document.documentElement.lang = lang;
 
-function App() {
-  const [screen, setScreen] = React.useState(first);
-  const Screen = screens[screen] ?? screens.Main;
-  return <NavContext.Provider value={setScreen}><Screen key={screen} {...props} /></NavContext.Provider>;
-}
+const inApp = '__TAURI_INTERNALS__' in window;
+if (inApp || shell !== undefined) document.documentElement.classList.add('shell');
+if (inApp) void import('./shell').then((m) => m.attachWindow());
 
-createRoot(document.getElementById('root')!).render(<App />);
+void loadScreens(lang).then((screens) => {
+  function App() {
+    const [screen, setScreen] = React.useState(first);
+    const Screen = screens[screen] ?? screens.Main;
+    return <NavContext.Provider value={setScreen}><Screen key={screen} {...props} /></NavContext.Provider>;
+  }
+  createRoot(document.getElementById('root')!).render(<App />);
+});

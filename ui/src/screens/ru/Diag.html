@@ -1,0 +1,226 @@
+<div class="desk">
+<div class="mg app t-{{theme}} a-{{accent}}">
+
+  <nav class="rail" aria-label="Sections">
+    <img class="rlogo {{brLogoC}}" src="{{logo}}" alt="{{brAlt}}" width="32" height="32">
+    <a class="rb" href="Main.dc.html" title="Главная"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.2 12 4l8 6.2V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span class="rbl">Главная</span></a>
+    <a class="rb" href="Routes.dc.html" title="Маршруты"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg><span class="rbl">Маршруты</span></a>
+    <a class="rb on" href="Diag.dc.html" aria-current="page" title="Диагностика"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5H21"/></svg><span class="rbl">Диагностика</span><i class="rdot {{rdDiag}}" aria-hidden="true"></i></a>
+    <a class="rb" href="Settings.dc.html" title="Настройки"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="rbl">Настройки</span><i class="rdot {{rdSet}}" aria-hidden="true"></i></a>
+    <a class="rb sub" href="https://vpn.example.com" target="_blank" rel="noopener" title="Opens in your browser"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><span class="rbl">Страница подписки</span></a>
+  </nav>
+
+  <div class="content">
+    <header class="tb">
+    <sc-if value="{{bn.on}}" hint-placeholder-val="{{false}}">
+    <div class="bn {{bn.tone}}" role="status">
+      <a class="bn-m" href="{{bn.href}}"><span class="gl g-{{bn.icon}}" aria-hidden="true"></span><b>{{bn.t}}</b><span class="bn-s {{bn.sC}}">{{bn.s}}</span></a>
+      <sc-if value="{{bn.hasAct}}" hint-placeholder-val="{{false}}"><a class="bn-a" href="{{bn.href}}">{{bn.act}}</a></sc-if>
+      <button class="bn-x" onClick="{{bn.close}}" aria-label="Скрыть"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+    </div>
+    </sc-if>
+    <div class="tbs {{tbs.c}}">
+      <a class="tbs-s" href="Main.dc.html" title="Open Home"><i class="tbs-d" aria-hidden="true"></i><span>{{tbs.t}}</span><span class="tbs-m {{tbs.mc}}">{{tbs.m}}</span></a>
+      <button class="tbs-p" onClick="{{tbs.go}}" aria-label="{{tbs.a}}" title="{{tbs.a}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 7.2a7.5 7.5 0 1 0 10.8 0"/></svg></button>
+    </div>
+    <div class="cap">
+      <button aria-label="Minimize to tray"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      <button aria-label="Maximize"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+      <button aria-label="Close window"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    </header>
+
+    <main class="dgm">
+      <section class="dg-l">
+        <h1 class="h1x">Диагностика</h1>
+        <p class="rt-sub">Узнайте, почему что-то не работает</p>
+        <sc-if value="{{asked}}" hint-placeholder-val="{{false}}">
+          <div class="ask rise"><span class="gl g-user-badge-check" aria-hidden="true"></span><span class="tx"><b>Администратор просит данные диагностики</b><span>Чтобы помочь с вашим подключением</span></span><button class="addb sm2" onClick="{{openRep}}">Посмотреть</button></div>
+        </sc-if>
+
+        <div class="ck">
+          <sc-if value="{{isIdle}}" hint-placeholder-val="{{false}}">
+            <div class="ck-idle rise">
+              <div class="radar" aria-hidden="true"><i></i><i></i><i></i><span class="sweep"></span><span class="gl g-activity" aria-hidden="true"></span></div>
+              <b>Проверьте сеть</b>
+              <p>Проверяет каждый сервер, ищет блокировки, ограничение скорости и подмену адресов. Около 2½ минут — соединение не прерывается</p>
+              <button class="cta" onClick="{{start}}">Проверить сеть</button>
+              <p class="ck-last">В этой сети ещё не проверяли</p>
+            </div>
+          </sc-if>
+          <sc-if value="{{isRun}}" hint-placeholder-val="{{false}}">
+            <div class="ck-run rise">
+              <div class="rn-h">
+                <div class="rn-ring" style="--rp:{{runPct}}" aria-hidden="true"><span>{{runPct}}</span></div>
+                <div class="tx"><b class="shim">Проверяем сеть</b><span>{{runTime}}</span></div>
+              </div>
+              <div class="tl">
+                <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+                  <div class="tl-s {{s.c}}"><span class="tl-n"><i aria-hidden="true"></i><span class="okc"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span></span><span class="tx"><b>{{s.name}}</b><span>{{s.note}}</span></span></div>
+                </sc-for>
+              </div>
+              <button class="lnk3" onClick="{{cancel}}">Отменить проверку</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{isDone}}" hint-placeholder-val="{{true}}">
+            <div class="ck-done rise">
+              <div class="vh {{R.tone}}"><span class="vh-ic"><span class="gl wi g-warning-circle" aria-hidden="true"></span><span class="gl ci g-check-circle" aria-hidden="true"></span></span><span class="tx"><b>{{R.title}}</b><span>{{R.sub}}</span></span></div>
+              <div class="sum">
+                <sc-for list="{{facts}}" as="f" hint-placeholder-count="4"><div class="sm-r"><span class="gl g-{{f.g}}" aria-hidden="true"></span><span class="k">{{f.k}}</span><span class="v {{f.c}}">{{f.v}}</span></div></sc-for>
+              </div>
+              <button class="cta ck-go" onClick="{{start}}"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span class="cg-t"><b>Перепроверить серверы</b><small>Полная проверка сети — через 48 мин</small></span></button>
+              <div class="ck-meta"><span><span class="gl g-clock" aria-hidden="true"></span>2 мин назад</span><button class="lnk2 {{sumCls}}" onClick="{{copySum}}"><span class="gl g-copy" aria-hidden="true"></span>{{copyTxt2}}</button></div>
+            </div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{showHelp}}" hint-placeholder-val="{{true}}">
+        <div class="help">
+          <span class="mono lav"><span class="gl g-lifebelt" aria-hidden="true"></span></span>
+          <span class="tx"><b>Всё ещё не работает?</b><span>{{helpTxt}}</span></span>
+          <button class="lsb" onClick="{{openRep}}">{{helpBtn}}</button>
+        </div>
+        </sc-if>
+        <sc-if value="{{isMg}}" hint-placeholder-val="{{true}}">
+        <div class="anon {{anonBox}}">
+          <span class="tx"><b>Помогать находить блокировки</b><span>{{anonTxt}}<sc-if value="{{anonMore}}" hint-placeholder-val="{{false}}"> <a class="anon-l" href="Settings.dc.html">Что отправляется</a></sc-if></span></span>
+          <button class="sw {{anonCls}}" role="switch" aria-checked="{{anonOn}}" onClick="{{toggleAnon}}" aria-label="Help find blocks: share anonymous data with My subscription"></button>
+        </div>
+        </sc-if>
+      </section>
+
+      <section class="lcard dg-r" aria-label="Результаты">
+        <div class="utabs" role="tablist" aria-label="View">
+          <button class="{{tCls.res}}" role="tab" aria-selected="{{tOn.res}}" onClick="{{tPick.res}}"><span class="gl g-check-circle" aria-hidden="true"></span>Результаты</button>
+          <button class="{{tCls.log}}" role="tab" aria-selected="{{tOn.log}}" onClick="{{tPick.log}}"><span class="gl g-journal-page" aria-hidden="true"></span>Журнал<span class="k">3 новых</span></button>
+        </div>
+        <sc-if value="{{isRes}}" hint-placeholder-val="{{true}}">
+          <sc-if value="{{hasRes}}" hint-placeholder-val="{{true}}">
+            <div class="dres">
+              <div class="best {{bestCls}}"><span class="gl g-star" aria-hidden="true"></span><span class="tx"><b>Лучше всего в вашей сети</b><span>{{R.best}}</span></span><button class="lsb sm">Использовать</button></div>
+              <p class="sec-h">Серверы<span class="n">{{R.srvSum}}</span></p>
+              <div class="dlist">
+              <sc-for list="{{srvRows}}" as="x" hint-placeholder-count="4">
+                <div class="dr {{x.oc}}">
+                  <button class="dr-b" onClick="{{x.tog}}" aria-expanded="{{x.ox}}">
+                    <span class="mono {{x.tone}} {{x.fc}}"><img class="{{x.ic}}" src="{{x.flag}}" alt=""><span class="gl g-{{x.g}} {{x.gc}}" aria-hidden="true"></span></span>
+                    <span class="tx"><b>{{x.name}}<span class="term {{x.termC}}">{{x.term}}</span></b><span>{{x.meta}}</span></span>
+                    <span class="vchip {{x.vc}}"><span class="gl g-{{x.vi}}" aria-hidden="true"></span>{{x.vt}}</span>
+                    <svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                  <div class="dr-act {{x.actC}}"><button class="addb sm {{x.actBtnC}}" onClick="{{x.actGo}}">{{x.actT}}</button><span class="dr-ok {{x.actOkC}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg>{{x.actDone}}</span></div>
+                  <sc-if value="{{x.isOpen}}" hint-placeholder-val="{{false}}">
+                    <div class="dr-d {{x.ddc}}">
+                      <div class="hops {{x.hpc}}" aria-label="Route hops"><span class="hop {{x.hc.0}}"><i></i><small>1</small></span><span class="hop {{x.hc.1}}"><i></i><small>2</small></span><span class="hop {{x.hc.2}}"><i></i><small>3</small></span><span class="hop {{x.hc.3}}"><i></i><small>4</small></span><span class="hop {{x.hc.4}}"><i></i><small>5</small></span><span class="hop {{x.hc.5}}"><i></i><small>6</small></span><span class="hop {{x.hc.6}}"><i></i><small>7</small></span><span class="hop {{x.hc.7}}"><i></i><small>8</small></span><span class="hop {{x.hc.8}}"><i></i><small>9</small></span><span class="hop {{x.hc.9}}"><i></i><small>10</small></span><span class="hop {{x.hc.10}}"><i></i><small>11</small></span></div>
+                      <div class="pths {{x.ppc}}"><p class="pths-h">Пути к этому серверу</p><div class="pth {{x.p0.c}}"><span class="pth-n">{{x.p0.n}}</span><span class="pth-m">{{x.p0.m}}</span><span class="vchip sm {{x.p0.vc}}"><span class="gl g-{{x.p0.vi}}" aria-hidden="true"></span>{{x.p0.vt}}</span></div><div class="pth {{x.p1.c}}"><span class="pth-n">{{x.p1.n}}</span><span class="pth-m">{{x.p1.m}}</span><span class="vchip sm {{x.p1.vc}}"><span class="gl g-{{x.p1.vi}}" aria-hidden="true"></span>{{x.p1.vt}}</span></div><div class="pth {{x.p2.c}}"><span class="pth-n">{{x.p2.n}}</span><span class="pth-m">{{x.p2.m}}</span><span class="vchip sm {{x.p2.vc}}"><span class="gl g-{{x.p2.vi}}" aria-hidden="true"></span>{{x.p2.vt}}</span></div><div class="pth {{x.p3.c}}"><span class="pth-n">{{x.p3.n}}</span><span class="pth-m">{{x.p3.m}}</span><span class="vchip sm {{x.p3.vc}}"><span class="gl g-{{x.p3.vi}}" aria-hidden="true"></span>{{x.p3.vt}}</span></div></div>
+                      <p class="dl-l {{x.l0c}}">{{x.l0}}</p><p class="dl-l {{x.l1c}}">{{x.l1}}</p>
+                      <p class="conf {{x.cc}}"><span class="gl g-community" aria-hidden="true"></span>{{x.conf}}</p>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+              </div>
+              <p class="sec-h">Сеть<span class="n {{netCls}}">{{R.netSum}}</span></p>
+              <div class="dlist">
+              <sc-for list="{{netRows}}" as="x" hint-placeholder-count="4">
+                <div class="dr {{x.oc}}">
+                  <button class="dr-b" onClick="{{x.tog}}" aria-expanded="{{x.ox}}">
+                    <span class="mono {{x.tone}} {{x.fc}}"><img class="{{x.ic}}" src="{{x.flag}}" alt=""><span class="gl g-{{x.g}} {{x.gc}}" aria-hidden="true"></span></span>
+                    <span class="tx"><b>{{x.name}}<span class="term {{x.termC}}">{{x.term}}</span></b><span>{{x.meta}}</span></span>
+                    <span class="vchip {{x.vc}}"><span class="gl g-{{x.vi}}" aria-hidden="true"></span>{{x.vt}}</span>
+                    <svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                  <div class="dr-act {{x.actC}}"><button class="addb sm {{x.actBtnC}}" onClick="{{x.actGo}}">{{x.actT}}</button><span class="dr-ok {{x.actOkC}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg>{{x.actDone}}</span></div>
+                  <sc-if value="{{x.isOpen}}" hint-placeholder-val="{{false}}">
+                    <div class="dr-d {{x.ddc}}">
+                      <div class="hops {{x.hpc}}" aria-label="Route hops"><span class="hop {{x.hc.0}}"><i></i><small>1</small></span><span class="hop {{x.hc.1}}"><i></i><small>2</small></span><span class="hop {{x.hc.2}}"><i></i><small>3</small></span><span class="hop {{x.hc.3}}"><i></i><small>4</small></span><span class="hop {{x.hc.4}}"><i></i><small>5</small></span><span class="hop {{x.hc.5}}"><i></i><small>6</small></span><span class="hop {{x.hc.6}}"><i></i><small>7</small></span><span class="hop {{x.hc.7}}"><i></i><small>8</small></span><span class="hop {{x.hc.8}}"><i></i><small>9</small></span><span class="hop {{x.hc.9}}"><i></i><small>10</small></span><span class="hop {{x.hc.10}}"><i></i><small>11</small></span></div>
+                      <div class="pths {{x.ppc}}"><p class="pths-h">Пути к этому серверу</p><div class="pth {{x.p0.c}}"><span class="pth-n">{{x.p0.n}}</span><span class="pth-m">{{x.p0.m}}</span><span class="vchip sm {{x.p0.vc}}"><span class="gl g-{{x.p0.vi}}" aria-hidden="true"></span>{{x.p0.vt}}</span></div><div class="pth {{x.p1.c}}"><span class="pth-n">{{x.p1.n}}</span><span class="pth-m">{{x.p1.m}}</span><span class="vchip sm {{x.p1.vc}}"><span class="gl g-{{x.p1.vi}}" aria-hidden="true"></span>{{x.p1.vt}}</span></div><div class="pth {{x.p2.c}}"><span class="pth-n">{{x.p2.n}}</span><span class="pth-m">{{x.p2.m}}</span><span class="vchip sm {{x.p2.vc}}"><span class="gl g-{{x.p2.vi}}" aria-hidden="true"></span>{{x.p2.vt}}</span></div><div class="pth {{x.p3.c}}"><span class="pth-n">{{x.p3.n}}</span><span class="pth-m">{{x.p3.m}}</span><span class="vchip sm {{x.p3.vc}}"><span class="gl g-{{x.p3.vi}}" aria-hidden="true"></span>{{x.p3.vt}}</span></div></div>
+                      <p class="dl-l {{x.l0c}}">{{x.l0}}</p><p class="dl-l {{x.l1c}}">{{x.l1}}</p>
+                      <p class="conf {{x.cc}}"><span class="gl g-community" aria-hidden="true"></span>{{x.conf}}</p>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{noRes}}" hint-placeholder-val="{{false}}">
+            <div class="empty">
+              <span class="e-ic"><span class="gl g-shield-search" aria-hidden="true"></span></span>
+              <b>{{emT}}</b>
+              <p>{{emS}}</p>
+              <div class="e-act {{emBtn}}"><button class="addb" onClick="{{start}}">Проверить сеть</button></div>
+            </div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{isLog}}" hint-placeholder-val="{{false}}">
+          <div class="lgbar">
+            <label class="search lgs"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="text" placeholder="Поиск по журналу" aria-label="Поиск по журналу"></label>
+            <div class="lgf" role="tablist" aria-label="Level">
+              <button class="{{lfCls.all}}" onClick="{{lfPick.all}}">Все</button>
+              <button class="{{lfCls.warn}}" onClick="{{lfPick.warn}}"><i class="lvd warn" aria-hidden="true"></i>Предупреждения<span class="k">3</span></button>
+              <button class="{{lfCls.error}}" onClick="{{lfPick.error}}"><i class="lvd error" aria-hidden="true"></i>Ошибки<span class="k">1</span></button>
+            </div>
+          </div>
+          <div class="lg">
+            <p class="lg-day">Сегодня</p>
+            <sc-for list="{{logRows}}" as="g" hint-placeholder-count="12">
+              <div class="lgl {{g.lv}}" title="{{g.lvT}}"><time>{{g.t}}</time><i class="ld" aria-hidden="true"></i><span class="lsrc">{{g.src}}</span><span class="msg">{{g.msg}}</span></div>
+            </sc-for>
+          </div>
+          <div class="lgfoot">
+            <button class="lvb {{liveCls}}" onClick="{{toggleLive}}"><i aria-hidden="true"></i>{{liveTxt}}</button>
+            <span class="lgn">записей: {{logN}} · за 24 часа</span>
+            <button class="lsb sm"><span class="gl g-copy" aria-hidden="true"></span><span>Копировать</span></button>
+            <button class="lsb sm"><span class="gl g-download" aria-hidden="true"></span><span>Сохранить</span></button>
+            <button class="lsb sm ghost">Очистить</button>
+          </div>
+        </sc-if>
+      </section>
+    </main>
+  </div>
+
+  <sc-if value="{{repShown}}" hint-placeholder-val="{{false}}">
+    <div class="scrim" onClick="{{closeRep}}"></div>
+    <div class="sheet" role="dialog" aria-label="Попросить помощи у администратора">
+      <sc-if value="{{repForm}}" hint-placeholder-val="{{true}}">
+        <div class="sh-h"><div class="tx"><b>{{shTitle}}</b><span>{{shSub}}</span></div><button class="back" onClick="{{closeRep}}" aria-label="Закрыть"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+        <p class="sh-p">{{shP}}</p>
+        <div class="parts">
+          <sc-for list="{{parts}}" as="p" hint-placeholder-count="6">
+            <button class="part {{p.cls}}" role="checkbox" aria-checked="{{p.on}}" onClick="{{p.flip}}"><span class="cb"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span><span class="gl g-{{p.g}}" aria-hidden="true"></span><span class="tx"><b>{{p.name}}</b><span>{{p.sub}}</span></span></button>
+          </sc-for>
+        </div>
+        <p class="never"><span class="gl g-lock" aria-hidden="true"></span>Никогда не включаем: имя компьютера, сайты, которые вы открываете, ключи, ваш IP</p>
+        <label class="ta"><textarea placeholder="Что случилось? Необязательно" aria-label="What happened"></textarea></label>
+        <div class="sh-f">
+          <button class="lnk2"><span class="gl g-eye" aria-hidden="true"></span>Что внутри</button>
+          <span class="sz">{{repSize}}</span>
+          <sc-if value="{{intakeOn}}" hint-placeholder-val="{{true}}"><button class="addb" onClick="{{sendRep}}"><span class="gl g-send-diagonal" aria-hidden="true"></span>Отправить</button></sc-if>
+          <sc-if value="{{intakeOff}}" hint-placeholder-val="{{false}}"><button class="addb" onClick="{{closeRep}}"><span class="gl g-download" aria-hidden="true"></span>Сохранить файлом</button></sc-if>
+        </div>
+        <sc-if value="{{offWarn}}" hint-placeholder-val="{{false}}"><p class="sh-warn"><span class="gl g-warning-circle" aria-hidden="true"></span>Администратор пока не принимает данные из приложения. Сохраните файл и отправьте ему</p></sc-if>
+      </sc-if>
+      <sc-if value="{{repSent}}" hint-placeholder-val="{{false}}">
+        <div class="sent rise">
+          <span class="sent-ic"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span>
+          <b>Отправлено администратору</b>
+          <p>Назовите этот код поддержке — по нему найдут ваши данные</p>
+          <div class="code"><span>MG-7K3F</span><button class="lsb {{copyCls}}" onClick="{{copy}}"><span class="gl g-copy" aria-hidden="true"></span><span>{{copyTxt}}</span></button></div>
+          <button class="lsb" onClick="{{closeRep}}">Готово</button>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+</div>
+  <div lang="en" class="dev dtop" role="toolbar" aria-label="Prototype states">
+    <div class="dg"><span class="dl">Check</span><div class="ds"><button class="{{dv.ck_idle}}" onClick="{{dvSet.ck_idle}}">Not run</button><button class="{{dv.ck_run}}" onClick="{{dvSet.ck_run}}">Running</button><button class="{{dv.ck_issues}}" onClick="{{dvSet.ck_issues}}">Issues</button><button class="{{dv.ck_good}}" onClick="{{dvSet.ck_good}}">All good</button></div></div>
+    <div class="dg"><span class="dl">Tab</span><div class="ds"><button class="{{dv.tb_res}}" onClick="{{dvSet.tb_res}}">Results</button><button class="{{dv.tb_log}}" onClick="{{dvSet.tb_log}}">Log</button></div></div>
+  </div>
+  <div lang="en" class="dev" role="toolbar" aria-label="Report states">
+    <div class="dg"><span class="dl">Debug report</span><div class="ds"><button class="{{dv.rp_closed}}" onClick="{{dvSet.rp_closed}}">Closed</button><button class="{{dv.rp_open}}" onClick="{{dvSet.rp_open}}">Open</button><button class="{{dv.rp_sent}}" onClick="{{dvSet.rp_sent}}">Sent</button><button class="{{dv.rp_off}}" onClick="{{dvSet.rp_off}}">Intake off</button><button class="{{dv.rp_asked}}" onClick="{{dvSet.rp_asked}}">Admin asks</button></div></div>
+    <div class="dg"><span class="dl">Mode</span><div class="ds"><button class="{{dv.md_mg}}" onClick="{{dvSet.md_mg}}">Mistgate</button><button class="{{dv.md_basic}}" onClick="{{dvSet.md_basic}}">Basic</button></div></div>
+    <div class="dg"><span class="dl">Theme</span><div class="ds"><button class="{{dv.th_dark}}" onClick="{{dvSet.th_dark}}">Dark</button><button class="{{dv.th_light}}" onClick="{{dvSet.th_light}}">Light</button></div></div>
+  </div>
+</div>
