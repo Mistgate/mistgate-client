@@ -6,8 +6,8 @@
 package firewall
 
 import (
-	"errors"
 	"net/netip"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -22,6 +22,7 @@ type baseObjects struct {
 }
 
 var wfpSession uintptr
+var wfpSessionMu sync.Mutex
 
 func createWfpSession() (uintptr, error) {
 	sessionDisplayData, err := createWtFwpmDisplayData0("Mistgate", "Mistgate dynamic session")
@@ -100,9 +101,8 @@ func registerBaseObjects(session uintptr) (*baseObjects, error) {
 }
 
 func EnableFirewall(luid uint64, doNotRestrict bool, restrictToDNSServers []netip.Addr) error {
-	if wfpSession != 0 {
-		return errors.New("The firewall has already been enabled")
-	}
+	wfpSessionMu.Lock()
+	defer wfpSessionMu.Unlock()
 
 	session, err := createWfpSession()
 	if err != nil {
@@ -121,11 +121,9 @@ func EnableFirewall(luid uint64, doNotRestrict bool, restrictToDNSServers []neti
 		}
 
 		if !doNotRestrict {
-			if len(restrictToDNSServers) > 0 {
-				err = blockDNS(restrictToDNSServers, session, baseObjects, 15, 14)
-				if err != nil {
-					return wrapErr(err)
-				}
+			err = blockDNS(restrictToDNSServers, session, baseObjects, 15, 14)
+			if err != nil {
+				return wrapErr(err)
 			}
 
 			err = permitLoopback(session, baseObjects, 13)
@@ -181,11 +179,17 @@ func EnableFirewall(luid uint64, doNotRestrict bool, restrictToDNSServers []neti
 		return wrapErr(err)
 	}
 
+	oldSession := wfpSession
 	wfpSession = session
+	if oldSession != 0 {
+		fwpmEngineClose0(oldSession)
+	}
 	return nil
 }
 
 func DisableFirewall() {
+	wfpSessionMu.Lock()
+	defer wfpSessionMu.Unlock()
 	if wfpSession != 0 {
 		fwpmEngineClose0(wfpSession)
 		wfpSession = 0

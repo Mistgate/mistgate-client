@@ -52,9 +52,15 @@ protocol that are actually in use.
 {"state": "off", "step": "", "since_unix": 0, "server": "", "protocol": "", "error": ""}
 ```
 
-`state`: `off` · `connecting` · `connected` · `reconnecting` · `error` · `blocked` (the kill switch holds the internet).
-`step` while connecting: `resolve` · `handshake` · `tunnel` · `verify`. `error`: a code such as `no_server_answers`,
+`state`: `off` · `connecting` · `connected` · `reconnecting` · `error` · `blocked`.
+`step` while connecting or retrying: `resolve` · `handshake` · `tunnel` · `verify`. `error`: a code such as `no_server_answers`,
 `no_subscription`, `offline`, `server_not_found`, `auth_rejected`, `tunnel_failed`, `verify_failed`, `unsupported_os`.
+
+`reconnecting` means the service detected a dead tunnel and is retrying while keeping the network closed; `error` may
+contain the most recent failed retry code. `blocked` means a retry failed with `auth_rejected`, `no_subscription` or
+`unsupported_os`, so no automatic retries remain. Calling `connect` in `reconnecting` or `blocked` retries immediately
+while keeping the network closed. Calling `disconnect` in any state stops retries and opens the network. A first
+user-initiated `connect` failure ends in `error` with the network open.
 
 Events: `status` (a Status, on every change), `traffic` (`{"rx_bps": 0, "tx_bps": 0, "rtt_ms": 0}`, once a second while
 connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`).
@@ -67,7 +73,7 @@ here first.
 For a real connection, run `mistgate-clientd run -profiles profiles.json` from an elevated console. Put
 `wintun.dll` version 0.14.1 from [wintun.net](https://www.wintun.net/) beside `mistgate-clientd.exe`. The profiles
 file is JSON with a `servers` array; Hysteria2 entries use `uri`, and AmneziaWG entries use `conf` containing the
-wg-quick text. `verify` is optional and defaults to `1.1.1.1:443`.
+wg-quick text. `verify` is optional; if omitted, the service tries `1.1.1.1:443` and then `8.8.8.8:443`.
 
 The window only talks to a `mistgate-clientd.exe` that sits in its own directory, so for a development run copy the
 service beside the window binary (`ui/src-tauri/target/debug/`); `run -fake` there needs no elevation.
@@ -86,9 +92,9 @@ service beside the window binary (`ui/src-tauri/target/debug/`); `run -fake` the
 `mistgate-clientd install [run flags]` (elevated) registers the binary as the LocalSystem service `MistgateClient`
 with an unrestricted service SID and starts it; `mistgate-clientd uninstall` stops and removes it.
 
-While a connection is up, the firewall (WFP, a dynamic session) lets through only the tunnel adapter, loopback, DHCP
-and NDP, the local network (private and link-local ranges; not its DNS) and the service's own sockets, and DNS only
-to the tunnel's resolvers. The
-rules name the service SID, so they need the installed service: a console run has no kill switch and says so in the
-log. The session ends on disconnect and with the process; holding the network closed after an unexpected drop (state
-`blocked`) is not there yet.
+While connected, reconnecting or blocked, the firewall (WFP, a dynamic session) lets through only the tunnel adapter,
+loopback, DHCP and NDP, the local network (private and link-local ranges; not its DNS), the service's own sockets,
+and DNS to the tunnel's resolvers. The rules name the service SID, so they need the installed service: a console run
+has no kill switch and says so in the
+log. The held session stays closed during reconnects and in `blocked`; disconnect opens the network. The dynamic
+session ends with the process, so a service crash opens the network.

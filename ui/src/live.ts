@@ -49,7 +49,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         Object.assign(next, { phase: 'on', secs: Math.max(0, Math.floor(Date.now() / 1000) - s.since_unix), wave: was === 'connecting' });
         if (next.wave) { clearTimeout(this.t2); this.t2 = setTimeout(() => this.setState({ wave: false }), 1900); }
       } else if (s.state === 'connecting') Object.assign(next, { phase: 'ing', cstep: STEP[s.step] ?? 0 });
-      else if (s.state === 'reconnecting') Object.assign(next, { phase: 'ing', cs: 'rec' });
+      else if (s.state === 'reconnecting') Object.assign(next, { phase: 'ing', cs: s.error === 'offline' ? 'offline' : 'rec' });
       else if (s.state === 'blocked') Object.assign(next, { phase: 'off', cs: 'ks' });
       else if (s.state === 'error' && s.error === 'no_subscription') Object.assign(next, { phase: 'off', si: 5 });
       else if (s.state === 'error') Object.assign(next, { phase: 'off', cs: s.error === 'offline' ? 'offline' : 'error' });
@@ -62,8 +62,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     switchTo(id: string) { this.setState({ sel: id, pop: false }); } // ponytail: no server list from the service yet; switching comes with subscriptions
     setPhase(p: string) { this.ask(p === 'off' ? 'disconnect' : 'connect'); }
     toggle() {
-      if (this.blk || this.cs === 'offline' || this.cs === 'svc') return;
-      const idle = !this.live || this.live.state === 'off' || this.live.state === 'error';
+      if (this.blk || this.cs === 'svc') return;
+      // off, failed, or held closed after a retry that cannot succeed: the button connects; otherwise it stops
+      const idle = !this.live || ['off', 'error', 'blocked'].includes(this.live.state);
       if (idle) this.setState({ phase: 'ing', cs: '', cstep: 0, wave: false }); // the button answers at once; the service confirms
       this.ask(idle ? 'connect' : 'disconnect');
     }
@@ -80,6 +81,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           v.msTxt.cur = v.cur.ms = String(this.traffic.rtt_ms);
         } else v.down = v.up = '0.0';
       }
+      v.csUnblock = () => this.ask('disconnect'); // "Unblock": open the network, stay off
       v.det = { on: false }; // the detector's chip is the design's sample until the detectors exist
       if (v.isErr) v.csS = ''; // the design's line counts tried servers; the service does not report that yet
       return v;

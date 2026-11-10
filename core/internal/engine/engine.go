@@ -17,6 +17,7 @@ const (
 type Target struct {
 	Server   string
 	Protocol string
+	Hold     bool // Keep the network closed if a reconnect attempt fails.
 }
 
 type Info struct {
@@ -32,9 +33,11 @@ type Traffic struct {
 
 type Engine interface {
 	Start(ctx context.Context, target Target, report func(Step)) (Info, error)
-	// Stop must be safe to call while Start is running.
+	// Stop must be safe to call while Start is running and opens the network.
 	Stop()
 	Stats() Traffic
+	Probe(ctx context.Context) error
+	Changed() <-chan struct{}
 }
 
 type Failure struct {
