@@ -9,9 +9,9 @@ const logic = import.meta.glob('./*/*.logic.js', { import: 'default' }) as Recor
 // The screens of one language, with its stylesheet and fonts (Farsi is mirrored, Chinese has its own font stack).
 export async function loadScreens(lang: Lang) {
   const css = lang === 'fa'
-    ? Promise.all([import('../design/app.fa.css'), import('../fonts-fa')])
+    ? Promise.all([import('../design/app.fa.css'), import('@fontsource-variable/vazirmatn')])
     : lang === 'zh'
-      ? Promise.all([import('../design/app.zh.css'), import('../fonts-zh')])
+      ? Promise.all([import('../design/app.zh.css'), import('@fontsource-variable/noto-sans-sc')])
       : import('../design/app.css');
   const files = Object.keys(html).filter((f) => f.startsWith(`./${lang}/`));
   const [, ...loaded] = await Promise.all([css, ...files.map(async (file) => {

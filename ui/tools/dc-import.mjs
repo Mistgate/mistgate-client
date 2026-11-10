@@ -32,6 +32,8 @@ for (const [lang, prefix] of Object.entries(LANGS)) {
   }
 }
 for (const css of ['app.css', 'app.fa.css', 'app.zh.css'])
-  writeFileSync(join(ui, 'src', 'design', css), blob(readFileSync(join(src, css), 'utf8')));
+  // the bundled fonts are the variable builds (one file set for every weight), named "… Variable"
+  writeFileSync(join(ui, 'src', 'design', css), blob(readFileSync(join(src, css), 'utf8'))
+    .replaceAll(',Vazirmatn,', ',"Vazirmatn Variable",').replaceAll('"Noto Sans SC"', '"Noto Sans SC Variable"'));
 copyFileSync(join(src, 'ds', 'mistgate', 'tokens.json'), join(ui, 'src', 'design', 'tokens.json'));
 console.log('imported', count, 'screens in', Object.keys(LANGS).length, 'languages');

@@ -27,6 +27,12 @@ const inApp = '__TAURI_INTERNALS__' in window;
 if (inApp || shell !== undefined) document.documentElement.classList.add('shell');
 if (inApp) void import('./shell').then((m) => m.attachWindow());
 
+// A window nobody looks at draws nothing: its animations stop while it is hidden or out of focus.
+const rest = () => document.documentElement.classList.toggle('idle', document.hidden || !document.hasFocus());
+for (const ev of ['focus', 'blur']) window.addEventListener(ev, rest);
+document.addEventListener('visibilitychange', rest);
+rest();
+
 void loadScreens(lang).then((screens) => {
   function App() {
     const [screen, setScreen] = React.useState(first);
