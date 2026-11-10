@@ -1,1 +1,4 @@
 core/.gocache/
+ui/src-tauri/bin/
+ui/src-tauri/target/
+ui/src-tauri/gen/

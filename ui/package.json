@@ -7,7 +7,8 @@
     "design": "node tools/dc-import.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bundle": "node tools/prepare-bundle.mjs && tauri build"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "^5.3.1",

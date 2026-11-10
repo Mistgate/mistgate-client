@@ -105,7 +105,34 @@ fn autostart(enabled: bool, minimized: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// One Mistgate per user session. A second start brings the first one's window up and leaves.
+#[cfg(windows)]
+fn already_running() -> bool {
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow, ShowWindow, SW_SHOW};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    // kept for the life of the process: the mutex is the mark
+    unsafe { CreateMutexW(std::ptr::null(), 0, wide("Local\\net.mistgate.client").as_ptr()) };
+    if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+        return false;
+    }
+    // ponytail: found by its title; a named message would survive a renamed window
+    let window = unsafe { FindWindowW(std::ptr::null(), wide("Mistgate").as_ptr()) };
+    if !window.is_null() {
+        unsafe {
+            ShowWindow(window, SW_SHOW);
+            SetForegroundWindow(window);
+        }
+    }
+    true
+}
+
 fn main() {
+    #[cfg(windows)]
+    if already_running() {
+        return;
+    }
     tauri::Builder::default()
         .manage(Shell {
             close_to_tray: AtomicBool::new(true),
