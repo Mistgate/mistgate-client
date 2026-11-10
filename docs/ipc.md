@@ -69,6 +69,9 @@ For a real connection, run `mistgate-clientd run -profiles profiles.json` from a
 file is JSON with a `servers` array; Hysteria2 entries use `uri`, and AmneziaWG entries use `conf` containing the
 wg-quick text. `verify` is optional and defaults to `1.1.1.1:443`.
 
+The window only talks to a `mistgate-clientd.exe` that sits in its own directory, so for a development run copy the
+service beside the window binary (`ui/src-tauri/target/debug/`); `run -fake` there needs no elevation.
+
 ```json
 {
   "servers": [

@@ -26,6 +26,8 @@ document.documentElement.lang = lang;
 const inApp = '__TAURI_INTERNALS__' in window;
 if (inApp || shell !== undefined) document.documentElement.classList.add('shell');
 if (inApp) void import('./shell').then((m) => m.attachWindow());
+// In the app window Home talks to the service; in a browser it stays the design's mock.
+const live = inApp ? import('./live') : null;
 
 // A window nobody looks at draws nothing: its animations stop while it is hidden or out of focus.
 const rest = () => document.documentElement.classList.toggle('idle', document.hidden || !document.hasFocus());
@@ -33,7 +35,8 @@ for (const ev of ['focus', 'blur']) window.addEventListener(ev, rest);
 document.addEventListener('visibilitychange', rest);
 rest();
 
-void loadScreens(lang).then((screens) => {
+void Promise.all([loadScreens(lang), live]).then(([screens, l]) => {
+  if (l) screens.Main = l.liveHome(screens.Main);
   function App() {
     const [screen, setScreen] = React.useState(first);
     const Screen = screens[screen] ?? screens.Main;
