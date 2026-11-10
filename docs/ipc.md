@@ -39,9 +39,14 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 |---|---|---|
 | `hello` | `{"client": "0.0.1"}` | `{"service": "0.0.1", "trusted": true, "api": 0}` |
 | `status` | — | Status |
-| `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg"}` (both optional) | Status |
+| `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg", "sub": "<subscription id>"}` (all optional) | Status |
 | `disconnect` | — | Status |
-| `subscribe` | `{"events": ["status", "traffic", "log"]}` | `{}`; the events then arrive on this connection |
+| `subscribe` | `{"events": ["status", "traffic", "log", "subs"]}` | `{}`; the events then arrive on this connection |
+| `subs.list` | — | `{"subs": [Subscription…]}` |
+| `subs.preview` | `{"text": "<URL, links, or AWG config>"}` | Subscription, not saved (`id` is empty) |
+| `subs.add` | `{"text": "<URL, links, or AWG config>"}` | Subscription |
+| `subs.refresh` | `{"id": "<subscription id>"}` | Subscription |
+| `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
 
 Status:
 
@@ -63,29 +68,37 @@ while keeping the network closed. Calling `disconnect` in any state stops retrie
 user-initiated `connect` failure ends in `error` with the network open.
 
 Events: `status` (a Status, on every change), `traffic` (`{"rx_bps": 0, "tx_bps": 0, "rtt_ms": 0}`, once a second while
-connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`).
+connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`), and `subs` (`{"subs": [Subscription…]}`)
+after subscription data changes. Subscribe to `subs` to receive those updates.
 
-Subscriptions, servers, settings, diagnostics and reports come with the steps that build them; each adds its methods
-here first.
+Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `offline`,
+`fetch_failed`, and `unknown_subscription`. `connect` returns `no_subscription` if the selected subscription or
+server is no longer present. Removing a subscription does not stop an active tunnel; a later reconnect or connect
+must select a server that still exists.
+
+The service stores subscriptions in `<data directory>\subscriptions.bin`. On Windows the JSON state is protected
+with DPAPI for the service account, and the data directory has a protected ACL granting access only to SYSTEM and
+Administrators. URLs, server links and AWG configs are stored there; IPC subscription objects contain no secrets.
 
 ## Running it by hand
 
-For a real connection, run `mistgate-clientd run -profiles profiles.json` from an elevated console. Put
-`wintun.dll` version 0.14.1 from [wintun.net](https://www.wintun.net/) beside `mistgate-clientd.exe`. The profiles
-file is JSON with a `servers` array; Hysteria2 entries use `uri`, and AmneziaWG entries use `conf` containing the
-wg-quick text. `verify` is optional; if omitted, the service tries `1.1.1.1:443` and then `8.8.8.8:443`.
+For a real connection, run `mistgate-clientd run -data "%ProgramData%\Mistgate"` from an elevated console. Put
+`wintun.dll` version 0.14.1 from [wintun.net](https://www.wintun.net/) beside `mistgate-clientd.exe`. The data
+directory defaults to `%ProgramData%\Mistgate`. `-verify host:port` overrides the tunnel verification target for
+development and the test stand; normally the service tries `1.1.1.1:443` and then `8.8.8.8:443`.
 
-The window only talks to a `mistgate-clientd.exe` that sits in its own directory, so for a development run copy the
-service beside the window binary (`ui/src-tauri/target/debug/`); `run -fake` there needs no elevation.
+Add a panel URL, pasted links, or an AmneziaWG config through the trusted pipe, for example:
 
 ```json
-{
-  "servers": [
-    {"id": "de1-hy2", "name": "Germany", "protocol": "hysteria2", "uri": "hysteria2://token@server.example:443"},
-    {"id": "de1-awg", "name": "Germany", "protocol": "awg", "conf": "[Interface]\nAddress = 10.66.4.3/32\nPrivateKey = <key>\n[Peer]\nPublicKey = <key>\nAllowedIPs = 0.0.0.0/0\nEndpoint = server.example:51820"}
-  ]
-}
+{"id": 1, "method": "subs.add", "params": {"text": "https://panel.example/subscription/<token>"}}
 ```
+
+The response contains the subscription id and its server ids. Use those ids in `connect`; `sub` can restrict `auto`
+selection to one subscription.
+
+The window only talks to a `mistgate-clientd.exe` that sits in its own directory, so for a development run copy the
+service beside the window binary (`ui/src-tauri/target/debug/`). `run -fake -data <directory>` uses the fake engine
+and does not need `wintun.dll`.
 
 ## The kill switch and the Windows service
 

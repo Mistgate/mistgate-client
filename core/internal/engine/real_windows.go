@@ -34,7 +34,8 @@ import (
 var killSwitchWarning sync.Once
 
 type Real struct {
-	load func() ([]profile.Profile, error)
+	load   func() ([]profile.Profile, error)
+	verify string
 
 	lifecycle sync.Mutex
 	mu        sync.Mutex
@@ -66,8 +67,12 @@ type realTunnel struct {
 	awg     *device.Device
 }
 
-func NewReal(load func() ([]profile.Profile, error)) *Real {
-	r := &Real{load: load, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
+func NewReal(load func() ([]profile.Profile, error), verifyOverride ...string) *Real {
+	verify := ""
+	if len(verifyOverride) != 0 {
+		verify = verifyOverride[0]
+	}
+	r := &Real{load: load, verify: verify, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
 	callback, err := winipcfg.RegisterRouteChangeCallback(func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
 		if route == nil || route.DestinationPrefix.Prefix().Bits() != 0 {
 			return
@@ -121,9 +126,12 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if err := runCtx.Err(); err != nil {
 		return Info{}, err
 	}
-	selected, ok := profile.Pick(profiles, target.Server, target.Protocol)
+	selected, ok := profile.Pick(profiles, target.Server, target.Protocol, target.Sub)
 	if !ok {
 		return Info{}, failure("no_subscription", "select profile")
+	}
+	if r.verify != "" {
+		selected.Verify = r.verify
 	}
 	host, port, err := profileEndpoint(selected)
 	if err != nil {

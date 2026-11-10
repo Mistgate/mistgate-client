@@ -163,13 +163,18 @@ func TestPick(t *testing.T) {
 		{"", "auto", "hy2-first"},
 		{"hy2-third", "hysteria2", "hy2-third"},
 	} {
-		got, ok := Pick(profiles, test.server, test.protocol)
+		got, ok := Pick(profiles, test.server, test.protocol, "")
 		if !ok || got.ID != test.want {
 			t.Errorf("Pick(%q, %q) = %#v, %v; want %q", test.server, test.protocol, got, ok, test.want)
 		}
 	}
-	if _, ok := Pick(profiles, "awg-second", "hysteria2"); ok {
+	if _, ok := Pick(profiles, "awg-second", "hysteria2", ""); ok {
 		t.Fatal("Pick matched an id with the wrong protocol")
+	}
+	profiles[0].Sub = "one"
+	profiles[1].Sub = "two"
+	if got, ok := Pick(profiles, "auto", "auto", "two"); !ok || got.ID != "awg-second" {
+		t.Fatalf("Pick with subscription = %#v, %v", got, ok)
 	}
 }
 

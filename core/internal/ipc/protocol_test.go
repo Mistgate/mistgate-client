@@ -93,6 +93,54 @@ func TestParseRequestAndDispatchErrors(t *testing.T) {
 	}
 }
 
+func TestSubscriptionEventAndConnectSelector(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{})
+	manager := session.NewManager(fake)
+	defer manager.Close()
+	server := &Server{Manager: manager}
+
+	request, err := ParseRequest([]byte(`{"id":1,"method":"subscribe","params":{"events":["subs"]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, events, rpcErr := server.dispatch(context.Background(), request, true)
+	if rpcErr != nil || events == nil {
+		t.Fatalf("subscribe dispatch = %#v, %#v", events, rpcErr)
+	}
+	defer events.Close()
+	manager.Events().Publish("subs", map[string]any{"subs": []string{"one"}})
+	select {
+	case event := <-events.C:
+		if event.Name != "subs" {
+			t.Fatalf("event name = %q", event.Name)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subs event was not forwarded")
+	}
+
+	request, err = ParseRequest([]byte(`{"id":2,"method":"connect","params":{"server":"auto","protocol":"awg","sub":"sub-1"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, rpcErr := server.dispatch(context.Background(), request, true); rpcErr != nil {
+		t.Fatalf("connect dispatch = %#v", rpcErr)
+	}
+	deadline := time.After(time.Second)
+	for {
+		if targets := fake.Targets(); len(targets) > 0 {
+			if targets[0].Sub != "sub-1" || targets[0].Protocol != "awg" {
+				t.Fatalf("engine target = %#v", targets[0])
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("connect target was not passed to the engine")
+		case <-time.After(time.Millisecond * 5):
+		}
+	}
+}
+
 func TestSlowClientIsDroppedWhenWriteQueueFills(t *testing.T) {
 	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}))
 	defer manager.Close()

@@ -18,6 +18,7 @@ type Profile struct {
 	ID       string
 	Name     string
 	Protocol string
+	Sub      string
 	Hy2      *Hy2
 	AWG      *AWG
 	Verify   string
@@ -452,18 +453,19 @@ func validateHostPort(value string) error {
 	return err
 }
 
-func Pick(profiles []Profile, server, protocol string) (Profile, bool) {
+func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 	anyProtocol := protocol == "" || protocol == "auto"
 	if server == "" || server == "auto" {
+		// ponytail: auto picks the first match until connection measurements can choose one.
 		for _, p := range profiles {
-			if anyProtocol || p.Protocol == protocol {
+			if (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol) {
 				return p, true
 			}
 		}
 		return Profile{}, false
 	}
 	for _, p := range profiles {
-		if p.ID == server && (anyProtocol || p.Protocol == protocol) {
+		if p.ID == server && (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol) {
 			return p, true
 		}
 	}

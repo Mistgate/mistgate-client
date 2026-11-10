@@ -37,3 +37,7 @@ for (const css of ['app.css', 'app.fa.css', 'app.zh.css'])
     .replaceAll(',Vazirmatn,', ',"Vazirmatn Variable",').replaceAll('"Noto Sans SC"', '"Noto Sans SC Variable"'));
 copyFileSync(join(src, 'ds', 'mistgate', 'tokens.json'), join(ui, 'src', 'design', 'tokens.json'));
 console.log('imported', count, 'screens in', Object.keys(LANGS).length, 'languages');
+// the flags the design has, by country code: the app picks one by the flag emoji in a server's name
+const flags = readFileSync(join(src, 'Main.dc.html'), 'utf8').match(/const FLAGS = (\{[^}]*\})/);
+if (!flags) throw new Error('Main.dc.html: no FLAGS table');
+writeFileSync(join(ui, 'src', 'design', 'flags.json'), blob(flags[1]) + '\n');

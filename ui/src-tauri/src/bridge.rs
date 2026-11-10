@@ -259,7 +259,7 @@ async fn run_connected(
     let subscribe_line = encode_request_line(
         subscribe_id,
         "subscribe",
-        json!({"events": ["status", "traffic", "log"]}),
+        json!({"events": ["status", "traffic", "log", "subs"]}),
     )
     .map_err(|error| error.message)?;
     writer
@@ -389,6 +389,7 @@ fn emit_service_event(app: &AppHandle, event: &str, data: Value) {
         "status" => "mg://status",
         "traffic" => "mg://traffic",
         "log" => "mg://log",
+        "subs" => "mg://subs",
         _ => return,
     };
     let _ = app.emit(target, data);

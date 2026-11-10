@@ -17,6 +17,7 @@ const (
 type Target struct {
 	Server   string
 	Protocol string
+	Sub      string
 	Hold     bool // Keep the network closed if a reconnect attempt fails.
 }
 

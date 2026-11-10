@@ -13,6 +13,7 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/session"
+	"github.com/mistgate/mistgate-client/core/internal/subs"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 
 type Server struct {
 	Manager   *session.Manager
+	Subs      *subs.Store
 	Logger    *slog.Logger
 	QueueSize int
 }
@@ -125,7 +127,7 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, badParams()
 		}
 		for key := range params {
-			if key != "server" && key != "protocol" {
+			if key != "server" && key != "protocol" && key != "sub" {
 				return nil, nil, badParams()
 			}
 		}
@@ -146,6 +148,11 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			case "auto", "hysteria2", "awg":
 				target.Protocol = protocol
 			default:
+				return nil, nil, badParams()
+			}
+		}
+		if subJSON, exists := params["sub"]; exists {
+			if json.Unmarshal(subJSON, &target.Sub) != nil {
 				return nil, nil, badParams()
 			}
 		}
@@ -180,9 +187,75 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, badParams()
 		}
 		return map[string]any{}, subscription, nil
+	case "subs.list":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "subscription store is unavailable"}
+		}
+		return map[string]any{"subs": s.Subs.List()}, nil, nil
+	case "subs.preview", "subs.add":
+		var params struct {
+			Text *string `json:"text"`
+		}
+		if !decodeParams(request.Params, &params) || params.Text == nil {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "subscription store is unavailable"}
+		}
+		var result any
+		var err error
+		if request.Method == "subs.preview" {
+			result, err = s.Subs.Preview(ctx, *params.Text)
+		} else {
+			result, err = s.Subs.Add(ctx, *params.Text)
+		}
+		if err != nil {
+			return nil, nil, subscriptionRPCError(err)
+		}
+		return result, nil, nil
+	case "subs.refresh":
+		var params struct {
+			ID string `json:"id"`
+		}
+		if !decodeParams(request.Params, &params) || params.ID == "" {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "subscription store is unavailable"}
+		}
+		result, err := s.Subs.Refresh(ctx, params.ID)
+		if err != nil {
+			return nil, nil, subscriptionRPCError(err)
+		}
+		return result, nil, nil
+	case "subs.remove":
+		var params struct {
+			ID string `json:"id"`
+		}
+		if !decodeParams(request.Params, &params) || params.ID == "" {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "subscription store is unavailable"}
+		}
+		if err := s.Subs.Remove(params.ID); err != nil {
+			return nil, nil, subscriptionRPCError(err)
+		}
+		return map[string]any{}, nil, nil
 	default:
 		return nil, nil, &RPCError{Code: "unknown_method", Message: "method is not supported"}
 	}
+}
+
+func subscriptionRPCError(err error) *RPCError {
+	var coded *subs.Error
+	if errors.As(err, &coded) && coded.Code != "" {
+		return &RPCError{Code: coded.Code, Message: "subscription request failed"}
+	}
+	return &RPCError{Code: "service_error", Message: "subscription request failed"}
 }
 
 func decodeParams(raw json.RawMessage, target any) bool {
@@ -292,6 +365,21 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger) error {
-	return runPipeServer(ctx, &Server{Manager: manager, Logger: logger})
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	server := &Server{Manager: manager, Logger: logger, Subs: store}
+	if store != nil {
+		go func() {
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-store.Changes():
+					manager.Events().Publish("subs", map[string]any{"subs": store.List()})
+				}
+			}
+		}()
+	}
+	return runPipeServer(runCtx, server)
 }
