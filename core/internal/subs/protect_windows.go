@@ -8,7 +8,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const directorySDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+// SYSTEM, Administrators and the owner. For the installed service the owner is SYSTEM, so nothing is widened; a
+// development run from a plain console keeps access to the directory it has just created.
+const directorySDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
 
 func secureDirectory(path string) error {
 	sd, err := windows.SecurityDescriptorFromString(directorySDDL)

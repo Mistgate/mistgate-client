@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -445,12 +446,15 @@ func parseURLBody(body, id string) ([]Server, []storedEntry, int, error) {
 	return parseEntries(body, id)
 }
 
+var linkStart = regexp.MustCompile(`\s+([a-zA-Z][a-zA-Z0-9+.-]*://)`)
+
 func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 	servers := make([]Server, 0)
 	entries := make([]storedEntry, 0)
 	seen := make(map[string]bool)
 	unsupported, count := 0, 0
-	for _, line := range strings.Split(text, "\n") {
+	// a single-line field turns a pasted list into one line: a new link starts wherever whitespace is followed by a scheme
+	for _, line := range strings.Split(linkStart.ReplaceAllString(text, "\n$1"), "\n") {
 		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
 		if line == "" {
 			continue

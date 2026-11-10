@@ -246,3 +246,14 @@ func openTestStore(t *testing.T, dir string, server *httptest.Server) *Store {
 }
 
 func identityProtection(data []byte) ([]byte, error) { return append([]byte(nil), data...), nil }
+
+func TestLinksOnOneLine(t *testing.T) {
+	text := "hysteria2://a@203.0.113.5:443/?insecure=1#One two hy2://b@203.0.113.6:443/?insecure=1#Three\tvless://x@example.com:443#other"
+	servers, _, unsupported, err := parseEntries(text, "sub")
+	if err != nil || len(servers) != 2 || unsupported != 1 {
+		t.Fatalf("got %d servers, %d unsupported, err %v", len(servers), unsupported, err)
+	}
+	if servers[0].Name != "One two" || servers[1].Name != "Three" {
+		t.Fatalf("names: %q, %q", servers[0].Name, servers[1].Name)
+	}
+}

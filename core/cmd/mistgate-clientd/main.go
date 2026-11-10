@@ -80,6 +80,7 @@ func defaultDataDir() string {
 func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 	store, err := subs.Open(dataDir)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "cannot open the data directory:", err)
 		return err
 	}
 	go store.Run(ctx)

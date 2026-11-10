@@ -4,3 +4,5 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell .desk { width: 100vw; height: 100vh; background: none; }
 .shell .dev { display: none; }
 .shell .app { box-shadow: none; }
+/* A server whose name carries no flag has no picture: keep its place, show nothing. */
+.shell img:not([src]) { visibility: hidden; }
