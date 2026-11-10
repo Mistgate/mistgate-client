@@ -1,0 +1,199 @@
+{
+ "state": {
+  "editor": "enum",
+  "options": [
+   "on",
+   "off",
+   "ing",
+   "sw"
+  ],
+  "default": "on",
+  "section": "State"
+ },
+ "sel": {
+  "editor": "enum",
+  "options": [
+   "auto",
+   "de",
+   "nl",
+   "ru"
+  ],
+  "default": "auto",
+  "section": "State"
+ },
+ "list": {
+  "editor": "enum",
+  "options": [
+   "top",
+   "end"
+  ],
+  "default": "top",
+  "section": "State"
+ },
+ "tab": {
+  "editor": "enum",
+  "options": [
+   "vpn",
+   "telegram"
+  ],
+  "default": "vpn",
+  "section": "State"
+ },
+ "pop": {
+  "editor": "enum",
+  "options": [
+   "closed",
+   "open"
+  ],
+  "default": "closed",
+  "section": "State"
+ },
+ "subs": {
+  "editor": "enum",
+  "options": [
+   "closed",
+   "open"
+  ],
+  "default": "closed",
+  "section": "State"
+ },
+ "sub": {
+  "editor": "enum",
+  "options": [
+   "mine",
+   "work",
+   "family",
+   "test",
+   "expired",
+   "none"
+  ],
+  "default": "mine",
+  "section": "State"
+ },
+ "srv": {
+  "editor": "enum",
+  "options": [
+   "0",
+   "2",
+   "8",
+   "24"
+  ],
+  "default": "8",
+  "section": "State"
+ },
+ "telegram": {
+  "editor": "enum",
+  "options": [
+   "ok",
+   "missing"
+  ],
+  "default": "ok",
+  "section": "State"
+ },
+ "add": {
+  "editor": "enum",
+  "options": [
+   "none",
+   "check",
+   "confirm",
+   "consent",
+   "badlink",
+   "limit",
+   "expired",
+   "offline",
+   "drop",
+   "basic"
+  ],
+  "default": "none",
+  "section": "State"
+ },
+ "banner": {
+  "editor": "enum",
+  "options": [
+   "none",
+   "news",
+   "debug",
+   "update",
+   "newver"
+  ],
+  "default": "none",
+  "section": "State"
+ },
+ "det": {
+  "editor": "enum",
+  "options": [
+   "udp",
+   "dpi",
+   "none"
+  ],
+  "default": "udp",
+  "section": "State"
+ },
+ "subst": {
+  "editor": "enum",
+  "options": [
+   "ok",
+   "removed",
+   "stale"
+  ],
+  "default": "ok",
+  "section": "State"
+ },
+ "brand": {
+  "editor": "enum",
+  "options": [
+   "mistgate",
+   "polar",
+   "sunline",
+   "onyx"
+  ],
+  "default": "mistgate",
+  "section": "Look"
+ },
+ "conn": {
+  "editor": "enum",
+  "options": [
+   "none",
+   "rec",
+   "offline",
+   "error",
+   "ks",
+   "svc"
+  ],
+  "default": "none",
+  "section": "State"
+ },
+ "why": {
+  "editor": "enum",
+  "options": [
+   "net",
+   "sleep"
+  ],
+  "default": "net",
+  "section": "State"
+ },
+ "theme": {
+  "editor": "enum",
+  "options": [
+   "dark",
+   "light"
+  ],
+  "default": "dark",
+  "section": "Look"
+ },
+ "accent": {
+  "editor": "enum",
+  "options": [
+   "lavender",
+   "mint",
+   "sand",
+   "rose"
+  ],
+  "default": "lavender",
+  "section": "Look"
+ },
+ "$preview": {
+  "width": 1160,
+  "height": 800
+ }
+}

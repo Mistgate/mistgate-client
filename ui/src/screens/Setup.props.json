@@ -1,0 +1,49 @@
+{
+ "step": {
+  "editor": "enum",
+  "options": [
+   "welcome",
+   "folder",
+   "progress",
+   "done"
+  ],
+  "default": "welcome",
+  "section": "State"
+ },
+ "issue": {
+  "editor": "enum",
+  "options": [
+   "none",
+   "space",
+   "cancel",
+   "denied",
+   "failed"
+  ],
+  "default": "none",
+  "section": "State"
+ },
+ "theme": {
+  "editor": "enum",
+  "options": [
+   "dark",
+   "light"
+  ],
+  "default": "dark",
+  "section": "Look"
+ },
+ "accent": {
+  "editor": "enum",
+  "options": [
+   "lavender",
+   "mint",
+   "sand",
+   "rose"
+  ],
+  "default": "lavender",
+  "section": "Look"
+ },
+ "$preview": {
+  "width": 1160,
+  "height": 800
+ }
+}

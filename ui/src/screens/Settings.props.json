@@ -1,0 +1,123 @@
+{
+ "section": {
+  "editor": "enum",
+  "options": [
+   "conn",
+   "exc",
+   "sub",
+   "priv",
+   "look",
+   "notif",
+   "upd",
+   "proxy",
+   "about"
+  ],
+  "default": "conn",
+  "section": "State"
+ },
+ "sub": {
+  "editor": "enum",
+  "options": [
+   "ok",
+   "warn",
+   "limit",
+   "removed",
+   "offline",
+   "old",
+   "news",
+   "basic"
+  ],
+  "default": "ok",
+  "section": "State"
+ },
+ "update": {
+  "editor": "enum",
+  "options": [
+   "latest",
+   "checking",
+   "available",
+   "downloading",
+   "ready",
+   "failed",
+   "badsig"
+  ],
+  "default": "latest",
+  "section": "State"
+ },
+ "proxy": {
+  "editor": "enum",
+  "options": [
+   "off",
+   "on",
+   "lan"
+  ],
+  "default": "off",
+  "section": "State"
+ },
+ "acc": {
+  "editor": "enum",
+  "options": [
+   "panel",
+   "mint",
+   "lavender",
+   "sky",
+   "sand",
+   "rose",
+   "sage",
+   "custom"
+  ],
+  "default": "panel",
+  "section": "Look"
+ },
+ "lang": {
+  "editor": "enum",
+  "options": [
+   "closed",
+   "open"
+  ],
+  "default": "closed",
+  "section": "State"
+ },
+ "confirm": {
+  "editor": "enum",
+  "options": [
+   "none",
+   "ks"
+  ],
+  "default": "none",
+  "section": "State"
+ },
+ "rename": {
+  "editor": "enum",
+  "options": [
+   "no",
+   "yes"
+  ],
+  "default": "no",
+  "section": "State"
+ },
+ "theme": {
+  "editor": "enum",
+  "options": [
+   "dark",
+   "light"
+  ],
+  "default": "dark",
+  "section": "Look"
+ },
+ "accent": {
+  "editor": "enum",
+  "options": [
+   "lavender",
+   "mint",
+   "sand",
+   "rose"
+  ],
+  "default": "lavender",
+  "section": "Look"
+ },
+ "$preview": {
+  "width": 1160,
+  "height": 800
+ }
+}

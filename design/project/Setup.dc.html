@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mistgate · Setup</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=JetBrains+Mono:wght@500..700&amp;display=swap" rel="stylesheet">
+<style>html,body{margin:0;overflow:hidden;background:transparent}</style>
+</helmet>
+<div class="desk">
+<div class="mg su t-{{theme}} a-{{accent}} su-{{tone}}" style="--p:{{pNum}}" role="dialog" aria-label="Mistgate Setup">
+  <aside class="su-art" aria-hidden="true"><div class="su-deco"><i class="su-glow"></i><i class="su-dots"></i><span class="su-mist"><i></i><i></i><i></i></span></div><div class="su-gate"><i class="a3"></i><i class="a2"></i><svg class="su-ring" viewBox="0 0 124 252"><path pathLength="100" d="M1.5 252V62a60.5 60.5 0 0 1 121 0v190"/></svg><span class="su-door"><i class="fill"></i><img src="{{logo}}" alt="" width="58" height="58"></span><i class="su-floor"></i></div><p class="su-ver">Mistgate 1.5.0</p></aside>
+  <section class="su-main">
+    <header class="su-tb"><span class="su-tt">Mistgate Setup</span><div class="cap"><button aria-label="Minimize"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button><button aria-label="Close" onClick="{{close}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div></header>
+    <div class="su-body">
+<sc-if value="{{isWelcome}}" hint-placeholder-val="{{true}}"><div class="su-pg rise"><h1>Install Mistgate</h1><p class="su-lead">A VPN that finds a working way on its own and says honestly when something is blocked</p><ul class="su-facts"><li><span class="gl g-timer" aria-hidden="true"></span><span>Takes about a minute</span></li><li><span class="gl g-hard-drive" aria-hidden="true"></span><span>86 MB on disk</span></li><li><span class="gl g-shield-check" aria-hidden="true"></span><span>Windows will ask for permission once: Mistgate adds a background service</span></li></ul></div></sc-if><sc-if value="{{isFolder}}" hint-placeholder-val="{{false}}"><div class="su-pg rise"><h1>Folder and shortcuts</h1><p class="su-lbl">Install to</p><div class="su-path {{pathC}}"><span class="gl g-folder" aria-hidden="true"></span><span class="mo">{{path}}</span><button class="lsb">Change…</button></div><p class="su-meta {{pathC}}">{{spaceT}}</p><div class="su-opts"><div class="su-row"><span class="tx"><b>Desktop shortcut</b></span><button class="sw {{T.desk}}" role="switch" aria-checked="{{A.desk}}" onClick="{{tg.desk}}" aria-label="Desktop shortcut"></button></div><div class="su-row"><span class="tx"><b>Start with Windows</b><span>Mistgate waits in the tray after you sign in</span></span><button class="sw {{T.boot}}" role="switch" aria-checked="{{A.boot}}" onClick="{{tg.boot}}" aria-label="Start with Windows"></button></div></div></div></sc-if><sc-if value="{{isRun}}" hint-placeholder-val="{{false}}"><div class="su-pg"><h1>{{runT}}</h1><p class="su-lead">{{runS}}</p><ol class="su-steps"><sc-for list="{{steps}}" as="s" hint-placeholder-count="3"><li class="{{s.c}}"><span class="mk"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg><i></i></span>{{s.t}}</li></sc-for></ol><div class="su-bar" role="progressbar" aria-valuenow="{{pNum}}" aria-valuemin="0" aria-valuemax="100"><i style="width:{{pct}}"></i></div><p class="su-pct"><b>{{pct}}</b><span>{{leftT}}</span></p></div></sc-if><sc-if value="{{isDone}}" hint-placeholder-val="{{false}}"><div class="su-pg rise"><span class="su-badge ok"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span><h1>Mistgate is installed</h1><p class="su-lead">Add your subscription to get servers. Paste the link from your provider or press “Open in Mistgate” on the subscription page</p></div></sc-if><sc-if value="{{isDenied}}" hint-placeholder-val="{{false}}"><div class="su-pg rise"><span class="su-badge warn"><span class="gl g-shield-xmark" aria-hidden="true"></span></span><h1>Windows didn’t give permission</h1><p class="su-lead">Mistgate needs it once to add its background service. Nothing was changed on this PC</p></div></sc-if><sc-if value="{{isFailed}}" hint-placeholder-val="{{false}}"><div class="su-pg rise"><span class="su-badge warn"><span class="gl g-warning-triangle" aria-hidden="true"></span></span><h1>Couldn’t finish installing</h1><p class="su-lead">The background service didn’t start. Everything is rolled back, nothing was left on this PC</p><div class="su-det"><span class="mo">service · code 1603</span><button class="su-lnk {{cpC}}" onClick="{{copy}}"><span class="gl g-copy" aria-hidden="true"></span>{{cpT}}</button></div><p class="su-tip"><span class="gl g-info-circle" aria-hidden="true"></span><span>If an antivirus is running, allow Mistgate there and try again</span></p></div></sc-if>
+    </div>
+    <footer class="su-f">
+<sc-if value="{{isWelcome}}" hint-placeholder-val="{{true}}"><button class="su-lang" aria-haspopup="listbox"><span class="gl g-translate" aria-hidden="true"></span>English<svg class="i chv" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button><span class="sp"></span><button class="lsb" onClick="{{toFolder}}">Folder and shortcuts</button><button class="addb" onClick="{{install}}">Install</button></sc-if><sc-if value="{{isFolder}}" hint-placeholder-val="{{false}}"><button class="lsb" onClick="{{toWelcome}}">Back</button><span class="sp"></span><button class="addb {{instC}}" onClick="{{install}}">Install</button></sc-if><sc-if value="{{isRun}}" hint-placeholder-val="{{false}}"><span class="su-note"><span class="gl g-lock" aria-hidden="true"></span>Mistgate isn’t connected to anything yet</span><span class="sp"></span><button class="lsb {{cancelC}}" onClick="{{cancel}}">Cancel</button></sc-if><sc-if value="{{isDone}}" hint-placeholder-val="{{false}}"><span class="sp"></span><button class="lsb" onClick="{{close}}">Close</button><a class="addb" href="Main.dc.html">Add subscription</a></sc-if><sc-if value="{{isDenied}}" hint-placeholder-val="{{false}}"><span class="sp"></span><button class="lsb" onClick="{{close}}">Close</button><button class="addb" onClick="{{install}}">Try again</button></sc-if><sc-if value="{{isFailed}}" hint-placeholder-val="{{false}}"><a class="su-lnk" href="https://vpn.example.com" target="_blank" rel="noopener"><span class="gl g-chat-bubble" aria-hidden="true"></span>Get help</a><span class="sp"></span><button class="lsb" onClick="{{close}}">Close</button><button class="addb" onClick="{{install}}">Try again</button></sc-if>
+    </footer>
+  </section>
+</div>
+  <div class="dev dtop" role="toolbar" aria-label="Installer steps">
+    <div class="dg"><span class="dl">Step</span><div class="ds"><button class="{{dv.st_welcome}}" onClick="{{dvSet.st_welcome}}">Welcome</button><button class="{{dv.st_folder}}" onClick="{{dvSet.st_folder}}">Folder</button><button class="{{dv.st_progress}}" onClick="{{dvSet.st_progress}}">Installing</button><button class="{{dv.st_done}}" onClick="{{dvSet.st_done}}">Done</button></div></div>
+    <div class="dg"><span class="dl">Problem</span><div class="ds"><button class="{{dv.is_space}}" onClick="{{dvSet.is_space}}">No space</button><button class="{{dv.is_cancel}}" onClick="{{dvSet.is_cancel}}">Cancelling</button><button class="{{dv.is_denied}}" onClick="{{dvSet.is_denied}}">No permission</button><button class="{{dv.is_failed}}" onClick="{{dvSet.is_failed}}">Failed</button></div></div>
+  </div>
+  <div class="dev" role="toolbar" aria-label="Theme">
+    <div class="dg"><span class="dl">Theme</span><div class="ds"><button class="{{dv.th_dark}}" onClick="{{dvSet.th_dark}}">Dark</button><button class="{{dv.th_light}}" onClick="{{dvSet.th_light}}">Light</button></div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"step":{"editor":"enum","options":["welcome","folder","progress","done"],"default":"welcome","section":"State"},"issue":{"editor":"enum","options":["none","space","cancel","denied","failed"],"default":"none","section":"State"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Look"},"accent":{"editor":"enum","options":["lavender","mint","sand","rose"],"default":"lavender","section":"Look"},"$preview":{"width":1160,"height":800}}'>
+class Component extends DCLogic {
+  st() { return this.state || {}; }
+  componentWillUnmount() { clearInterval(this.tm); }
+  run(dir) {
+    clearInterval(this.tm);
+    let p = dir > 0 ? 0 : (this.st().p != null ? this.st().p : 62);
+    this.setState({ step: 'progress', issue: dir > 0 ? 'none' : 'cancel', p: p });
+    this.tm = setInterval(() => {
+      p += dir > 0 ? 2 : -4;
+      if (p >= 100) { clearInterval(this.tm); this.setState({ step: 'done', issue: 'none', p: 100 }); return; }
+      if (p <= 0) { clearInterval(this.tm); this.setState({ step: 'welcome', issue: 'none', p: 0 }); return; }
+      this.setState({ p: p });
+    }, 90);
+  }
+  renderVals() {
+    const logos = { lavender: '/_blob/9d2de0afb8b6790d36f13bd1b5071b3e', mint: '/_blob/f5477c216f0b7d12589860c6f5adf390', sand: '/_blob/84fb7f3b6f7f889d48124b78851ff2f5', rose: '/_blob/7fa8f33903a47546f9d5876df83ca7c1' };
+    const s0 = this.st(), pr = this.props;
+    const theme = (s0.theme || pr.theme) === 'light' ? 'light' : 'dark';
+    const accent = logos[pr.accent] ? pr.accent : 'lavender';
+    const issue = s0.issue !== undefined ? s0.issue : (pr.issue || 'none');
+    const step = s0.step || pr.step || 'welcome';
+    // что на экране: ошибка важнее шага; «нет места» живёт на шаге с папкой, отмена — на шаге установки
+    const view = (issue === 'denied' || issue === 'failed') ? issue : (issue === 'space' ? 'folder' : (issue === 'cancel' ? 'progress' : step));
+    const undo = issue === 'cancel';
+    const p = view === 'done' ? 100 : (view === 'progress' ? (s0.p != null ? s0.p : (undo ? 38 : 62)) : 0);
+    const stage = p < 45 ? 0 : (p < 80 ? 1 : 2);
+    const STG = ['Copying files', 'Adding the background service', 'Setting up the network adapter'];
+    const opt = Object.assign({ desk: true, boot: true }, s0.opt || {});
+    const T = {}, A = {}, tg = {};
+    ['desk', 'boot'].forEach((k) => { T[k] = opt[k] ? 'on' : ''; A[k] = opt[k] ? 'true' : 'false'; tg[k] = () => this.setState({ opt: Object.assign({}, opt, { [k]: !opt[k] }) }); });
+    const noSpace = issue === 'space';
+    const go = (st) => () => { clearInterval(this.tm); this.setState({ step: st, issue: 'none', p: undefined, copied: false }); };
+    const dv = {}, dvSet = {};
+    const dvOpt = (k, v, on, f) => { dv[k + '_' + v] = on ? 'on' : ''; dvSet[k + '_' + v] = f; };
+    ['welcome', 'folder', 'progress', 'done'].forEach((v) => dvOpt('st', v, view === v && !undo && !noSpace, go(v)));
+    ['space', 'cancel', 'denied', 'failed'].forEach((v) => dvOpt('is', v, issue === v, () => { clearInterval(this.tm); this.setState({ issue: v, step: v === 'space' ? 'folder' : 'progress', p: undefined, copied: false }); }));
+    ['dark', 'light'].forEach((v) => dvOpt('th', v, theme === v, () => this.setState({ theme: v })));
+    return {
+      theme: theme, accent: accent, logo: view === 'done' ? logos.mint : ((view === 'denied' || view === 'failed') ? logos.sand : logos[accent]), pNum: p, pct: p + '%',
+      tone: view === 'done' ? 'done' : ((view === 'denied' || view === 'failed') ? 'err' : (view === 'progress' ? (undo ? 'undo' : 'run') : 'idle')),
+      isWelcome: view === 'welcome', isFolder: view === 'folder', isRun: view === 'progress', isDone: view === 'done', isDenied: view === 'denied', isFailed: view === 'failed',
+      steps: STG.map((t, i) => ({ t: t, c: undo ? (i <= stage ? 'undo' : '') : (i < stage ? 'done' : (i === stage ? 'cur' : '')) })),
+      runT: undo ? 'Cancelling…' : 'Installing…', runS: undo ? 'Putting everything back the way it was' : 'You can keep using your PC',
+      leftT: undo ? 'A few seconds' : 'About %s seconds left'.replace('%s', Math.max(5, Math.round((100 - p) / 2 / 5) * 5)),
+      path: noSpace ? 'D:\\Apps\\Mistgate' : 'C:\\Program Files\\Mistgate', pathC: noSpace ? 'bad' : '',
+      spaceT: noSpace ? 'Not enough space on D: — needs 86 MB, 41 MB free' : 'Needs 86 MB · 212 GB free on C:',
+      instC: noSpace ? 'dis' : '', cancelC: undo ? 'dis' : '', T: T, A: A, tg: tg,
+      toFolder: go('folder'), toWelcome: go('welcome'), close: go('welcome'),
+      install: () => { if (!noSpace) this.run(1); }, cancel: () => { if (!undo) this.run(-1); },
+      cpT: s0.copied ? 'Copied' : 'Copy details', cpC: s0.copied ? 'ok' : '', copy: () => this.setState({ copied: true }),
+      dv: dv, dvSet: dvSet
+    };
+  }
+}
+</script>
+</body>
+</html>

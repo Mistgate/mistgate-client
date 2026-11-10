@@ -1,0 +1,89 @@
+{
+ "mode": {
+  "editor": "enum",
+  "options": [
+   "except",
+   "only",
+   "all"
+  ],
+  "default": "except",
+  "section": "State"
+ },
+ "view": {
+  "editor": "enum",
+  "options": [
+   "col",
+   "apps",
+   "sites"
+  ],
+  "default": "col",
+  "section": "State"
+ },
+ "cat": {
+  "editor": "enum",
+  "options": [
+   "popular",
+   "blocked",
+   "social",
+   "media",
+   "ai",
+   "games"
+  ],
+  "default": "popular",
+  "section": "State"
+ },
+ "lists": {
+  "editor": "enum",
+  "options": [
+   "closed",
+   "open"
+  ],
+  "default": "closed",
+  "section": "State"
+ },
+ "reg": {
+  "editor": "enum",
+  "options": [
+   "ru",
+   "by",
+   "cn",
+   "ir",
+   "other"
+  ],
+  "default": "ru",
+  "section": "State"
+ },
+ "region": {
+  "editor": "enum",
+  "options": [
+   "closed",
+   "open"
+  ],
+  "default": "closed",
+  "section": "State"
+ },
+ "theme": {
+  "editor": "enum",
+  "options": [
+   "dark",
+   "light"
+  ],
+  "default": "dark",
+  "section": "Look"
+ },
+ "accent": {
+  "editor": "enum",
+  "options": [
+   "lavender",
+   "mint",
+   "sand",
+   "rose"
+  ],
+  "default": "lavender",
+  "section": "Look"
+ },
+ "$preview": {
+  "width": 1160,
+  "height": 800
+ }
+}

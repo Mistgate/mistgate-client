@@ -1,0 +1,1200 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "Главная · подключено",
+      "w": 1160,
+      "x": 0,
+      "y": 0
+    },
+    "MainLight.dc.html": {
+      "h": 800,
+      "title": "Главная · подключено, светлая",
+      "w": 1160,
+      "x": 0,
+      "y": 920
+    },
+    "MainOff.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "Главная · не подключено (нажми кнопку)",
+      "w": 1160,
+      "x": 1240,
+      "y": 0
+    },
+    "MainProtocol.dc.html": {
+      "h": 800,
+      "title": "Главная · выбор протокола",
+      "w": 1160,
+      "x": 2480,
+      "y": 0
+    },
+    "MainTelegram.dc.html": {
+      "h": 800,
+      "title": "Главная · вкладка Telegram (MTProto из подписки)",
+      "w": 1160,
+      "x": 1240,
+      "y": 920
+    },
+    "MainSubs.dc.html": {
+      "x": 2480,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · переключение подписок"
+    },
+    "Routes.dc.html": {
+      "x": 0,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · всё, кроме исключений",
+      "is_interactive": true
+    },
+    "RoutesOnly.dc.html": {
+      "x": 1240,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · только выбранное"
+    },
+    "MainUnlimited.dc.html": {
+      "x": 3720,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · безлимит (срок, трафик, устройства)"
+    },
+    "RoutesApps.dc.html": {
+      "x": 2480,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · программы (автоопределение)"
+    },
+    "RoutesSites.dc.html": {
+      "x": 0,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · свои сайты + подсказки"
+    },
+    "RoutesLists.dc.html": {
+      "x": 1240,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · списки: источник и обновление"
+    },
+    "RoutesRegion.dc.html": {
+      "x": 2480,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · регион (для Китая — китайские сайты напрямую)"
+    },
+    "RoutesAll.dc.html": {
+      "x": 3720,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · весь трафик (анимированная схема)"
+    },
+    "MainExpired.dc.html": {
+      "x": 0,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · подписка истекла"
+    },
+    "MainNoSub.dc.html": {
+      "x": 1240,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · нет подписки (первый запуск)"
+    },
+    "MainNoServers.dc.html": {
+      "x": 2480,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · в подписке нет серверов"
+    },
+    "MainMany.dc.html": {
+      "x": 3720,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · 24 сервера (прокрутка)"
+    },
+    "Diag.dc.html": {
+      "x": 0,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · найдены проблемы",
+      "is_interactive": true
+    },
+    "DiagIdle.dc.html": {
+      "x": 1240,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · ещё не проверяли"
+    },
+    "DiagRun.dc.html": {
+      "x": 2480,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · идёт проверка"
+    },
+    "DiagLog.dc.html": {
+      "x": 3720,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · журнал"
+    },
+    "DiagReport.dc.html": {
+      "x": 0,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · отладочный отчёт"
+    },
+    "DiagSent.dc.html": {
+      "x": 1240,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · отчёт отправлен, код"
+    },
+    "DiagGood.dc.html": {
+      "x": 2480,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · всё работает"
+    },
+    "DiagAsk.dc.html": {
+      "x": 3720,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · админ просит отчёт"
+    },
+    "DiagBasic.dc.html": {
+      "x": 0,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · базовый режим (чужая подписка)"
+    },
+    "MainError.dc.html": {
+      "x": 0,
+      "y": 7360,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · ни один сервер не отвечает"
+    },
+    "MainKill.dc.html": {
+      "x": 1240,
+      "y": 7360,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · kill switch держит интернет"
+    },
+    "MainReconnect.dc.html": {
+      "x": 2480,
+      "y": 7360,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · переподключение (спокойное)"
+    },
+    "MainService.dc.html": {
+      "x": 3720,
+      "y": 7360,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · служба не отвечает"
+    },
+    "Settings.dc.html": {
+      "x": 0,
+      "y": 8280,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · подключение",
+      "is_interactive": true
+    },
+    "SettingsExc.dc.html": {
+      "x": 1240,
+      "y": 8280,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · исключения kill switch"
+    },
+    "SettingsSub.dc.html": {
+      "x": 2480,
+      "y": 8280,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · подписка"
+    },
+    "SettingsPriv.dc.html": {
+      "x": 3720,
+      "y": 8280,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · приватность"
+    },
+    "SettingsLook.dc.html": {
+      "x": 0,
+      "y": 9200,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · тема и цвет акцента (свой цвет)"
+    },
+    "SettingsNotif.dc.html": {
+      "x": 1240,
+      "y": 9200,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · уведомления"
+    },
+    "SettingsUpd.dc.html": {
+      "x": 2480,
+      "y": 9200,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · есть обновление"
+    },
+    "SettingsUpdDl.dc.html": {
+      "x": 3720,
+      "y": 9200,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · обновление скачивается"
+    },
+    "SettingsUpdReady.dc.html": {
+      "x": 0,
+      "y": 10120,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · обновление готово"
+    },
+    "SettingsUpdFail.dc.html": {
+      "x": 1240,
+      "y": 10120,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · обновление не удалось"
+    },
+    "SettingsProxy.dc.html": {
+      "x": 2480,
+      "y": 10120,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · локальный прокси выключен"
+    },
+    "SettingsProxyOn.dc.html": {
+      "x": 3720,
+      "y": 10120,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · прокси для домашней сети"
+    },
+    "SettingsSubWarn.dc.html": {
+      "x": 0,
+      "y": 11040,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · скоро закончится"
+    },
+    "SettingsSubLimit.dc.html": {
+      "x": 1240,
+      "y": 11040,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · 5 из 5 устройств"
+    },
+    "SettingsSubRemoved.dc.html": {
+      "x": 2480,
+      "y": 11040,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · компьютер удалён"
+    },
+    "SettingsSubOffline.dc.html": {
+      "x": 3720,
+      "y": 11040,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · панель недоступна"
+    },
+    "SettingsSubOld.dc.html": {
+      "x": 0,
+      "y": 11960,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · старая панель"
+    },
+    "SettingsSubNews.dc.html": {
+      "x": 1240,
+      "y": 11960,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · сообщение оператора"
+    },
+    "SettingsSubBasic.dc.html": {
+      "x": 2480,
+      "y": 11960,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · добавлена ссылкой"
+    },
+    "SettingsRename.dc.html": {
+      "x": 3720,
+      "y": 11960,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · имя этого компьютера"
+    },
+    "SettingsAbout.dc.html": {
+      "x": 0,
+      "y": 12880,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · о программе"
+    },
+    "SettingsLight.dc.html": {
+      "x": 1240,
+      "y": 12880,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · светлая тема"
+    },
+    "SettingsSubLight.dc.html": {
+      "x": 2480,
+      "y": 12880,
+      "w": 1160,
+      "h": 800,
+      "title": "Подписка · светлая тема"
+    },
+    "SettingsUpdLight.dc.html": {
+      "x": 3720,
+      "y": 12880,
+      "w": 1160,
+      "h": 800,
+      "title": "Обновления · светлая тема"
+    },
+    "Tray.dc.html": {
+      "x": 0,
+      "y": 13800,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · мини-окно, подключено",
+      "is_interactive": true
+    },
+    "TrayOff.dc.html": {
+      "x": 1240,
+      "y": 13800,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · VPN выключен"
+    },
+    "TrayConnecting.dc.html": {
+      "x": 2480,
+      "y": 13800,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · подключение"
+    },
+    "TrayError.dc.html": {
+      "x": 3720,
+      "y": 13800,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · ни один сервер не отвечает"
+    },
+    "TrayBlocked.dc.html": {
+      "x": 0,
+      "y": 14720,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · kill switch держит интернет"
+    },
+    "TrayMenu.dc.html": {
+      "x": 1240,
+      "y": 14720,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · меню по правому клику"
+    },
+    "TrayTip.dc.html": {
+      "x": 2480,
+      "y": 14720,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · подсказка при наведении"
+    },
+    "TrayLight.dc.html": {
+      "x": 3720,
+      "y": 14720,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · светлая тема Windows"
+    },
+    "TrayIcons.dc.html": {
+      "x": 0,
+      "y": 15640,
+      "w": 1160,
+      "h": 800,
+      "title": "Значок в трее · 5 состояний"
+    },
+    "Toasts.dc.html": {
+      "x": 1240,
+      "y": 15640,
+      "w": 1160,
+      "h": 800,
+      "title": "Уведомления Windows · 5 видов"
+    },
+    "TrayToast.dc.html": {
+      "x": 2480,
+      "y": 15640,
+      "w": 1160,
+      "h": 800,
+      "title": "Уведомление на рабочем столе · связь потеряна"
+    },
+    "TrayToastLight.dc.html": {
+      "x": 3720,
+      "y": 15640,
+      "w": 1160,
+      "h": 800,
+      "title": "Уведомление · светлая тема"
+    },
+    "SettingsKsConfirm.dc.html": {
+      "x": 4960,
+      "y": 8280,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · подтверждение режима Always"
+    },
+    "MainTrouble.dc.html": {
+      "x": 3720,
+      "y": 0,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · серверы с проблемами в этой сети"
+    },
+    "MainSwitch.dc.html": {
+      "x": 4960,
+      "y": 0,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · смена сервера на лету"
+    },
+    "RuMain.dc.html": {
+      "x": 0,
+      "y": 16560,
+      "w": 1160,
+      "h": 800,
+      "title": "Русский · Главная",
+      "is_interactive": true
+    },
+    "RuRoutes.dc.html": {
+      "x": 1240,
+      "y": 16560,
+      "w": 1160,
+      "h": 800,
+      "title": "Русский · Маршруты",
+      "is_interactive": true
+    },
+    "RuDiag.dc.html": {
+      "x": 2480,
+      "y": 16560,
+      "w": 1160,
+      "h": 800,
+      "title": "Русский · Диагностика",
+      "is_interactive": true
+    },
+    "RuSettings.dc.html": {
+      "x": 3720,
+      "y": 16560,
+      "w": 1160,
+      "h": 800,
+      "title": "Русский · Настройки",
+      "is_interactive": true
+    },
+    "RuTray.dc.html": {
+      "x": 4960,
+      "y": 16560,
+      "w": 1160,
+      "h": 800,
+      "title": "Русский · Трей",
+      "is_interactive": true
+    },
+    "ZhMain.dc.html": {
+      "x": 0,
+      "y": 17480,
+      "w": 1160,
+      "h": 800,
+      "title": "Китайский · Главная",
+      "is_interactive": true
+    },
+    "ZhRoutes.dc.html": {
+      "x": 1240,
+      "y": 17480,
+      "w": 1160,
+      "h": 800,
+      "title": "Китайский · Маршруты",
+      "is_interactive": true
+    },
+    "ZhDiag.dc.html": {
+      "x": 2480,
+      "y": 17480,
+      "w": 1160,
+      "h": 800,
+      "title": "Китайский · Диагностика",
+      "is_interactive": true
+    },
+    "ZhSettings.dc.html": {
+      "x": 3720,
+      "y": 17480,
+      "w": 1160,
+      "h": 800,
+      "title": "Китайский · Настройки",
+      "is_interactive": true
+    },
+    "ZhTray.dc.html": {
+      "x": 4960,
+      "y": 17480,
+      "w": 1160,
+      "h": 800,
+      "title": "Китайский · Трей",
+      "is_interactive": true
+    },
+    "FaMain.dc.html": {
+      "x": 0,
+      "y": 18400,
+      "w": 1160,
+      "h": 800,
+      "title": "Фарси · справа налево · Главная",
+      "is_interactive": true
+    },
+    "FaRoutes.dc.html": {
+      "x": 1240,
+      "y": 18400,
+      "w": 1160,
+      "h": 800,
+      "title": "Фарси · справа налево · Маршруты",
+      "is_interactive": true
+    },
+    "FaDiag.dc.html": {
+      "x": 2480,
+      "y": 18400,
+      "w": 1160,
+      "h": 800,
+      "title": "Фарси · справа налево · Диагностика",
+      "is_interactive": true
+    },
+    "FaSettings.dc.html": {
+      "x": 3720,
+      "y": 18400,
+      "w": 1160,
+      "h": 800,
+      "title": "Фарси · справа налево · Настройки",
+      "is_interactive": true
+    },
+    "FaTray.dc.html": {
+      "x": 4960,
+      "y": 18400,
+      "w": 1160,
+      "h": 800,
+      "title": "Фарси · справа налево · Трей",
+      "is_interactive": true
+    },
+    "TrMain.dc.html": {
+      "x": 0,
+      "y": 19320,
+      "w": 1160,
+      "h": 800,
+      "title": "Турецкий · Главная",
+      "is_interactive": true
+    },
+    "TrRoutes.dc.html": {
+      "x": 1240,
+      "y": 19320,
+      "w": 1160,
+      "h": 800,
+      "title": "Турецкий · Маршруты",
+      "is_interactive": true
+    },
+    "TrDiag.dc.html": {
+      "x": 2480,
+      "y": 19320,
+      "w": 1160,
+      "h": 800,
+      "title": "Турецкий · Диагностика",
+      "is_interactive": true
+    },
+    "TrSettings.dc.html": {
+      "x": 3720,
+      "y": 19320,
+      "w": 1160,
+      "h": 800,
+      "title": "Турецкий · Настройки",
+      "is_interactive": true
+    },
+    "TrTray.dc.html": {
+      "x": 4960,
+      "y": 19320,
+      "w": 1160,
+      "h": 800,
+      "title": "Турецкий · Трей",
+      "is_interactive": true
+    },
+    "MainBanNews.dc.html": {
+      "x": 6200,
+      "y": 0,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · объявление оператора в шапке",
+      "is_interactive": true
+    },
+    "MainBanDebug.dc.html": {
+      "x": 7440,
+      "y": 0,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · администратор просит диагностику",
+      "is_interactive": true
+    },
+    "MainBanUpdate.dc.html": {
+      "x": 8680,
+      "y": 0,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · обновление готово",
+      "is_interactive": true
+    },
+    "MainBanNewver.dc.html": {
+      "x": 9920,
+      "y": 0,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · части серверов нужна новая версия: баннер и метки в списке",
+      "is_interactive": true
+    },
+    "MainDet.dc.html": {
+      "x": 6200,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · плашка «похоже на блокировку» с действием",
+      "is_interactive": true
+    },
+    "MainWarn.dc.html": {
+      "x": 7440,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · подписка скоро закончится",
+      "is_interactive": true
+    },
+    "MainRemoved.dc.html": {
+      "x": 8680,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · компьютер удалён из подписки",
+      "is_interactive": true
+    },
+    "MainStale.dc.html": {
+      "x": 9920,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · подписку не удалось обновить, работаем на копии",
+      "is_interactive": true
+    },
+    "MainAddCheck.dc.html": {
+      "x": 6200,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · проверяем ссылку",
+      "is_interactive": true
+    },
+    "MainAddConfirm.dc.html": {
+      "x": 7440,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · подтверждение (по ссылке mistgate://add)",
+      "is_interactive": true
+    },
+    "MainAddConsent.dc.html": {
+      "x": 8680,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Первый запуск · необязательный шаг про отчёты",
+      "is_interactive": true
+    },
+    "MainAddBasic.dc.html": {
+      "x": 9920,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · файл без панели (базовый режим)",
+      "is_interactive": true
+    },
+    "MainAddDrop.dc.html": {
+      "x": 11160,
+      "y": 1840,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · файл перетащили на окно",
+      "is_interactive": true
+    },
+    "MainAddBadlink.dc.html": {
+      "x": 6200,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · ссылка не работает",
+      "is_interactive": true
+    },
+    "MainAddLimit.dc.html": {
+      "x": 7440,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · заняты все устройства",
+      "is_interactive": true
+    },
+    "MainAddExpired.dc.html": {
+      "x": 8680,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · подписка закончилась",
+      "is_interactive": true
+    },
+    "MainAddOffline.dc.html": {
+      "x": 9920,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · панель не отвечает",
+      "is_interactive": true
+    },
+    "MainBrandPolar.dc.html": {
+      "x": 6200,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Бренд оператора · круглый знак, синий акцент",
+      "is_interactive": true
+    },
+    "MainBrandSunline.dc.html": {
+      "x": 7440,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Бренд оператора · широкий знак, жёлтый акцент, светлая тема",
+      "is_interactive": true
+    },
+    "MainBrandOnyx.dc.html": {
+      "x": 8680,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Бренд оператора · квадратный знак, почти чёрный акцент",
+      "is_interactive": true
+    },
+    "MainAddBrand.dc.html": {
+      "x": 9920,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Добавление · подтверждение с брендом оператора",
+      "is_interactive": true
+    },
+    "Brand.dc.html": {
+      "x": 11160,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Бренд оператора · неудобные акценты в двух темах",
+      "is_interactive": false
+    },
+    "DiagOff.dc.html": {
+      "x": 1240,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · приём отчётов в панели выключен, сохраняем файлом"
+    },
+    "DiagAnon.dc.html": {
+      "x": 2480,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · отчёты о блокировках включены, видно время отправки"
+    },
+    "DiagAnonOld.dc.html": {
+      "x": 3720,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · панель не принимает отчёты о блокировках"
+    },
+    "DiagNoOp.dc.html": {
+      "x": 4960,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Диагностика · оператор неизвестен: только тип сети и «похоже на…»"
+    },
+    "SettingsUpdSig.dc.html": {
+      "x": 4960,
+      "y": 10120,
+      "w": 1160,
+      "h": 800,
+      "title": "Настройки · обновление не прошло проверку подписи"
+    },
+    "MainWake.dc.html": {
+      "x": 11160,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · после сна: переподключаемся",
+      "is_interactive": true
+    },
+    "TrayBrandPolar.dc.html": {
+      "x": 12400,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · бренд оператора: логотип, имя и акцент",
+      "is_interactive": true
+    },
+    "TrayBrandSunline.dc.html": {
+      "x": 13640,
+      "y": 3680,
+      "w": 1160,
+      "h": 800,
+      "title": "Трей · бренд с широким логотипом, светлая тема, ошибка",
+      "is_interactive": true
+    },
+    "MainTgEmpty.dc.html": {
+      "x": 12400,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · нет подписки: прокси для Telegram ещё нет",
+      "is_interactive": true
+    },
+    "MainTgNone.dc.html": {
+      "x": 13640,
+      "y": 920,
+      "w": 1160,
+      "h": 800,
+      "title": "Главная · в подписке нет прокси для Telegram",
+      "is_interactive": true
+    },
+    "Setup.dc.html": {
+      "x": 6200,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · приветствие (нажми Install)",
+      "is_interactive": true
+    },
+    "SetupFolder.dc.html": {
+      "x": 7440,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · папка и ярлыки",
+      "is_interactive": true
+    },
+    "SetupProgress.dc.html": {
+      "x": 8680,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · идёт установка",
+      "is_interactive": true
+    },
+    "SetupDone.dc.html": {
+      "x": 9920,
+      "y": 4600,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · готово, «Добавить подписку»",
+      "is_interactive": true
+    },
+    "SetupSpace.dc.html": {
+      "x": 6200,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · на диске нет места",
+      "is_interactive": true
+    },
+    "SetupCancel.dc.html": {
+      "x": 7440,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · отмена, всё возвращается назад",
+      "is_interactive": true
+    },
+    "SetupDenied.dc.html": {
+      "x": 8680,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · Windows не дала разрешение",
+      "is_interactive": true
+    },
+    "SetupFailed.dc.html": {
+      "x": 9920,
+      "y": 5520,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · ошибка, установка откатилась",
+      "is_interactive": true
+    },
+    "SetupLight.dc.html": {
+      "x": 6200,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · светлая тема",
+      "is_interactive": true
+    },
+    "SetupProgressLight.dc.html": {
+      "x": 7440,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · установка, светлая тема",
+      "is_interactive": true
+    },
+    "SetupDoneLight.dc.html": {
+      "x": 8680,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · готово, светлая тема",
+      "is_interactive": true
+    },
+    "SetupFailedLight.dc.html": {
+      "x": 9920,
+      "y": 6440,
+      "w": 1160,
+      "h": 800,
+      "title": "Установщик · ошибка, светлая тема",
+      "is_interactive": true
+    },
+    "RuSetup.dc.html": {
+      "x": 6200,
+      "y": 16560,
+      "w": 1160,
+      "h": 800,
+      "title": "Русский · Установщик",
+      "is_interactive": true
+    },
+    "ZhSetup.dc.html": {
+      "x": 6200,
+      "y": 17480,
+      "w": 1160,
+      "h": 800,
+      "title": "Китайский · Установщик",
+      "is_interactive": true
+    },
+    "FaSetup.dc.html": {
+      "x": 6200,
+      "y": 18400,
+      "w": 1160,
+      "h": 800,
+      "title": "Фарси · справа налево · Установщик",
+      "is_interactive": true
+    },
+    "TrSetup.dc.html": {
+      "x": 6200,
+      "y": 19320,
+      "w": 1160,
+      "h": 800,
+      "title": "Турецкий · Установщик",
+      "is_interactive": true
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-09T17:20:00Z",
+    "v": 1
+  },
+  "designSystems": [
+    {
+      "artifact": "https://claude.ai/code/artifact/c354369c-4052-4b0f-bb0f-753dab88768a",
+      "copiedAt": "2026-11-09T17:20:00Z",
+      "namespace": "mistgate",
+      "title": "Mistgate",
+      "version": "1791241644-ad29"
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {},
+  "order": [
+    "Main.dc.html",
+    "MainOff.dc.html",
+    "MainLight.dc.html",
+    "MainTelegram.dc.html",
+    "MainProtocol.dc.html",
+    "MainSubs.dc.html",
+    "Routes.dc.html",
+    "RoutesOnly.dc.html",
+    "MainUnlimited.dc.html",
+    "RoutesApps.dc.html",
+    "RoutesSites.dc.html",
+    "RoutesLists.dc.html",
+    "RoutesRegion.dc.html",
+    "RoutesAll.dc.html",
+    "MainExpired.dc.html",
+    "MainNoSub.dc.html",
+    "MainNoServers.dc.html",
+    "MainMany.dc.html",
+    "Diag.dc.html",
+    "DiagIdle.dc.html",
+    "DiagRun.dc.html",
+    "DiagLog.dc.html",
+    "DiagReport.dc.html",
+    "DiagSent.dc.html",
+    "DiagGood.dc.html",
+    "DiagAsk.dc.html",
+    "DiagBasic.dc.html",
+    "MainError.dc.html",
+    "MainKill.dc.html",
+    "MainReconnect.dc.html",
+    "MainService.dc.html",
+    "Settings.dc.html",
+    "SettingsExc.dc.html",
+    "SettingsSub.dc.html",
+    "SettingsPriv.dc.html",
+    "SettingsLook.dc.html",
+    "SettingsNotif.dc.html",
+    "SettingsUpd.dc.html",
+    "SettingsUpdDl.dc.html",
+    "SettingsUpdReady.dc.html",
+    "SettingsUpdFail.dc.html",
+    "SettingsProxy.dc.html",
+    "SettingsProxyOn.dc.html",
+    "SettingsSubWarn.dc.html",
+    "SettingsSubLimit.dc.html",
+    "SettingsSubRemoved.dc.html",
+    "SettingsSubOffline.dc.html",
+    "SettingsSubOld.dc.html",
+    "SettingsSubNews.dc.html",
+    "SettingsSubBasic.dc.html",
+    "SettingsRename.dc.html",
+    "SettingsAbout.dc.html",
+    "SettingsLight.dc.html",
+    "SettingsSubLight.dc.html",
+    "SettingsUpdLight.dc.html",
+    "Tray.dc.html",
+    "TrayOff.dc.html",
+    "TrayConnecting.dc.html",
+    "TrayError.dc.html",
+    "TrayBlocked.dc.html",
+    "TrayMenu.dc.html",
+    "TrayTip.dc.html",
+    "TrayLight.dc.html",
+    "TrayIcons.dc.html",
+    "Toasts.dc.html",
+    "TrayToast.dc.html",
+    "TrayToastLight.dc.html",
+    "SettingsKsConfirm.dc.html",
+    "MainTrouble.dc.html",
+    "MainSwitch.dc.html",
+    "RuMain.dc.html",
+    "RuRoutes.dc.html",
+    "RuDiag.dc.html",
+    "RuSettings.dc.html",
+    "RuTray.dc.html",
+    "ZhMain.dc.html",
+    "ZhRoutes.dc.html",
+    "ZhDiag.dc.html",
+    "ZhSettings.dc.html",
+    "ZhTray.dc.html",
+    "FaMain.dc.html",
+    "FaRoutes.dc.html",
+    "FaDiag.dc.html",
+    "FaSettings.dc.html",
+    "FaTray.dc.html",
+    "TrMain.dc.html",
+    "TrRoutes.dc.html",
+    "TrDiag.dc.html",
+    "TrSettings.dc.html",
+    "TrTray.dc.html",
+    "MainBanNews.dc.html",
+    "MainBanDebug.dc.html",
+    "MainBanUpdate.dc.html",
+    "MainBanNewver.dc.html",
+    "MainDet.dc.html",
+    "MainWarn.dc.html",
+    "MainRemoved.dc.html",
+    "MainStale.dc.html",
+    "MainAddCheck.dc.html",
+    "MainAddConfirm.dc.html",
+    "MainAddConsent.dc.html",
+    "MainAddBasic.dc.html",
+    "MainAddDrop.dc.html",
+    "MainAddBadlink.dc.html",
+    "MainAddLimit.dc.html",
+    "MainAddExpired.dc.html",
+    "MainAddOffline.dc.html",
+    "MainBrandPolar.dc.html",
+    "MainBrandSunline.dc.html",
+    "MainBrandOnyx.dc.html",
+    "MainAddBrand.dc.html",
+    "Brand.dc.html",
+    "DiagOff.dc.html",
+    "DiagAnon.dc.html",
+    "DiagAnonOld.dc.html",
+    "DiagNoOp.dc.html",
+    "SettingsUpdSig.dc.html",
+    "MainWake.dc.html",
+    "TrayBrandPolar.dc.html",
+    "TrayBrandSunline.dc.html",
+    "MainTgEmpty.dc.html",
+    "MainTgNone.dc.html",
+    "Setup.dc.html",
+    "SetupFolder.dc.html",
+    "SetupProgress.dc.html",
+    "SetupDone.dc.html",
+    "SetupSpace.dc.html",
+    "SetupCancel.dc.html",
+    "SetupDenied.dc.html",
+    "SetupFailed.dc.html",
+    "SetupLight.dc.html",
+    "SetupProgressLight.dc.html",
+    "SetupDoneLight.dc.html",
+    "SetupFailedLight.dc.html",
+    "RuSetup.dc.html",
+    "ZhSetup.dc.html",
+    "FaSetup.dc.html",
+    "TrSetup.dc.html"
+  ],
+  "pages": [],
+  "title": "Mistgate — главная, Windows"
+}

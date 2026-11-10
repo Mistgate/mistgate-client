@@ -1,0 +1,5 @@
+html, body { margin: 0; overflow: hidden; background: transparent; }
+/* In the app window the desk of the design and its state switchers are gone: the window is the 1000×660 app itself. */
+.shell .desk { width: 100vw; height: 100vh; background: none; }
+.shell .dev { display: none; }
+.shell .app { box-shadow: none; }
