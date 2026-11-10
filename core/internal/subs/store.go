@@ -115,7 +115,7 @@ func openStore(dir string, protectData, unprotectData func([]byte) ([]byte, erro
 		if quarantineErr := os.Rename(s.path, badPath); quarantineErr != nil {
 			return nil, errors.New("cannot quarantine unreadable subscription store")
 		}
-		slog.Warn("subscription store could not be decrypted or parsed; starting empty")
+		slog.Default().With("src", "subs").Warn("subscription store could not be decrypted or parsed; starting empty")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, errors.New("cannot read subscription store")
 	}

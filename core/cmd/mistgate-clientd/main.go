@@ -9,9 +9,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/ipc"
 	"github.com/mistgate/mistgate-client/core/internal/session"
@@ -79,6 +81,18 @@ func defaultDataDir() string {
 
 // run owns the lifecycle; the context ends it (Ctrl+C in a console, a stop request as a Windows service).
 func run(ctx context.Context, useFake bool, dataDir, verify string) error {
+	var eventMu sync.RWMutex
+	var eventHub *session.Hub
+	logs := ipc.NewLogStore()
+	logger := ipc.NewEventLogger(func(data any) {
+		eventMu.RLock()
+		hub := eventHub
+		eventMu.RUnlock()
+		if hub != nil {
+			hub.Publish("log", data)
+		}
+	}, logs)
+	slog.SetDefault(logger.With("src", "subs"))
 	store, err := subs.Open(dataDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot open the data directory:", err)
@@ -89,6 +103,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 		fmt.Fprintln(os.Stderr, "cannot open settings:", err)
 		return err
 	}
+	slog.SetDefault(logger.With("src", "engine"))
 	go store.Run(ctx)
 	var eng engine.Engine
 	if useFake {
@@ -98,13 +113,20 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 	}
 	manager := session.NewManager(eng, settingsStore.Get)
 	defer manager.Close()
+	eventMu.Lock()
+	eventHub = manager.Events()
+	eventMu.Unlock()
 	if configured := settingsStore.Get(); configured.Autoconnect && configured.LastServer != "" {
 		_, _ = manager.Connect(ctx, engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub})
 	}
-	logger := ipc.NewEventLogger(func(data any) { manager.Events().Publish("log", data) })
-	slog.SetDefault(logger)
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore); err != nil {
-		logger.Error("service stopped", "error", err)
+	diagnostics := diag.NewRunner(diag.Config{Profiles: store.Profiles, Tunnel: func() bool {
+		status, err := manager.Status(ctx)
+		return err == nil && status.State == "connected"
+	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
+		manager.Events().Publish("diag", state)
+	})
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs); err != nil {
+		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}
 	return nil

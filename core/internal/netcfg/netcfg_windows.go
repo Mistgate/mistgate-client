@@ -202,6 +202,46 @@ func (a *Adapter) addBypass(destination netip.Addr) error {
 	return nil
 }
 
+// PhysicalInterfaceIndex4 is the interface the internet is reached through when the tunnel is left out.
+func PhysicalInterfaceIndex4() (uint32, error) {
+	return PhysicalInterfaceIndexFor(netip.MustParseAddr("1.1.1.1"))
+}
+
+// PhysicalInterfaceIndexFor is the interface a destination is reached through when the tunnel is left out.
+func PhysicalInterfaceIndexFor(destination netip.Addr) (uint32, error) {
+	rows, err := winipcfg.GetIPForwardTable2(windows.AF_INET)
+	if err != nil {
+		return 0, ErrNoRoute
+	}
+	tunnel, _ := winipcfg.LUIDFromGUID(&adapterGUID)
+	candidates := make([]routeCandidate, 0, len(rows))
+	for _, row := range rows {
+		if tunnel != 0 && row.InterfaceLUID == tunnel {
+			continue
+		}
+		prefix := row.DestinationPrefix.Prefix().Masked()
+		if !prefix.IsValid() || !prefix.Contains(destination) {
+			continue
+		}
+		iface, err := row.InterfaceLUID.IPInterface(windows.AF_INET)
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, routeCandidate{
+			prefix: prefix, metric: row.Metric, interfaceMetric: iface.Metric, luid: row.InterfaceLUID,
+		})
+	}
+	choice, ok := chooseRoute(destination, candidates)
+	if !ok {
+		return 0, ErrNoRoute
+	}
+	iface, err := choice.luid.IPInterface(windows.AF_INET)
+	if err != nil || iface.InterfaceIndex == 0 {
+		return 0, ErrNoRoute
+	}
+	return iface.InterfaceIndex, nil
+}
+
 type routeCandidate struct {
 	prefix          netip.Prefix
 	nextHop         netip.Addr

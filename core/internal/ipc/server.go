@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
@@ -25,8 +26,10 @@ const (
 
 type Server struct {
 	Manager   *session.Manager
+	Diag      *diag.Runner
 	Subs      *subs.Store
 	Settings  *settings.Store
+	Logs      *LogStore
 	Logger    *slog.Logger
 	QueueSize int
 }
@@ -207,6 +210,37 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "settings could not be saved"}
 		}
 		return configured, nil, nil
+	case "diag.run":
+		var params struct {
+			Sub string `json:"sub"`
+		}
+		if !decodeParams(request.Params, &params) {
+			return nil, nil, badParams()
+		}
+		if s.Diag == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "diagnostics are unavailable"}
+		}
+		return s.Diag.Start(params.Sub), nil, nil
+	case "diag.get", "diag.cancel":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Diag == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "diagnostics are unavailable"}
+		}
+		if request.Method == "diag.cancel" {
+			return s.Diag.Cancel(), nil, nil
+		}
+		return s.Diag.Get(), nil, nil
+	case "log.get":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		entries := []LogEntry{}
+		if s.Logs != nil {
+			entries = s.Logs.Entries()
+		}
+		return map[string]any{"entries": entries}, nil, nil
 	case "subscribe":
 		var params struct {
 			Events []string `json:"events"`
@@ -397,10 +431,16 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	server := &Server{Manager: manager, Logger: logger, Subs: store, Settings: settingsStore}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Logs: logs}
+	if diagnostics != nil {
+		defer diagnostics.Cancel()
+	}
 	if store != nil {
 		go func() {
 			for {

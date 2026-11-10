@@ -41,7 +41,7 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `status` | — | Status |
 | `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg", "sub": "<subscription id>"}` (all optional) | Status |
 | `disconnect` | — | Status |
-| `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings"]}` | `{}`; the events then arrive on this connection |
+| `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings", "diag"]}` | `{}`; the events then arrive on this connection |
 | `subs.list` | — | `{"subs": [Subscription…]}` |
 | `subs.preview` | `{"text": "<URL, links, or AWG config>"}` | Subscription, not saved (`id` is empty) |
 | `subs.add` | `{"text": "<URL, links, or AWG config>"}` | Subscription |
@@ -49,6 +49,10 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
+| `diag.run` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | Diagnostic State |
+| `diag.get` | none | Diagnostic State |
+| `diag.cancel` | none | Diagnostic State |
+| `log.get` | none | `{"entries": [LogEntry...]}`; at most the latest 500 entries |
 
 Status:
 
@@ -108,6 +112,66 @@ must select a server that still exists.
 The service stores subscriptions in `<data directory>\subscriptions.bin`. On Windows the JSON state is protected
 with DPAPI for the service account, and the data directory has a protected ACL granting access only to SYSTEM and
 Administrators. URLs, server links and AWG configs are stored there; IPC subscription objects contain no secrets.
+
+The `diag` event sends the full Diagnostic State after each state or progress change. Log events include `src` in the
+same shape returned by `log.get`. `log.get` returns `{"entries": [...]}` with entries shaped as
+`{"t_unix_ms": 0, "level": "info", "msg": "...", "src": "ipc"}`.
+The log ring is in memory only and holds at most 500 entries. `src` is `ipc`, `session`, `engine`, `diag`, or `subs`.
+
+## Network check
+
+`diag.run {"sub": "<id>"}` checks every profile in that subscription; omit `sub` or pass an empty string to use the
+first subscription. A second run while one is active returns the current state. `diag.cancel` stops the active run.
+`diag.get` reads the current state and the last successful result. Failed and cancelled runs leave that result in
+memory for the next read.
+
+The State shape is:
+
+```json
+{"state":"running","step":2,"pct":40,"error":"","result":null}
+```
+
+`state` is `idle`, `running`, `done`, or `failed`. While running, `step` is 0 (`servers`) through 4 (`foreign`);
+step 1 (`route`) is skipped in this slice. `pct` advances through the check. A failed state has `error` `offline`,
+`no_subscription`, or `cancelled`.
+
+A completed `result` has this shape:
+
+```json
+{
+  "at_unix": 0,
+  "sub": "subscription id",
+  "network": {"kind": "wifi"},
+  "servers": [{"id":"server id","name":"server name","protocol":"hysteria2","verdict":"ok","reason":"","rtt_ms":0}],
+  "udp": {"verdict":"ok"},
+  "nat": {"verdict":"open"},
+  "dns": {"verdict":"ok","checked":8,"replaced":0},
+  "foreign": {"verdict":"ok","total":10,"open":10}
+}
+```
+
+The physical network kind is `wifi`, `ethernet`, `mobile`, or `other`. `servers` contains one entry per profile in
+the selected subscription. Server verdicts are `ok`, `blocked`, `down`, `config`, or `app`; reasons are
+`udp_no_answer`, `no_answer`, `not_found`, `auth_rejected`, `bad_config`, and `engine_error`. `rtt_ms` is populated
+for successful handshakes.
+
+`udp.verdict` is `ok` when STUN or a UDP server answered, `blocked` when neither answered but a TCP check or a server
+host check succeeded, and `unknown` otherwise. `nat.verdict` is `open` when both STUN servers report the same mapped
+port, `limited` when their ports differ, and `unknown` when fewer than two answer. `dns.verdict` is `ok`, `replaced`,
+or `unknown`; `checked` counts names compared with a trusted DoH answer and a local DNS response, and `replaced`
+counts names where DoH returns addresses but local DNS gives NXDOMAIN, no A answer, a listed bogon, or the same
+single address as another name. Ordinary address differences such as CDN answers do not count as replacement.
+`foreign.verdict` is `ok` when at most one TLS check fails, `cut` when at least two
+fail and one opens, and `unknown` when none opens. If none of the foreign TLS checks opens, `udp` and `dns` are also
+reported as `unknown`.
+
+“Outside the tunnel” means each diagnostic socket selects the physical IPv4 default-route interface, even while a
+VPN tunnel is active. AmneziaWG handshake sockets use the same interface. The check does not add tunnel routes; the
+service's existing kill-switch allowance for its own sockets lets these probes leave beside the tunnel.
+
+Diagnostic results and logs contain verdicts, counters, and timings only. They do not include authentication values,
+keys, subscription links, profile configs, or the machine's public address; the STUN address is discarded after its
+mapped port is read. Checks in this slice do not measure route hops, speed, throttling, or Wi-Fi quality.
 
 ## Running it by hand
 
