@@ -29,8 +29,9 @@ process and reads its image path. The connection is **trusted** when:
 - the service binary is unsigned (a development build): the caller's image is `Mistgate.exe` or `mistgate.exe` in the
   service's own directory, or the path in `MISTGATE_DEV_CLIENT` (read only by an unsigned build).
 
-An untrusted connection may call `status` and nothing else: every other method answers `not_trusted`, and it gets no
-events. The result of the check is logged once per connection (pid, image path, verdict), never a token or a key.
+An untrusted connection may call `status` and nothing else: every other method (`hello` too) answers `not_trusted`,
+and it gets no events. `subscribe` sends future events only: ask `status` once after it. The 1 MiB cap counts the line
+without its `\n`. Signatures are checked offline (no revocation lookups); a catalog-only signature does not count. The result of the check is logged once per connection (pid, image path, verdict), never a token or a key.
 
 ## Methods (v0)
 
