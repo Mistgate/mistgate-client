@@ -45,16 +45,35 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 
 Status:
 
+While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
+protocol that are actually in use.
+
 ```json
 {"state": "off", "step": "", "since_unix": 0, "server": "", "protocol": "", "error": ""}
 ```
 
 `state`: `off` · `connecting` · `connected` · `reconnecting` · `error` · `blocked` (the kill switch holds the internet).
 `step` while connecting: `resolve` · `handshake` · `tunnel` · `verify`. `error`: a code such as `no_server_answers`,
-`no_subscription`, `offline`.
+`no_subscription`, `offline`, `server_not_found`, `auth_rejected`, `tunnel_failed`, `verify_failed`, `unsupported_os`.
 
 Events: `status` (a Status, on every change), `traffic` (`{"rx_bps": 0, "tx_bps": 0, "rtt_ms": 0}`, once a second while
 connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`).
 
 Subscriptions, servers, settings, diagnostics and reports come with the steps that build them; each adds its methods
 here first.
+
+## Running it by hand
+
+For a real connection, run `mistgate-clientd run -profiles profiles.json` from an elevated console. Put
+`wintun.dll` version 0.14.1 from [wintun.net](https://www.wintun.net/) beside `mistgate-clientd.exe`. The profiles
+file is JSON with a `servers` array; Hysteria2 entries use `uri`, and AmneziaWG entries use `conf` containing the
+wg-quick text. `verify` is optional and defaults to `1.1.1.1:443`.
+
+```json
+{
+  "servers": [
+    {"id": "de1-hy2", "name": "Germany", "protocol": "hysteria2", "uri": "hysteria2://token@server.example:443"},
+    {"id": "de1-awg", "name": "Germany", "protocol": "awg", "conf": "[Interface]\nAddress = 10.66.4.3/32\nPrivateKey = <key>\n[Peer]\nPublicKey = <key>\nAllowedIPs = 0.0.0.0/0\nEndpoint = server.example:51820"}
+  ]
+}
+```

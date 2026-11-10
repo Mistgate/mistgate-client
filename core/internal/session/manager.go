@@ -48,6 +48,7 @@ type attemptStep struct {
 }
 type attemptResult struct {
 	generation uint64
+	info       engine.Info
 	err        error
 }
 type closeRequest struct{ reply chan (<-chan struct{}) }
@@ -184,6 +185,8 @@ func (m *Manager) run() {
 						state.status.State = "connected"
 						state.status.Step = ""
 						state.status.Error = ""
+						state.status.Server = request.info.Server
+						state.status.Protocol = request.info.Protocol
 						state.status.SinceUnix = time.Now().Unix()
 					}
 					m.hub.Publish("status", state.status)
@@ -247,7 +250,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		err := m.engine.Start(ctx, target, func(step engine.Step) {
+		info, err := m.engine.Start(ctx, target, func(step engine.Step) {
 			select {
 			case m.commands <- attemptStep{generation: generation, step: step}:
 			case <-ctx.Done():
@@ -255,7 +258,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 			}
 		})
 		select {
-		case m.commands <- attemptResult{generation: generation, err: err}:
+		case m.commands <- attemptResult{generation: generation, info: info, err: err}:
 		case <-m.done:
 		}
 	}()

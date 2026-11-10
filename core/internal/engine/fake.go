@@ -19,11 +19,11 @@ type Fake struct {
 
 func NewFake(config FakeConfig) *Fake { return &Fake{config: config} }
 
-func (f *Fake) Start(ctx context.Context, _ Target, report func(Step)) error {
+func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Info, error) {
 	steps := [...]Step{StepResolve, StepHandshake, StepTunnel, StepVerify}
 	for _, step := range steps {
 		if err := ctx.Err(); err != nil {
-			return err
+			return Info{}, err
 		}
 		if report != nil {
 			report(step)
@@ -38,7 +38,7 @@ func (f *Fake) Start(ctx context.Context, _ Target, report func(Step)) error {
 			case <-timer.C:
 			case <-ctx.Done():
 				timer.Stop()
-				return ctx.Err()
+				return Info{}, ctx.Err()
 			}
 		}
 		if f.config.FailAt == step {
@@ -46,10 +46,10 @@ func (f *Fake) Start(ctx context.Context, _ Target, report func(Step)) error {
 			if code == "" {
 				code = "no_server_answers"
 			}
-			return &Failure{Code: code, Err: errors.New("fake engine failure")}
+			return Info{}, &Failure{Code: code, Err: errors.New("fake engine failure")}
 		}
 	}
-	return ctx.Err()
+	return Info{Server: target.Server, Protocol: target.Protocol}, ctx.Err()
 }
 
 func (*Fake) Stop() {}

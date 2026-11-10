@@ -83,7 +83,7 @@ func testConnectingAttemptIsReplaced(t *testing.T) {
 			}
 			status := event.Data.(Status)
 			if status.State == "connected" {
-				if status.Server != "second" {
+				if status.Server != "second" || status.Protocol != "auto" {
 					t.Fatalf("connected server = %q, want replacement target", status.Server)
 				}
 				return

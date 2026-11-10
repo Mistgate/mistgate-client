@@ -19,6 +19,11 @@ type Target struct {
 	Protocol string
 }
 
+type Info struct {
+	Server   string
+	Protocol string
+}
+
 type Traffic struct {
 	RXBPS int64 `json:"rx_bps"`
 	TXBPS int64 `json:"tx_bps"`
@@ -26,7 +31,7 @@ type Traffic struct {
 }
 
 type Engine interface {
-	Start(ctx context.Context, target Target, report func(Step)) error
+	Start(ctx context.Context, target Target, report func(Step)) (Info, error)
 	// Stop must be safe to call while Start is running.
 	Stop()
 	Stats() Traffic
