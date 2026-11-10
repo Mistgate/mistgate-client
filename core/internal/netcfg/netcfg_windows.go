@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"os"
 	"sync"
 	"sync/atomic"
 
@@ -32,7 +33,7 @@ type Config struct {
 
 type Adapter struct {
 	mu           sync.Mutex
-	device       *countingDevice
+	device       *sessionDevice
 	luid         winipcfg.LUID
 	closed       bool
 	configured   bool
@@ -42,20 +43,40 @@ type Adapter struct {
 	hasBypass    bool
 }
 
+var persistentDevice struct {
+	sync.Mutex
+	pump   *devicePump
+	active *Adapter
+	luid   winipcfg.LUID
+}
+
 func Create(mtu int) (*Adapter, error) {
-	device, err := tun.CreateTUNWithRequestedGUID("Mistgate", &adapterGUID, mtu)
-	if err != nil {
-		return nil, errors.New("cannot create Wintun adapter")
+	persistentDevice.Lock()
+	defer persistentDevice.Unlock()
+	if persistentDevice.active != nil {
+		if err := persistentDevice.active.Close(); err != nil {
+			return nil, fmt.Errorf("close previous Wintun session: %w", err)
+		}
 	}
-	native, ok := device.(*tun.NativeTun)
-	if !ok {
-		_ = device.Close()
-		return nil, errors.New("Wintun adapter has no interface identifier")
+	if persistentDevice.pump == nil {
+		device, err := tun.CreateTUNWithRequestedGUID("Mistgate", &adapterGUID, mtu)
+		if err != nil {
+			return nil, errors.New("cannot create Wintun adapter")
+		}
+		native, ok := device.(*tun.NativeTun)
+		if !ok {
+			_ = device.Close()
+			return nil, errors.New("Wintun adapter has no interface identifier")
+		}
+		persistentDevice.pump = newDevicePump(device)
+		persistentDevice.luid = winipcfg.LUID(native.LUID())
 	}
-	return &Adapter{
-		device: newCountingDevice(device),
-		luid:   winipcfg.LUID(native.LUID()),
-	}, nil
+	adapter := &Adapter{
+		device: persistentDevice.pump.newSession(mtu),
+		luid:   persistentDevice.luid,
+	}
+	persistentDevice.active = adapter
+	return adapter, nil
 }
 
 func (a *Adapter) Device() tun.Device { return a.device }
@@ -235,47 +256,158 @@ func (a *Adapter) Close() error {
 		return nil
 	}
 	a.closed = true
-	var routeErr error
+	var closeErr error
+	if err := a.device.Close(); err != nil {
+		closeErr = errors.Join(closeErr, fmt.Errorf("close Wintun session: %w", err))
+	}
 	if a.hasBypass {
-		routeErr = a.bypassLUID.DeleteRoute(a.bypassPrefix, a.bypassNext)
-		if errors.Is(routeErr, windows.ERROR_NOT_FOUND) {
-			routeErr = nil
+		err := a.bypassLUID.DeleteRoute(a.bypassPrefix, a.bypassNext)
+		if errors.Is(err, windows.ERROR_NOT_FOUND) {
+			err = nil
+		}
+		if err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("remove server bypass route: %w", err))
 		}
 	}
-	deviceErr := a.device.Close()
-	if routeErr != nil {
-		return fmt.Errorf("remove server bypass route: %w", routeErr)
+	for _, family := range []winipcfg.AddressFamily{windows.AF_INET, windows.AF_INET6} {
+		for _, flush := range []struct {
+			name string
+			fn   func(winipcfg.AddressFamily) error
+		}{
+			{"routes", a.luid.FlushRoutes},
+			{"addresses", a.luid.FlushIPAddresses},
+			{"DNS", a.luid.FlushDNS},
+		} {
+			if err := flush.fn(family); err != nil {
+				closeErr = errors.Join(closeErr, fmt.Errorf("flush Wintun %s: %w", flush.name, err))
+			}
+		}
 	}
-	if deviceErr != nil {
-		return fmt.Errorf("close Wintun adapter: %w", deviceErr)
-	}
-	return nil
+	return closeErr
 }
 
-type countingDevice struct {
-	tun.Device
+type devicePump struct {
+	native  tun.Device
+	mu      sync.Mutex
+	current *sessionDevice
+	buffer  []byte
+	buffers [][]byte
+	sizes   []int
+	size    int
+}
+
+func newDevicePump(native tun.Device) *devicePump {
+	p := &devicePump{
+		native:  native,
+		buffer:  make([]byte, 65536),
+		buffers: make([][]byte, 1),
+		sizes:   make([]int, 1),
+	}
+	p.buffers[0] = p.buffer
+	go p.run()
+	return p
+}
+
+func (p *devicePump) run() {
+	for {
+		p.sizes[0] = 0
+		n, err := p.native.Read(p.buffers, p.sizes, 0)
+		if err != nil {
+			return
+		}
+		if n == 0 || p.sizes[0] <= 0 || p.sizes[0] > len(p.buffer) {
+			continue
+		}
+		p.size = p.sizes[0]
+		p.mu.Lock()
+		session := p.current
+		p.mu.Unlock()
+		if session == nil {
+			continue
+		}
+		select {
+		case session.packet <- struct{}{}:
+		case <-session.done:
+			continue
+		}
+		select {
+		case <-session.ack:
+		case <-session.done:
+			select {
+			case <-session.packet:
+			default:
+				<-session.ack
+			}
+		}
+	}
+}
+
+func (p *devicePump) newSession(mtu int) *sessionDevice {
+	session := &sessionDevice{
+		pump:   p,
+		mtu:    mtu,
+		done:   make(chan struct{}),
+		packet: make(chan struct{}, 1),
+		ack:    make(chan struct{}, 1),
+		events: make(chan tun.Event, 1),
+	}
+	session.events <- tun.EventUp
+	p.mu.Lock()
+	p.current = session
+	p.mu.Unlock()
+	return session
+}
+
+type sessionDevice struct {
+	pump      *devicePump
+	mtu       int
+	done      chan struct{}
+	packet    chan struct{}
+	ack       chan struct{}
+	events    chan tun.Event
+	closeOnce sync.Once
 	rx        atomic.Uint64
 	tx        atomic.Uint64
-	closeOnce sync.Once
-	closeErr  error
 }
 
-func newCountingDevice(device tun.Device) *countingDevice {
-	return &countingDevice{Device: device}
-}
+func (d *sessionDevice) File() *os.File { return d.pump.native.File() }
 
-func (d *countingDevice) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
-	n, err := d.Device.Read(bufs, sizes, offset)
-	for i := 0; i < n && i < len(sizes); i++ {
-		if sizes[i] > 0 {
-			d.tx.Add(uint64(sizes[i]))
-		}
+func (d *sessionDevice) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+	if len(bufs) == 0 || len(sizes) < len(bufs) || offset < 0 {
+		return 0, errors.New("invalid Wintun read buffers")
 	}
-	return n, err
+	select {
+	case <-d.done:
+		return 0, errors.New("Wintun session is closed")
+	case <-d.packet:
+	}
+	defer func() {
+		select {
+		case d.ack <- struct{}{}:
+		default:
+		}
+	}()
+	select {
+	case <-d.done:
+		return 0, errors.New("Wintun session is closed")
+	default:
+	}
+	if offset > len(bufs[0]) || len(bufs[0])-offset < d.pump.size {
+		return 0, errors.New("Wintun read buffer is too small")
+	}
+	size := copy(bufs[0][offset:], d.pump.buffer[:d.pump.size])
+	sizes[0] = size
+	d.tx.Add(uint64(size))
+	return 1, nil
 }
 
-func (d *countingDevice) Write(bufs [][]byte, offset int) (int, error) {
-	n, err := d.Device.Write(bufs, offset)
+func (d *sessionDevice) Write(bufs [][]byte, offset int) (int, error) {
+	select {
+	case <-d.done:
+		return 0, errors.New("Wintun session is closed")
+	default:
+	}
+	n, err := d.pump.native.Write(bufs, offset)
 	for i := 0; i < n && i < len(bufs); i++ {
 		size := len(bufs[i]) - offset
 		if size > 0 {
@@ -285,7 +417,23 @@ func (d *countingDevice) Write(bufs [][]byte, offset int) (int, error) {
 	return n, err
 }
 
-func (d *countingDevice) Close() error {
-	d.closeOnce.Do(func() { d.closeErr = d.Device.Close() })
-	return d.closeErr
+func (d *sessionDevice) MTU() (int, error) { return d.mtu, nil }
+
+func (d *sessionDevice) Name() (string, error) { return d.pump.native.Name() }
+
+func (d *sessionDevice) Events() <-chan tun.Event { return d.events }
+
+func (d *sessionDevice) Close() error {
+	d.closeOnce.Do(func() {
+		close(d.done)
+		d.pump.mu.Lock()
+		if d.pump.current == d {
+			d.pump.current = nil
+		}
+		d.pump.mu.Unlock()
+		close(d.events)
+	})
+	return nil
 }
+
+func (d *sessionDevice) BatchSize() int { return 1 }
