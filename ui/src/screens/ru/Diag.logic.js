@@ -25,7 +25,7 @@ class Component extends DCLogic {
     const VD = {"ok": ["Работает", "check-circle", "ok"], "slow": ["Режут скорость", "dashboard-speed", "warn"], "freeze": ["Заморозка", "snow-flake", "ice"], "blocked": ["Блокируют", "prohibition", "bad"], "down": ["Сбой сервера", "cloud-xmark", "neu"], "config": ["Ошибка конфигурации", "wrench", "lav"], "net": ["Ваша сеть", "wifi-off", "sand"], "app": ["Ошибка приложения", "bug", "slate"]};
     const md = s0.md || this.props.mode || 'mg';
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Подключено' : (vp === 'ing' ? 'Подключаемся…' : 'VPN выключен'), m: vp === 'on' ? 'Германия' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'Подключить VPN' : 'Отключить VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 

@@ -175,7 +175,7 @@
 
           <sc-if value="{{isLists}}" hint-placeholder-val="{{false}}">
             <div class="rh">
-              <button class="back" onClick="{{closeLists}}" aria-label="Back"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+              <button class="back" onClick="{{closeLists}}" aria-label="返回"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
               <div class="rh-t"><b>列表</b></div>
               <button class="lsb {{updCls}}" onClick="{{updateNow}}"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span>{{updAll}}</span></button>
             </div>
@@ -208,24 +208,27 @@
         </sc-if>
         <sc-if value="{{isAll}}" hint-placeholder-val="{{false}}">
           <div class="rh">
-            <div class="rh-t"><b>所有流量都经过 VPN</b></div>
+            <div class="rh-t"><b>{{allT}}</b></div>
+            <span class="rh-n {{offN}}"><i aria-hidden="true"></i>连接后生效</span>
           </div>
-          <div class="sch rise" aria-label="Every app and site goes through the encrypted tunnel; nothing goes direct">
+          <div class="sch rise {{schCls}}" aria-label="Every app and site goes through the encrypted tunnel; nothing goes direct">
             <svg viewBox="0 0 520 250" aria-hidden="true">
               <path class="ln" d="M82 100 H164"/>
               <path class="tube" d="M236 100 H318"/>
               <path class="tube-in" d="M236 100 H318"/>
-              <path class="ln" d="M378 100 C412 100 430 35 454 35"/>
-              <path class="ln" d="M378 100 H454"/>
-              <path class="ln" d="M378 100 C412 100 430 165 454 165"/>
+              <path class="ln fan" d="M378 100 C412 100 430 35 454 35"/>
+              <path class="ln fan" d="M378 100 H454"/>
+              <path class="ln fan" d="M378 100 C412 100 430 165 454 165"/>
+              <path class="byp" d="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100"/><path class="byp" d="M410 100 C428 100 436 35 454 35"/><path class="byp" d="M410 100 H454"/><path class="byp" d="M410 100 C428 100 436 165 454 165"/><circle class="pkd" r="3"><animateMotion dur="3.4s" begin="-0s" repeatCount="indefinite" path="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100 C428 100 436 35 454 35"/></circle><circle class="pkd" r="3"><animateMotion dur="3.4s" begin="-1.1s" repeatCount="indefinite" path="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100 H454"/></circle><circle class="pkd" r="3"><animateMotion dur="3.4s" begin="-2.2s" repeatCount="indefinite" path="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100 C428 100 436 165 454 165"/></circle>
               <circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 35 454 35"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0.45s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L454 100"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0.9s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 165 454 165"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-1.35s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L454 100"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-1.8s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 35 454 35"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-2.25s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 165 454 165"/></circle>
             </svg>
+            <span class="bypl">直连，不经过 VPN</span>
             <div class="nd pc" style="left:10%;top:40%"><span class="gl g-laptop" aria-hidden="true"></span></div>
             <span class="nl" style="left:10%;top:61%">这台电脑<small>所有应用</small></span>
             <div class="nd tun" style="left:38.46%;top:40%"><span class="pulse2" aria-hidden="true"></span><img src="{{logo}}" alt="" width="34" height="34"></div>
-            <span class="nl" style="left:38.46%;top:61%">Mistgate<small>加密隧道</small></span>
-            <div class="nd srv" style="left:66.9%;top:40%"><img src="/blob/b9d142e1783ba5a3056edc5da7cdd20f.svg" alt=""></div>
-            <span class="nl" style="left:66.9%;top:61%">德国<small>VLESS · TCP</small></span>
+            <span class="nl" style="left:38.46%;top:61%">Mistgate<small>{{tunSub}}</small></span>
+            <div class="nd srv" style="left:66.9%;top:40%"><img src="/blob/b9d142e1783ba5a3056edc5da7cdd20f.svg" alt=""><span class="gl g-server" aria-hidden="true"></span></div>
+            <span class="nl" style="left:66.9%;top:61%">{{srvName}}<small>{{srvSub}}</small></span>
             <div class="bub sky" style="left:91.15%;top:14%" title="Video"><span class="gl g-play" aria-hidden="true"></span></div>
             <div class="bub lav" style="left:91.15%;top:40%"><span class="gl g-chat-bubble" aria-hidden="true"></span></div>
             <div class="bub mint" style="left:91.15%;top:66%"><span class="gl g-internet" aria-hidden="true"></span></div>
@@ -233,7 +236,7 @@
           <div class="stats3">
             <div class="st3"><span class="mono lav"><span class="gl g-shield-check" aria-hidden="true"></span></span><span class="tx"><b>0</b><span>例外</span></span></div>
             <div class="st3"><span class="mono sky"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>DNS</b><span>同样走 VPN</span></span></div>
-            <div class="st3"><span class="mono mint"><span class="gl g-lock" aria-hidden="true"></span></span><span class="tx"><b>Kill Switch</b><span>已开启 · 无泄漏</span></span></div>
+            <div class="st3"><span class="mono {{ksTone}}"><span class="gl g-lock" aria-hidden="true"></span></span><span class="tx"><b>Kill Switch</b><span>{{ksSub}}</span></span></div>
           </div>
           <div class="allnote">
             <span class="tx"><b>{{allNoteT}}</b><span>{{allNote}}</span></span>

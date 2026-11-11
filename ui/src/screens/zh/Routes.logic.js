@@ -26,7 +26,7 @@ class Component extends DCLogic {
     const accent = logos[this.props.accent] ? this.props.accent : 'lavender';
     const s0 = this.st();
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? '已连接' : (vp === 'ing' ? '正在连接…' : 'VPN 已关闭'), m: vp === 'on' ? '德国' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? '连接 VPN' : '断开 VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
@@ -145,6 +145,9 @@ class Component extends DCLogic {
       setExc: () => this.setState({ mode: 'except' }), setOnly: () => this.setState({ mode: 'only' }), setAll: () => this.setState({ mode: 'all' }),
       smartDesc: '所有流量走 VPN，本地网站和家庭网络除外',
       allNote: reg === 'other' ? '打印机和其他家庭设备可能无法访问' : '部分%s银行和服务会屏蔽境外地址'.replace('%s', R.adj),
+      allT: vp === 'on' ? '所有流量都经过 VPN' : '所有流量都将经过 VPN', offN: vp === 'on' ? 'hide' : '', schCls: vp === 'on' ? '' : 'idle',
+      srvName: vp === 'on' ? '德国' : '服务器', srvSub: vp === 'on' ? 'VLESS · TCP' : '未连接',
+      tunSub: vp === 'on' ? '加密隧道' : '隧道已关闭', ksSub: vp === 'on' ? '已开启 · 无泄漏' : '随 VPN 一同开启', ksTone: vp === 'on' ? 'mint' : 'neu',
       allNoteT: reg === 'other' ? '家庭设备' : '%s网站'.replace('%s', R.adj),
       cardTitle: m === 'only' ? '经过 VPN' : '直连，不经过 VPN',
       R: R, regs: regs, regOpen: !!regOpen, regUp: '本地列表今天 09:12 更新', regUpCls: reg === 'other' ? 'hide' : '', regAuto: reg === 'ru', regAutoCls: reg === 'ru' ? '' : 'hide', toggleReg: () => this.setState({ regOpen: !regOpen }),

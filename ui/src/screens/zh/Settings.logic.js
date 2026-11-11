@@ -32,7 +32,7 @@ class Component extends DCLogic {
     const px = s0.px || pr.proxy || 'off';
     const basic = sb === 'basic';
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? '已连接' : (vp === 'ing' ? '正在连接…' : 'VPN 已关闭'), m: vp === 'on' ? '德国' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? '连接 VPN' : '断开 VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 

@@ -26,7 +26,7 @@ class Component extends DCLogic {
     const accent = logos[this.props.accent] ? this.props.accent : 'lavender';
     const s0 = this.st();
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Connected' : (vp === 'ing' ? 'Connecting…' : 'VPN is off'), m: vp === 'on' ? 'Germany' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'Connect VPN' : 'Disconnect VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
@@ -145,6 +145,9 @@ class Component extends DCLogic {
       setExc: () => this.setState({ mode: 'except' }), setOnly: () => this.setState({ mode: 'only' }), setAll: () => this.setState({ mode: 'all' }),
       smartDesc: 'VPN for everything, except local sites and your home network',
       allNote: reg === 'other' ? 'Printers and other home devices may become unreachable' : 'Some %s banks and services block foreign addresses'.replace('%s', R.adj),
+      allT: vp === 'on' ? 'All traffic goes through VPN' : 'All traffic will go through VPN', offN: vp === 'on' ? 'hide' : '', schCls: vp === 'on' ? '' : 'idle',
+      srvName: vp === 'on' ? 'Germany' : 'Server', srvSub: vp === 'on' ? 'VLESS · TCP' : 'not connected',
+      tunSub: vp === 'on' ? 'encrypted tunnel' : 'tunnel is off', ksSub: vp === 'on' ? 'on · no leaks' : 'starts with VPN', ksTone: vp === 'on' ? 'mint' : 'neu',
       allNoteT: reg === 'other' ? 'Home devices' : '%s sites'.replace('%s', R.adj),
       cardTitle: m === 'only' ? 'Goes through VPN' : 'Goes direct, without VPN',
       R: R, regs: regs, regOpen: !!regOpen, regUp: 'Local lists updated today, 09:12', regUpCls: reg === 'other' ? 'hide' : '', regAuto: reg === 'ru', regAutoCls: reg === 'ru' ? '' : 'hide', toggleReg: () => this.setState({ regOpen: !regOpen }),

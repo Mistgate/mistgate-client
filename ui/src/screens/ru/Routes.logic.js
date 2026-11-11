@@ -26,7 +26,7 @@ class Component extends DCLogic {
     const accent = logos[this.props.accent] ? this.props.accent : 'lavender';
     const s0 = this.st();
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Подключено' : (vp === 'ing' ? 'Подключаемся…' : 'VPN выключен'), m: vp === 'on' ? 'Германия' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'Подключить VPN' : 'Отключить VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
@@ -145,6 +145,9 @@ class Component extends DCLogic {
       setExc: () => this.setState({ mode: 'except' }), setOnly: () => this.setState({ mode: 'only' }), setAll: () => this.setState({ mode: 'all' }),
       smartDesc: 'VPN для всего, кроме местных сайтов и домашней сети',
       allNote: reg === 'other' ? 'Принтеры и другие домашние устройства могут стать недоступны' : 'Некоторые %s банки и сервисы блокируют зарубежные адреса'.replace('%s', R.adj.toLowerCase()),
+      allT: vp === 'on' ? 'Весь трафик идёт через VPN' : 'Весь трафик пойдёт через VPN', offN: vp === 'on' ? 'hide' : '', schCls: vp === 'on' ? '' : 'idle',
+      srvName: vp === 'on' ? 'Германия' : 'Сервер', srvSub: vp === 'on' ? 'VLESS · TCP' : 'не подключён',
+      tunSub: vp === 'on' ? 'зашифрованный туннель' : 'туннель выключен', ksSub: vp === 'on' ? 'вкл · без утечек' : 'включится с VPN', ksTone: vp === 'on' ? 'mint' : 'neu',
       allNoteT: reg === 'other' ? 'Домашние устройства' : '%s сайты'.replace('%s', R.adj),
       cardTitle: m === 'only' ? 'Идёт через VPN' : 'Идёт напрямую, без VPN',
       R: R, regs: regs, regOpen: !!regOpen, regUp: 'Локальные списки обновлены сегодня, 09:12', regUpCls: reg === 'other' ? 'hide' : '', regAuto: reg === 'ru', regAutoCls: reg === 'ru' ? '' : 'hide', toggleReg: () => this.setState({ regOpen: !regOpen }),

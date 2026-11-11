@@ -26,7 +26,7 @@ class Component extends DCLogic {
     const accent = logos[this.props.accent] ? this.props.accent : 'lavender';
     const s0 = this.st();
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Bağlı' : (vp === 'ing' ? 'Bağlanıyor…' : 'VPN kapalı'), m: vp === 'on' ? 'Almanya' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'VPN’e bağlan' : 'VPN’i kapat',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
@@ -145,6 +145,9 @@ class Component extends DCLogic {
       setExc: () => this.setState({ mode: 'except' }), setOnly: () => this.setState({ mode: 'only' }), setAll: () => this.setState({ mode: 'all' }),
       smartDesc: 'Yerel siteler ve ev ağınız dışında her şey için VPN',
       allNote: reg === 'other' ? 'Yazıcılar ve diğer ev cihazlarına erişilemeyebilir' : 'Bazı %s bankaları ve hizmetleri yabancı adresleri engelliyor'.replace('%s', R.adj),
+      allT: vp === 'on' ? 'Tüm trafik VPN üzerinden gider' : 'Tüm trafik VPN üzerinden gidecek', offN: vp === 'on' ? 'hide' : '', schCls: vp === 'on' ? '' : 'idle',
+      srvName: vp === 'on' ? 'Almanya' : 'Sunucu', srvSub: vp === 'on' ? 'VLESS · TCP' : 'bağlı değil',
+      tunSub: vp === 'on' ? 'şifreli tünel' : 'tünel kapalı', ksSub: vp === 'on' ? 'açık · sızıntı yok' : 'VPN ile açılır', ksTone: vp === 'on' ? 'mint' : 'neu',
       allNoteT: reg === 'other' ? 'Ev cihazları' : '%s siteleri'.replace('%s', R.adj),
       cardTitle: m === 'only' ? 'VPN üzerinden gider' : 'Doğrudan gider, VPN’siz',
       R: R, regs: regs, regOpen: !!regOpen, regUp: 'Yerel listeler bugün 09:12’de güncellendi', regUpCls: reg === 'other' ? 'hide' : '', regAuto: reg === 'ru', regAutoCls: reg === 'ru' ? '' : 'hide', toggleReg: () => this.setState({ regOpen: !regOpen }),

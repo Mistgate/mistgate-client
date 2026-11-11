@@ -265,7 +265,7 @@ class Component extends DCLogic {
     const VD = {"ok": ["可用", "check-circle", "ok"], "slow": ["被限速", "dashboard-speed", "warn"], "freeze": ["连接卡死", "snow-flake", "ice"], "blocked": ["被封锁", "prohibition", "bad"], "down": ["服务器故障", "cloud-xmark", "neu"], "config": ["配置错误", "wrench", "lav"], "net": ["您的网络", "wifi-off", "sand"], "app": ["应用错误", "bug", "slate"]};
     const md = s0.md || this.props.mode || 'mg';
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? '已连接' : (vp === 'ing' ? '正在连接…' : 'VPN 已关闭'), m: vp === 'on' ? '德国' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? '连接 VPN' : '断开 VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 

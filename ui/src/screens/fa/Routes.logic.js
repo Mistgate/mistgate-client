@@ -54,7 +54,7 @@ class Component extends DCLogic {
     const accent = logos[this.props.accent] ? this.props.accent : 'lavender';
     const s0 = this.st();
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'متصل' : (vp === 'ing' ? 'در حال اتصال…' : '‏VPN خاموش است'), m: vp === 'on' ? 'آلمان' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'اتصال VPN' : 'قطع VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
@@ -173,6 +173,9 @@ class Component extends DCLogic {
       setExc: () => this.setState({ mode: 'except' }), setOnly: () => this.setState({ mode: 'only' }), setAll: () => this.setState({ mode: 'all' }),
       smartDesc: '‏VPN برای همه‌چیز، جز سایت‌های داخلی و شبکه خانگی',
       allNote: reg === 'other' ? 'چاپگرها و دیگر دستگاه‌های خانگی ممکن است در دسترس نباشند' : 'برخی بانک‌ها و سرویس‌های %s نشانی‌های خارجی را مسدود می‌کنند'.replace('%s', R.adj),
+      allT: vp === 'on' ? 'همه ترافیک از VPN می‌گذرد' : 'همه ترافیک از VPN خواهد گذشت', offN: vp === 'on' ? 'hide' : '', schCls: vp === 'on' ? '' : 'idle',
+      srvName: vp === 'on' ? 'آلمان' : 'سرور', srvSub: vp === 'on' ? 'VLESS · TCP' : 'وصل نیست',
+      tunSub: vp === 'on' ? 'تونل رمزنگاری‌شده' : 'تونل خاموش است', ksSub: vp === 'on' ? 'روشن · بدون نشتی' : 'با VPN روشن می‌شود', ksTone: vp === 'on' ? 'mint' : 'neu',
       allNoteT: reg === 'other' ? 'دستگاه‌های خانگی' : 'سایت‌های %s'.replace('%s', R.adj),
       cardTitle: m === 'only' ? 'از VPN می‌گذرد' : 'مستقیم می‌رود، بدون VPN',
       R: R, regs: regs, regOpen: !!regOpen, regUp: 'فهرست‌های محلی امروز 09:12 به‌روز شدند', regUpCls: reg === 'other' ? 'hide' : '', regAuto: reg === 'ru', regAutoCls: reg === 'ru' ? '' : 'hide', toggleReg: () => this.setState({ regOpen: !regOpen }),

@@ -55,7 +55,7 @@ class Component extends DCLogic {
     const VD = {"ok": ["کار می‌کند", "check-circle", "ok"], "slow": ["کاهش سرعت", "dashboard-speed", "warn"], "freeze": ["فریز می‌شود", "snow-flake", "ice"], "blocked": ["مسدود", "prohibition", "bad"], "down": ["سرور از کار افتاده", "cloud-xmark", "neu"], "config": ["خطای پیکربندی", "wrench", "lav"], "net": ["شبکه شما", "wifi-off", "sand"], "app": ["خطای برنامه", "bug", "slate"]};
     const md = s0.md || this.props.mode || 'mg';
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'متصل' : (vp === 'ing' ? 'در حال اتصال…' : '‏VPN خاموش است'), m: vp === 'on' ? 'آلمان' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'اتصال VPN' : 'قطع VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 

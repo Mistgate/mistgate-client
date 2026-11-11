@@ -222,24 +222,27 @@
         </sc-if>
         <sc-if value="{{isAll}}" hint-placeholder-val="{{false}}">
           <div class="rh">
-            <div class="rh-t"><b>All traffic goes through VPN</b></div>
+            <div class="rh-t"><b>{{allT}}</b></div>
+            <span class="rh-n {{offN}}"><i aria-hidden="true"></i>Starts when you connect</span>
           </div>
-          <div class="sch rise" aria-label="Every app and site goes through the encrypted tunnel; nothing goes direct">
+          <div class="sch rise {{schCls}}" aria-label="Every app and site goes through the encrypted tunnel; nothing goes direct">
             <svg viewBox="0 0 520 250" aria-hidden="true">
               <path class="ln" d="M82 100 H164"/>
               <path class="tube" d="M236 100 H318"/>
               <path class="tube-in" d="M236 100 H318"/>
-              <path class="ln" d="M378 100 C412 100 430 35 454 35"/>
-              <path class="ln" d="M378 100 H454"/>
-              <path class="ln" d="M378 100 C412 100 430 165 454 165"/>
+              <path class="ln fan" d="M378 100 C412 100 430 35 454 35"/>
+              <path class="ln fan" d="M378 100 H454"/>
+              <path class="ln fan" d="M378 100 C412 100 430 165 454 165"/>
+              <path class="byp" d="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100"/><path class="byp" d="M410 100 C428 100 436 35 454 35"/><path class="byp" d="M410 100 H454"/><path class="byp" d="M410 100 C428 100 436 165 454 165"/><circle class="pkd" r="3"><animateMotion dur="3.4s" begin="-0s" repeatCount="indefinite" path="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100 C428 100 436 35 454 35"/></circle><circle class="pkd" r="3"><animateMotion dur="3.4s" begin="-1.1s" repeatCount="indefinite" path="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100 H454"/></circle><circle class="pkd" r="3"><animateMotion dur="3.4s" begin="-2.2s" repeatCount="indefinite" path="M52 70 C52 22 84 12 124 12 H372 C400 12 410 40 410 100 C428 100 436 165 454 165"/></circle>
               <circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 35 454 35"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0.45s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L454 100"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-0.9s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 165 454 165"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-1.35s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L454 100"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-1.8s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 35 454 35"/></circle><circle class="pk" r="3.6"><animateMotion dur="2.6s" begin="-2.25s" repeatCount="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".45 0 .55 1" path="M82 100 L378 100 C412 100 430 165 454 165"/></circle>
             </svg>
+            <span class="bypl">Goes direct, without VPN</span>
             <div class="nd pc" style="left:10%;top:40%"><span class="gl g-laptop" aria-hidden="true"></span></div>
             <span class="nl" style="left:10%;top:61%">This PC<small>every app</small></span>
             <div class="nd tun" style="left:38.46%;top:40%"><span class="pulse2" aria-hidden="true"></span><img src="{{logo}}" alt="" width="34" height="34"></div>
-            <span class="nl" style="left:38.46%;top:61%">Mistgate<small>encrypted tunnel</small></span>
-            <div class="nd srv" style="left:66.9%;top:40%"><img src="/_blob/b9d142e1783ba5a3056edc5da7cdd20f" alt=""></div>
-            <span class="nl" style="left:66.9%;top:61%">Germany<small>VLESS · TCP</small></span>
+            <span class="nl" style="left:38.46%;top:61%">Mistgate<small>{{tunSub}}</small></span>
+            <div class="nd srv" style="left:66.9%;top:40%"><img src="/_blob/b9d142e1783ba5a3056edc5da7cdd20f" alt=""><span class="gl g-server" aria-hidden="true"></span></div>
+            <span class="nl" style="left:66.9%;top:61%">{{srvName}}<small>{{srvSub}}</small></span>
             <div class="bub sky" style="left:91.15%;top:14%" title="Video"><span class="gl g-play" aria-hidden="true"></span></div>
             <div class="bub lav" style="left:91.15%;top:40%"><span class="gl g-chat-bubble" aria-hidden="true"></span></div>
             <div class="bub mint" style="left:91.15%;top:66%"><span class="gl g-internet" aria-hidden="true"></span></div>
@@ -247,7 +250,7 @@
           <div class="stats3">
             <div class="st3"><span class="mono lav"><span class="gl g-shield-check" aria-hidden="true"></span></span><span class="tx"><b>0</b><span>exceptions</span></span></div>
             <div class="st3"><span class="mono sky"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>DNS</b><span>through VPN too</span></span></div>
-            <div class="st3"><span class="mono mint"><span class="gl g-lock" aria-hidden="true"></span></span><span class="tx"><b>Kill switch</b><span>on · no leaks</span></span></div>
+            <div class="st3"><span class="mono {{ksTone}}"><span class="gl g-lock" aria-hidden="true"></span></span><span class="tx"><b>Kill switch</b><span>{{ksSub}}</span></span></div>
           </div>
           <div class="allnote">
             <span class="tx"><b>{{allNoteT}}</b><span>{{allNote}}</span></span>
@@ -267,7 +270,7 @@
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["except","only","all"],"default":"except","section":"State"},"view":{"editor":"enum","options":["col","apps","sites"],"default":"col","section":"State"},"cat":{"editor":"enum","options":["popular","blocked","social","media","ai","games"],"default":"popular","section":"State"},"lists":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"reg":{"editor":"enum","options":["ru","by","cn","ir","other"],"default":"ru","section":"State"},"region":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Look"},"accent":{"editor":"enum","options":["lavender","mint","sand","rose"],"default":"lavender","section":"Look"},"$preview":{"width":1160,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["except","only","all"],"default":"except","section":"State"},"view":{"editor":"enum","options":["col","apps","sites"],"default":"col","section":"State"},"cat":{"editor":"enum","options":["popular","blocked","social","media","ai","games"],"default":"popular","section":"State"},"lists":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"reg":{"editor":"enum","options":["ru","by","cn","ir","other"],"default":"ru","section":"State"},"region":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Look"},"accent":{"editor":"enum","options":["lavender","mint","sand","rose"],"default":"lavender","section":"Look"},"vpn":{"editor":"enum","options":["on","off"],"default":"on","section":"State"},"$preview":{"width":1160,"height":800}}'>
 class Component extends DCLogic {
   st() { return this.state || {}; }
   componentDidMount() { this.catPill(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => this.catPill()); }
@@ -294,7 +297,7 @@ class Component extends DCLogic {
     const accent = logos[this.props.accent] ? this.props.accent : 'lavender';
     const s0 = this.st();
     // статус VPN в шапке: виден на всех экранах, кроме Главной
-    const vp = s0.vp || 'on';
+    const vp = s0.vp || (this.props.vpn === 'off' ? 'off' : 'on');
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Connected' : (vp === 'ing' ? 'Connecting…' : 'VPN is off'), m: vp === 'on' ? 'Germany' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'Connect VPN' : 'Disconnect VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
@@ -413,6 +416,9 @@ class Component extends DCLogic {
       setExc: () => this.setState({ mode: 'except' }), setOnly: () => this.setState({ mode: 'only' }), setAll: () => this.setState({ mode: 'all' }),
       smartDesc: 'VPN for everything, except local sites and your home network',
       allNote: reg === 'other' ? 'Printers and other home devices may become unreachable' : 'Some %s banks and services block foreign addresses'.replace('%s', R.adj),
+      allT: vp === 'on' ? 'All traffic goes through VPN' : 'All traffic will go through VPN', offN: vp === 'on' ? 'hide' : '', schCls: vp === 'on' ? '' : 'idle',
+      srvName: vp === 'on' ? 'Germany' : 'Server', srvSub: vp === 'on' ? 'VLESS · TCP' : 'not connected',
+      tunSub: vp === 'on' ? 'encrypted tunnel' : 'tunnel is off', ksSub: vp === 'on' ? 'on · no leaks' : 'starts with VPN', ksTone: vp === 'on' ? 'mint' : 'neu',
       allNoteT: reg === 'other' ? 'Home devices' : '%s sites'.replace('%s', R.adj),
       cardTitle: m === 'only' ? 'Goes through VPN' : 'Goes direct, without VPN',
       R: R, regs: regs, regOpen: !!regOpen, regUp: 'Local lists updated today, 09:12', regUpCls: reg === 'other' ? 'hide' : '', regAuto: reg === 'ru', regAutoCls: reg === 'ru' ? '' : 'hide', toggleReg: () => this.setState({ regOpen: !regOpen }),

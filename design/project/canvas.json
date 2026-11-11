@@ -1036,6 +1036,13 @@
       "h": 800,
       "title": "Турецкий · Установщик",
       "is_interactive": true
+    },
+    "RoutesAllOff.dc.html": {
+      "x": 3720,
+      "y": 2760,
+      "w": 1160,
+      "h": 800,
+      "title": "Маршруты · весь трафик, VPN выключен"
     }
   },
   "createdOnFiles": {
@@ -1070,6 +1077,7 @@
     "RoutesLists.dc.html",
     "RoutesRegion.dc.html",
     "RoutesAll.dc.html",
+    "RoutesAllOff.dc.html",
     "MainExpired.dc.html",
     "MainNoSub.dc.html",
     "MainNoServers.dc.html",
