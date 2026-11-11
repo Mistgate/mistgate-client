@@ -370,7 +370,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 	profiles := make([]profile.Profile, 0)
 	for _, sub := range s.state.Subscriptions {
 		for _, entry := range sub.Entries {
-			p := profile.Profile{ID: entry.Server.ID, Name: entry.Server.Name, Protocol: entry.Server.Protocol, Sub: sub.ID, PanelDNS: sub.DNS, PanelSplit: sub.DNSSplit}
+			p := profile.Profile{ID: entry.Server.ID, Name: entry.Server.Name, Protocol: entry.Server.Protocol, Sub: sub.ID, Via: entry.Server.Via, PanelDNS: sub.DNS, PanelSplit: sub.DNSSplit}
 			var err error
 			switch {
 			case strings.HasPrefix(entry.Raw, "{"):

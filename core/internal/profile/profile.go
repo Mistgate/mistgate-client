@@ -23,6 +23,8 @@ type Profile struct {
 	Hy2      *Hy2
 	AWG      *AWG
 	Verify   string
+	// From a panel's client API: how the path reaches the server (direct, relay, warp); empty when not known.
+	Via string
 	// What the panel's sync said about DNS (plain resolvers only); empty for a subscription that is not managed.
 	PanelDNS   []netip.Addr
 	PanelSplit []DNSSplit

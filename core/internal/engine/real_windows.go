@@ -507,6 +507,17 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				candidates = append(candidates, p)
 			}
 		}
+		// a plain path when the list has one: a relay or a WARP exit answers as soon as its entry does, and is not
+		// what Auto should choose by a millisecond
+		plain := candidates[:0:0]
+		for _, p := range candidates {
+			if p.Via == "" || p.Via == "direct" {
+				plain = append(plain, p)
+			}
+		}
+		if len(plain) > 0 {
+			candidates = plain
+		}
 		if best := quickestOf(runCtx, candidates); best >= 0 {
 			selected = candidates[best]
 		}

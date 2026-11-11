@@ -475,7 +475,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const quickest = nodes.reduce<Node | undefined>((a, n) => (quick(n) < (a ? quick(a) : Infinity) ? n : a), undefined);
       const node = (on && nodes.find((n) => n.entries.some((e) => inUse(e)))) || nodes.find((n) => has(n, sel)) || quickest || nodes[0];
       if (node) {
-        const entry = (on && node.entries.find((e) => inUse(e))) || node.entries.find((e) => e.s.id === sel) || node.entries.reduce((a, e) => ((pings[e.s.id] || Infinity) < (pings[a.s.id] || Infinity) ? e : a));
+        // (the plain path first in the list: Auto does not choose a relay or a WARP exit when a plain path exists)
+        const entry = (on && node.entries.find((e) => inUse(e))) || node.entries.find((e) => e.s.id === sel) || node.entries[0];
         const picked = this.st().prof === 'h2' && sel !== 'auto';
         Object.assign(v.cur, {
           country: node.name, suf: sufOf(node), title: node.name, flag: node.flag, fam: entry.fam, label: entry.label,
