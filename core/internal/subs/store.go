@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -42,6 +43,7 @@ type Subscription struct {
 	Error       string   `json:"error"`
 	Notice      string   `json:"notice"`
 	Unsupported int      `json:"unsupported"`
+	Managed     bool     `json:"managed"`
 	Servers     []Server `json:"servers"`
 }
 
@@ -65,6 +67,7 @@ type storedEntry struct {
 
 type storedSubscription struct {
 	Subscription
+	apiState
 	URL           string        `json:"url,omitempty"`
 	Entries       []storedEntry `json:"entries"`
 	IntervalHours int64         `json:"interval_hours,omitempty"`
@@ -73,6 +76,8 @@ type storedSubscription struct {
 type diskState struct {
 	InstallID     string               `json:"install_id"`
 	Subscriptions []storedSubscription `json:"subscriptions"`
+	Hwids         map[string]string    `json:"hwids,omitempty"`   // origin of a link -> hwid, never deleted
+	Pending       map[string]string    `json:"pending,omitempty"` // link -> device key sent to enrol and not yet confirmed
 }
 
 type Store struct {
@@ -147,8 +152,8 @@ func (s *Store) List() []Subscription {
 }
 
 func (s *Store) Preview(ctx context.Context, text string) (Subscription, error) {
-	sub, _, _, err := s.preview(ctx, text, "")
-	return sub, err
+	stored, err := s.preview(ctx, text, "")
+	return stored.Subscription, err
 }
 
 func (s *Store) Add(ctx context.Context, text string) (Subscription, error) {
@@ -156,15 +161,30 @@ func (s *Store) Add(ctx context.Context, text string) (Subscription, error) {
 	defer s.opMu.Unlock()
 
 	var id string
+	var rotated *storedSubscription // a managed subscription of the same panel whose link the panel has rotated
 	if rawURL, ok := subscriptionURL(text); ok {
 		s.mu.RLock()
 		for _, sub := range s.state.Subscriptions {
-			if sub.Kind == "url" && sub.URL == rawURL {
-				id = sub.ID
+			if sub.Kind != "url" {
+				continue
+			}
+			if sub.URL == rawURL {
+				id, rotated = sub.ID, nil
+				if sub.Key != "" {
+					s.mu.RUnlock()
+					return s.refresh(ctx, id) // a managed subscription is never fetched plain again
+				}
 				break
+			}
+			if sub.Error == "link_changed" && sub.Key != "" && originOf(sub.URL) == originOf(rawURL) {
+				copied := cloneStored(sub)
+				rotated = &copied
 			}
 		}
 		s.mu.RUnlock()
+	}
+	if rotated != nil {
+		id = rotated.ID
 	}
 	if id == "" {
 		var err error
@@ -173,15 +193,15 @@ func (s *Store) Add(ctx context.Context, text string) (Subscription, error) {
 			return Subscription{}, &Error{Code: "service_error"}
 		}
 	}
-	sub, entries, interval, err := s.preview(ctx, text, id)
-	if err != nil {
-		return publicCopy(sub), err
+	var stored storedSubscription
+	var err error
+	if rotated != nil {
+		rawURL, _ := subscriptionURL(text)
+		stored, err = s.reenrol(ctx, rawURL, *rotated)
+	} else if stored, err = s.preview(ctx, text, id); err != nil {
+		return publicCopy(stored.Subscription), err
 	}
-	sub.ID = id
-	stored := storedSubscription{Subscription: sub, Entries: entries, IntervalHours: interval}
-	if sub.Kind == "url" {
-		stored.URL, _ = subscriptionURL(text)
-	}
+	stored.ID = id
 
 	s.mu.Lock()
 	candidate := cloneState(s.state)
@@ -192,26 +212,41 @@ func (s *Store) Add(ctx context.Context, text string) (Subscription, error) {
 		}
 	}
 	candidate.Subscriptions = append(candidate.Subscriptions, stored)
-	err = s.save(candidate)
-	if err == nil {
+	if stored.Key != "" {
+		delete(candidate.Pending, stored.URL)
+	}
+	saveErr := s.save(candidate)
+	if saveErr == nil {
 		s.state = candidate
 	}
 	s.mu.Unlock()
-	if err != nil {
-		return Subscription{}, err
+	if saveErr != nil {
+		return Subscription{}, saveErr
 	}
 	s.changed()
-	return publicCopy(sub), nil
+	return publicCopy(stored.Subscription), err
 }
 
 func (s *Store) Remove(id string) error {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	var base, key string
+	s.mu.RLock()
+	for _, sub := range s.state.Subscriptions {
+		if sub.ID == id {
+			base, key = sub.Base, sub.Key
+		}
+	}
+	s.mu.RUnlock()
+	if key != "" {
+		s.leave(base, key)
+	}
 	s.mu.Lock()
 	candidate := cloneState(s.state)
 	for i, sub := range candidate.Subscriptions {
 		if sub.ID == id {
 			candidate.Subscriptions = append(candidate.Subscriptions[:i], candidate.Subscriptions[i+1:]...)
+			delete(candidate.Pending, sub.URL)
 			if err := s.save(candidate); err != nil {
 				s.mu.Unlock()
 				return err
@@ -229,6 +264,10 @@ func (s *Store) Remove(id string) error {
 func (s *Store) Refresh(ctx context.Context, id string) (Subscription, error) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	return s.refresh(ctx, id)
+}
+
+func (s *Store) refresh(ctx context.Context, id string) (Subscription, error) {
 	s.mu.RLock()
 	var current storedSubscription
 	found := false
@@ -246,18 +285,22 @@ func (s *Store) Refresh(ctx context.Context, id string) (Subscription, error) {
 		return publicCopy(current.Subscription), nil
 	}
 
-	updated, entries, interval, err := s.loadURL(ctx, current.URL, id)
-	if err != nil {
+	var next storedSubscription
+	var err error
+	if current.Key != "" {
+		next, err = s.syncNow(ctx, current)
+	} else if next, err = s.loadURL(ctx, current.URL, id); err != nil {
 		code := errorCode(err)
 		changed := false
 		s.mu.Lock()
 		candidate := cloneState(s.state)
 		for i := range candidate.Subscriptions {
 			if candidate.Subscriptions[i].ID == id {
-				if candidate.Subscriptions[i].Error != code || updated.Notice != "" && candidate.Subscriptions[i].Notice != updated.Notice {
+				if candidate.Subscriptions[i].Error != code || next.Notice != "" && candidate.Subscriptions[i].Notice != next.Notice || candidate.Subscriptions[i].Halt != next.Halt {
 					candidate.Subscriptions[i].Error = code
-					if updated.Notice != "" {
-						candidate.Subscriptions[i].Notice = updated.Notice
+					candidate.Subscriptions[i].Halt = next.Halt
+					if next.Notice != "" {
+						candidate.Subscriptions[i].Notice = next.Notice
 					}
 					if saveErr := s.save(candidate); saveErr != nil {
 						s.mu.Unlock()
@@ -276,25 +319,26 @@ func (s *Store) Refresh(ctx context.Context, id string) (Subscription, error) {
 		}
 		return publicCopy(current.Subscription), err
 	}
-	updated.ID = id
-	updated.Error = ""
-	updatedStore := storedSubscription{Subscription: updated, URL: current.URL, Entries: entries, IntervalHours: interval}
+	next.ID = id
 	s.mu.Lock()
 	candidate := cloneState(s.state)
 	for i := range candidate.Subscriptions {
 		if candidate.Subscriptions[i].ID == id {
-			candidate.Subscriptions[i] = updatedStore
+			candidate.Subscriptions[i] = next
 			break
 		}
 	}
-	if err := s.save(candidate); err != nil {
+	if next.Key != "" {
+		delete(candidate.Pending, next.URL)
+	}
+	if saveErr := s.save(candidate); saveErr != nil {
 		s.mu.Unlock()
-		return publicCopy(current.Subscription), err
+		return publicCopy(current.Subscription), saveErr
 	}
 	s.state = candidate
 	s.mu.Unlock()
 	s.changed()
-	return publicCopy(updated), nil
+	return publicCopy(next.Subscription), err
 }
 
 func (s *Store) Profiles() ([]profile.Profile, error) {
@@ -305,14 +349,16 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 		for _, entry := range sub.Entries {
 			p := profile.Profile{ID: entry.Server.ID, Name: entry.Server.Name, Protocol: entry.Server.Protocol, Sub: sub.ID}
 			var err error
-			switch entry.Server.Protocol {
-			case "hysteria2":
+			switch {
+			case strings.HasPrefix(entry.Raw, "{"):
+				p.Hy2, p.AWG, err = pathProfile(entry.Raw)
+			case entry.Server.Protocol == "hysteria2":
 				if strings.Contains(entry.Raw, "://") {
 					p.Hy2, err = profile.ParseHy2(entry.Raw)
 				} else {
 					p.Hy2, _, err = parseMihomoEntry(entry.Raw, entry.Server.Protocol)
 				}
-			case "awg":
+			case entry.Server.Protocol == "awg":
 				if strings.HasPrefix(strings.TrimSpace(entry.Raw), "[Interface]") {
 					p.AWG, err = profile.ParseAWG(entry.Raw)
 				} else {
@@ -332,23 +378,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 
 func (s *Store) Run(ctx context.Context) {
 	refreshDue := func() {
-		now := time.Now().Unix()
-		s.mu.RLock()
-		var ids []string
-		for _, sub := range s.state.Subscriptions {
-			if sub.Kind != "url" {
-				continue
-			}
-			hours := sub.IntervalHours
-			if hours < 1 {
-				hours = defaultIntervalHours
-			}
-			if sub.UpdatedUnix == 0 || now >= sub.UpdatedUnix && (now-sub.UpdatedUnix)/int64(time.Hour/time.Second) >= hours {
-				ids = append(ids, sub.ID)
-			}
-		}
-		s.mu.RUnlock()
-		for _, id := range ids {
+		for _, id := range s.due(time.Now().Unix()) {
 			if ctx.Err() != nil {
 				return
 			}
@@ -368,49 +398,77 @@ func (s *Store) Run(ctx context.Context) {
 	}
 }
 
-func (s *Store) preview(ctx context.Context, text, id string) (Subscription, []storedEntry, int64, error) {
+// due lists the URL subscriptions whose automatic refresh is due. Subscriptions stopped by the panel's answer wait for
+// a refresh by hand.
+func (s *Store) due(now int64) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var ids []string
+	for _, sub := range s.state.Subscriptions {
+		if sub.Kind != "url" || sub.Halt {
+			continue
+		}
+		hours := sub.IntervalHours
+		if hours < 1 {
+			hours = defaultIntervalHours
+		}
+		if sub.Key != "" && now >= sub.NextUnix ||
+			sub.Key == "" && (sub.UpdatedUnix == 0 || now >= sub.UpdatedUnix && (now-sub.UpdatedUnix)/int64(time.Hour/time.Second) >= hours) {
+			ids = append(ids, sub.ID)
+		}
+	}
+	return ids
+}
+
+func (s *Store) preview(ctx context.Context, text, id string) (storedSubscription, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return Subscription{}, nil, 0, &Error{Code: "bad_link"}
+		return storedSubscription{}, &Error{Code: "bad_link"}
 	}
 	if strings.HasPrefix(text, "http://") {
-		return Subscription{}, nil, 0, &Error{Code: "insecure_link"}
+		return storedSubscription{}, &Error{Code: "insecure_link"}
 	}
 	if rawURL, ok := subscriptionURL(text); ok {
 		return s.loadURL(ctx, rawURL, id)
 	}
 	if strings.Contains(text, "[Interface]") {
 		if _, err := profile.ParseAWG(text); err != nil {
-			return Subscription{}, nil, 0, &Error{Code: "bad_link"}
+			return storedSubscription{}, &Error{Code: "bad_link"}
 		}
 		server := Server{ID: serverID(id, text), Name: "AmneziaWG", Protocol: "awg"}
 		sub := Subscription{ID: id, Kind: "awg", Name: "AmneziaWG", UpdatedUnix: time.Now().Unix(), Servers: []Server{server}}
-		return sub, []storedEntry{{Server: server, Raw: text}}, defaultIntervalHours, nil
+		return storedSubscription{Subscription: sub, Entries: []storedEntry{{Server: server, Raw: text}}, IntervalHours: defaultIntervalHours}, nil
 	}
 	servers, entries, unsupported, parseErr := parseEntries(text, id)
 	if parseErr != nil {
-		return Subscription{}, nil, 0, parseErr
+		return storedSubscription{}, parseErr
 	}
-	return Subscription{ID: id, Kind: "links", Name: "Servers", UpdatedUnix: time.Now().Unix(), Unsupported: unsupported, Servers: servers}, entries, defaultIntervalHours, nil
+	sub := Subscription{ID: id, Kind: "links", Name: "Servers", UpdatedUnix: time.Now().Unix(), Unsupported: unsupported, Servers: servers}
+	return storedSubscription{Subscription: sub, Entries: entries, IntervalHours: defaultIntervalHours}, nil
 }
 
-func (s *Store) loadURL(ctx context.Context, rawURL, id string) (Subscription, []storedEntry, int64, error) {
+// loadURL fetches the plain subscription. On a panel that announces the Client API (and for a saved subscription, not
+// a preview) it goes on to enrol; an error comes back only when the plain answer itself is unusable.
+func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscription, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" {
-		return Subscription{}, nil, 0, &Error{Code: "bad_link"}
+		return storedSubscription{}, &Error{Code: "bad_link"}
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return Subscription{}, nil, 0, &Error{Code: "bad_link"}
+		return storedSubscription{}, &Error{Code: "bad_link"}
 	}
-	s.mu.RLock()
-	hwid := s.state.InstallID
-	s.mu.RUnlock()
+	// the hwid of this panel from the first contact on, so that enrol later takes over the device this fetch makes
+	hwid, err := s.enrolHwid(originOf(rawURL))
+	if err != nil {
+		return storedSubscription{}, &Error{Code: "service_error"}
+	}
 	request.Header.Set("User-Agent", "mihomo/1.19.33 Mistgate/0.0.1 (Windows)")
 	request.Header.Set("x-hwid", hwid)
 	request.Header.Set("x-device-os", "Windows")
+	request.Header.Set("X-Mistgate-Caps", capsHeader)
 	client := *s.client
 	client.Timeout = 15 * time.Second
 	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
@@ -421,19 +479,19 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (Subscription, [
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return Subscription{}, nil, 0, &Error{Code: fetchErrorCode(err)}
+		return storedSubscription{}, &Error{Code: fetchErrorCode(err)}
 	}
 	defer response.Body.Close()
 	switch response.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusGone:
-		return Subscription{}, nil, 0, &Error{Code: "bad_link"}
+		return storedSubscription{}, &Error{Code: "bad_link"}
 	case http.StatusOK:
 	default:
-		return Subscription{}, nil, 0, &Error{Code: "fetch_failed"}
+		return storedSubscription{}, &Error{Code: "fetch_failed"}
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxBodyBytes+1))
 	if err != nil || len(body) > maxBodyBytes {
-		return Subscription{}, nil, 0, &Error{Code: "fetch_failed"}
+		return storedSubscription{}, &Error{Code: "fetch_failed"}
 	}
 	name := responseName(response.Header.Get("profile-title"), parsed.Host)
 	used, total, expire := parseUserInfo(response.Header.Get("subscription-userinfo"))
@@ -442,15 +500,22 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (Subscription, [
 		ExpireUnix: expire, UsedBytes: used, TotalBytes: total, Notice: responseNotice(response.Header.Get("Announce")),
 	}
 	servers, entries, unsupported, err := parseURLBody(string(body), id)
-	if err != nil {
-		var coded *Error
-		if errors.As(err, &coded) && coded.Notice != "" {
-			sub.Notice = coded.Notice
-		}
-		return sub, nil, parseInterval(response.Header.Get("profile-update-interval")), err
+	var coded *Error
+	if err != nil && errors.As(err, &coded) && coded.Notice != "" {
+		sub.Notice = coded.Notice
 	}
-	sub.Unsupported, sub.Servers = unsupported, servers
-	return sub, entries, parseInterval(response.Header.Get("profile-update-interval")), nil
+	if err == nil {
+		sub.Unsupported, sub.Servers = unsupported, servers
+	}
+	plain := storedSubscription{Subscription: sub, URL: rawURL, Entries: entries, IntervalHours: parseInterval(response.Header.Get("profile-update-interval"))}
+	if id != "" && strings.TrimSpace(response.Header.Get("Mistgate-Client-Api")) == "1" {
+		managed := s.manage(ctx, plain)
+		if managed.Key != "" || err == nil {
+			return managed, nil
+		}
+		plain.Halt = managed.Halt // the plain answer is a placeholder; enrol said not to try again
+	}
+	return plain, err
 }
 
 func parseURLBody(body, id string) ([]Server, []storedEntry, int, error) {
@@ -698,7 +763,7 @@ func publicCopy(sub Subscription) Subscription {
 }
 
 func cloneState(state diskState) diskState {
-	copyState := diskState{InstallID: state.InstallID, Subscriptions: make([]storedSubscription, len(state.Subscriptions))}
+	copyState := diskState{InstallID: state.InstallID, Hwids: maps.Clone(state.Hwids), Pending: maps.Clone(state.Pending), Subscriptions: make([]storedSubscription, len(state.Subscriptions))}
 	for i := range state.Subscriptions {
 		copyState.Subscriptions[i] = cloneStored(state.Subscriptions[i])
 	}

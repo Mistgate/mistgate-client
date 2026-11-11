@@ -162,7 +162,7 @@ after subscription data changes, `settings` (a Settings object) after settings c
 as `routes.get`) after any route state changes. Subscribe to `subs`, `settings` or `routes` to receive those updates.
 
 Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `refused`, `offline`,
-`fetch_failed`, and `unknown_subscription`. `connect` returns `no_subscription` if the selected subscription or
+`fetch_failed`, and `unknown_subscription`; managed subscriptions add the codes below. `connect` returns `no_subscription` if the selected subscription or
 server is no longer present. Removing a subscription does not stop an active tunnel; a later reconnect or connect
 must select a server that still exists.
 
@@ -181,6 +181,36 @@ Port hopping is accepted from Hysteria2 `ports: "from-to"` profiles and the `mpo
 `hop-interval` is in seconds. If every profile proxy uses a refusal endpoint (`0.0.0.0`, `127.0.0.1`, `::`, or port
 0/1), the refresh fails with `refused`, its first proxy name becomes `notice`, and existing servers are kept. A first
 add also fails with `refused`; the RPC error message carries the notice.
+
+**Managed subscriptions** (`docs/client-api.md`). Every URL fetch also sends `X-Mistgate-Caps`. When the plain answer
+carries `Mistgate-Client-Api: 1`, `subs.add` and `subs.refresh` enrol this device (`POST <link>/client/enrol`, with a
+device key the service makes and saves first) and take the servers from `sync`; the subscription then has
+`managed: true` and refreshes only through `sync`, on the panel's interval (at least 10 minutes, plus up to 10%
+random wait) and after `Retry-After`. `subs.preview` never enrols. Servers are one per path; their `id` is the path's
+id and their name is the city (else the country) plus ` · relay`, ` · warp` or ` · IPv6`. `subs.remove` of a managed
+subscription calls `leave` first (5 s; whatever it answers, the subscription is removed). The hwid sent as `X-HWID` and
+in `enrol` is per origin of the link once the origin has been enrolled; other origins keep the install id. Secrets
+(device key, base URL, paths with their credentials) are kept only in the protected store; `Subscription` carries
+`managed` and nothing else new.
+
+A managed subscription reports its state in `error`; `subs.refresh` also returns it as the RPC error, except
+`inactive` and the enrol codes. What the window should say:
+
+| `error` | `managed` | Servers | Automatic refresh | The window says |
+|---|---|---|---|---|
+| `offline`, `fetch_failed` | any | kept | goes on | Cannot reach the panel; the saved servers still work |
+| `unsupported_format` | true | kept | goes on | This panel is newer than the app; update the app |
+| `inactive` | true | none | goes on | The subscription is not active; `notice` is the panel's text or the status (`disabled`, `expired`, `limited`) |
+| `link_changed` | true | kept | stopped | The panel's link has changed; add the new link (same panel) to keep this one |
+| `device_blocked` | true | none | stopped | This device is blocked by the owner |
+| `device_removed` | false | none | stopped | This device was removed; refresh to enrol again |
+| `device_exists`, `device_limit`, `device_blocked`, `user_inactive`, `app_disabled`, `client_api_off` | false | the plain ones | stopped | The panel did not accept this device (the code says why); refresh by hand to try again |
+
+The last row is an enrol that the panel refused: the subscription stays in basic mode with the servers of the plain
+answer. Any other enrol or first-sync failure also leaves basic mode with `fetch_failed` or `offline` in `error`, and
+is repeated with the same device key at the next refresh. Adding a link of the same panel while a subscription is in
+`link_changed` moves that subscription to the new link (one subscription, not two). Adding a link that is already
+managed refreshes it. `unreachable` in the contract is `offline` or `fetch_failed` here.
 
 The `diag` event sends the full Diagnostic State after each state or progress change. Log events include `src` in the
 same shape returned by `log.get`. `log.get` returns `{"entries": [...]}` with entries shaped as
