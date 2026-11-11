@@ -25,6 +25,8 @@ type Words = {
   dnsReplaced: string;
   dnsReplacedLine: (replaced: number, checked: number) => string;
   foreignCut: string;
+  // why a subscription has stopped, by the service's code (inactive: by the panel's status)
+  subErr: Record<string, string>;
 };
 
 const ruForm = (n: number, one: string, few: string, many: string) =>
@@ -39,6 +41,7 @@ const WORDS: Record<string, Words> = {
     leftOf: (t) => `left of ${t}`, used: 'used · no cap', renew: 'renew to use', link: 'Link', file: 'File',
     stale: (t) => `Couldn’t update · using the copy from ${t}`, validUntil: 'valid until', add: (s) => `Add ${s}`,
     dnsReplaced: "Some site addresses are replaced on this network", dnsReplacedLine: (n, m) => `${n} of ${m} test sites got a replaced address`, foreignCut: "Some foreign sites are cut off on this network",
+    subErr: {"device_removed":"This device was removed from the subscription · add the link again","device_blocked":"This device is blocked by the provider","link_changed":"The link was replaced · paste the new one","device_limit":"Device limit reached · remove a device on the subscription page","device_exists":"This device is already registered · remove it on the subscription page","disabled":"The subscription is turned off by the provider","expired":"The subscription has expired","limited":"The traffic is used up"},
   },
   ru: {
     locale: 'ru-RU', days: (n) => `${n} ${ruForm(n, 'день', 'дня', 'дней')}`, left: (d) => `осталось ${d}`, until: (d) => `до ${d}`,
@@ -47,6 +50,7 @@ const WORDS: Record<string, Words> = {
     leftOf: (t) => `осталось из ${t}`, used: 'израсходовано · без лимита', renew: 'продлите, чтобы пользоваться', link: 'Ссылка', file: 'Файл',
     stale: (t) => `Не удалось обновить · используется копия от ${t}`, validUntil: 'действует до', add: (s) => `Добавить ${s}`,
     dnsReplaced: "В этой сети подменяют адреса некоторых сайтов", dnsReplacedLine: (n, m) => `Подменён адрес у ${n} из ${m} проверенных сайтов`, foreignCut: "Часть зарубежных сайтов в этой сети недоступна",
+    subErr: {"device_removed":"Это устройство удалено из подписки · добавьте ссылку заново","device_blocked":"Это устройство заблокировано провайдером","link_changed":"Ссылку заменили · вставьте новую","device_limit":"Достигнут лимит устройств · удалите одно на странице подписки","device_exists":"Это устройство уже зарегистрировано · удалите его на странице подписки","disabled":"Подписка отключена провайдером","expired":"Срок подписки истёк","limited":"Трафик израсходован"},
   },
   tr: {
     locale: 'tr-TR', days: (n) => `${n} gün`, left: (d) => `${d} kaldı`, until: (d) => `bitiş: ${d}`,
@@ -55,6 +59,7 @@ const WORDS: Record<string, Words> = {
     leftOf: (t) => `kalan / ${t}`, used: 'kullanıldı · sınırsız', renew: 'kullanmak için yenileyin', link: 'Bağlantı', file: 'Dosya',
     stale: (t) => `Güncellenemedi · ${t} kopyası kullanılıyor`, validUntil: 'bitiş tarihi', add: (s) => `${s} ekle`,
     dnsReplaced: "Bu ağda bazı site adresleri değiştiriliyor", dnsReplacedLine: (n, m) => `${m} test sitesinden ${n} tanesinin adresi değiştirilmiş`, foreignCut: "Bu ağda bazı yabancı siteler kesiliyor",
+    subErr: {"device_removed":"Bu cihaz abonelikten kaldırıldı · bağlantıyı yeniden ekleyin","device_blocked":"Bu cihaz sağlayıcı tarafından engellendi","link_changed":"Bağlantı değiştirildi · yenisini yapıştırın","device_limit":"Cihaz sınırına ulaşıldı · abonelik sayfasında bir cihazı kaldırın","device_exists":"Bu cihaz zaten kayıtlı · abonelik sayfasında kaldırın","disabled":"Abonelik sağlayıcı tarafından kapatıldı","expired":"Aboneliğin süresi doldu","limited":"Trafik tükendi"},
   },
   zh: {
     locale: 'zh-CN', days: (n) => `${n} 天`, left: (d) => `剩余 ${d}`, until: (d) => `至 ${d}`,
@@ -63,6 +68,7 @@ const WORDS: Record<string, Words> = {
     leftOf: (t) => `剩余 / 共 ${t}`, used: '已用 · 无上限', renew: '续订后可用', link: '链接', file: '文件',
     stale: (t) => `更新失败 · 正在使用 ${t} 的副本`, validUntil: '有效期至', add: (s) => `添加 ${s}`,
     dnsReplaced: "此网络会替换部分网站的地址", dnsReplacedLine: (n, m) => `${m} 个测试网站中有 ${n} 个的地址被替换`, foreignCut: "此网络屏蔽了部分境外网站",
+    subErr: {"device_removed":"此设备已从订阅中移除 · 请重新添加链接","device_blocked":"此设备已被服务商封禁","link_changed":"链接已更换 · 请粘贴新链接","device_limit":"设备数已达上限 · 请在订阅页面移除一台设备","device_exists":"此设备已注册 · 请在订阅页面将其移除","disabled":"订阅已被服务商停用","expired":"订阅已到期","limited":"流量已用完"},
   },
   fa: {
     locale: 'fa-IR-u-ca-gregory-nu-latn', days: (n) => `${n} روز`, left: (d) => `${d} مانده`, until: (d) => `تا ${d}`,
@@ -71,6 +77,7 @@ const WORDS: Record<string, Words> = {
     leftOf: (t) => `مانده از ${t}`, used: 'مصرف‌شده · بدون سقف', renew: 'برای استفاده تمدید کنید', link: 'لینک', file: 'فایل',
     stale: (t) => `به‌روزرسانی نشد · نسخهٔ ${t} استفاده می‌شود`, validUntil: 'معتبر تا', add: (s) => `افزودن ${s}`,
     dnsReplaced: "در این شبکه نشانی برخی سایت‌ها جایگزین می‌شود", dnsReplacedLine: (n, m) => `نشانی ${n} سایت از ${m} سایت آزمایشی جایگزین شده است`, foreignCut: "برخی سایت‌های خارجی در این شبکه قطع هستند",
+    subErr: {"device_removed":"این دستگاه از اشتراک حذف شده است · لینک را دوباره اضافه کنید","device_blocked":"این دستگاه توسط ارائه‌دهنده مسدود شده است","link_changed":"لینک عوض شده است · لینک جدید را وارد کنید","device_limit":"به سقف دستگاه‌ها رسیده‌اید · یک دستگاه را در صفحهٔ اشتراک حذف کنید","device_exists":"این دستگاه قبلاً ثبت شده است · آن را در صفحهٔ اشتراک حذف کنید","disabled":"اشتراک توسط ارائه‌دهنده غیرفعال شده است","expired":"مهلت اشتراک تمام شده است","limited":"ترافیک تمام شده است"},
   },
 };
 

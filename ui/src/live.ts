@@ -14,7 +14,7 @@ type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 type Server = { id: string; name: string; protocol: string };
 type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; name: string; host: string; updated_unix: number; expire_unix: number;
-  used_bytes: number; total_bytes: number; error: string; unsupported: number; servers: Server[];
+  used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
 };
 
 const rpc = <T = Status>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
@@ -200,7 +200,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const file = u.kind !== 'url';
         return {
           name: u.name, ini: (u.name.trim()[0] ?? '?').toUpperCase(), tone: 'lav', host: u.host, st, stCls: tone,
-          meta: u.error ? w.stale(w.time(u.updated_unix)) : `${w.servers(u.servers.length)} · ${forever ? w.noEnd : ended ? w.expiredMeta(w.date(u.expire_unix)) : w.left(w.days(daysLeft))}`,
+          // a stopped subscription says why (a panel that is inactive puts its status, or its own text, in the notice)
+          meta: u.error ? w.subErr[u.error === 'inactive' ? u.notice ?? '' : u.error] || (u.error === 'inactive' && u.notice) || w.stale(w.time(u.updated_unix)) : `${w.servers(u.servers.length)} · ${forever ? w.noEnd : ended ? w.expiredMeta(w.date(u.expire_unix)) : w.left(w.days(daysLeft))}`,
           metaC: u.error ? 'stale' : '',
           tV: forever ? w.lifetime : ended ? w.expired : w.days(daysLeft), tS: forever ? w.noEnd : ended ? w.expiredOn(w.date(u.expire_unix)) : w.until(w.date(u.expire_unix)),
           tP: forever ? '100%' : `${Math.max(0, Math.min(100, Math.round((daysLeft / 30) * 100)))}%`, tG: forever ? 'inf' : tone, tN: 1, tInf: forever, tFin: !forever,
