@@ -1,12 +1,11 @@
-# Mistgate Client API, v1 (DRAFT 3, enrol being implemented by the panel)
+# Mistgate Client API, v1 (DRAFT 4, as the panel implements it)
 
 How the client and a Mistgate panel talk once the client knows the user's subscription link. It is meant to be
 open: another panel may implement it and get the same client. Until a panel answers it, the client works in basic
 mode (the plain subscription a link gives to any app, see `docs/ipc.md`).
 
-Status: draft 3. `enrol` is written as the panel implements it (on a panel branch, not released); `sync` and
-`leave` are still the draft. Nothing is built in the client. Points the owner still has to rule on are marked
-**OWNER**.
+Status: draft 4. `enrol`, `sync`, `leave` and the settings format are written as the panel implements them (on
+panel branches, not released yet). Nothing is built in the client.
 
 ## Principles
 
@@ -45,7 +44,7 @@ A basic fetch with `X-HWID` already makes a device in the panel; enrolling repla
 | Call | Authorised by | Purpose |
 |---|---|---|
 | `POST <link>/client/enrol` | the token in the link; the old device key when re-enrolling | makes this device with the key the client sends, returns `base` |
-| `GET <base>/sync` | device key | the subscription in the `mistgate` format; `If-None-Match` -> `304` |
+| `GET <base>/sync` | device key | the subscription in the Mistgate format; `If-None-Match` -> `304` |
 | `POST <base>/leave` | device key | this device removes itself |
 | `POST <link>/probe` | the token (as today) | the detectors' report, v1, announced by `Probe-Report: 1` |
 | `POST <base>/debug` | device key | a debug report (later; VPS edition only) |
@@ -94,70 +93,114 @@ link device), `413 too_large`, `415 unsupported_media_type`, `429 too_many_reque
 servers.** The client therefore does not enrol on a panel that has no `sync` yet. The operator's switch closes only
 discovery and new enrolments; enrolled devices keep working.
 
+### sync and leave: what they share
+
+Both go to `base` and are authorised ONLY by `Authorization: Bearer <device key>`; there is no link token in the
+path. Besides the User-Agent and caps of every request the client may send `X-Ver-OS` (stored as the OS version) and
+`X-Mistgate-Direct: 1`, the latter only when the call is made OUTSIDE the tunnel. JSON answers carry
+`Cache-Control: no-store`. Errors are `{"error": "<code>"}`; the client branches on the code, not the status.
+
+The panel answers in this order:
+1. A missing or malformed key, a wrong method, or a well-formed key nobody holds: the **decoy** (not JSON, normally
+   404). On `sync` and `leave` a decoy means "temporary error": the client NEVER forgets the key and never reads it
+   as "removed"; it retries later with backoff. A well-formed key is always looked up, also from a network locked
+   out by misses.
+2. The key is found (live or not): the budget is spent, **30 requests an hour per device** (`sync`, `leave` and a
+   `304` all count): `429 too_many_requests` with `Retry-After`.
+3. `401 device_removed` (removed on the page, by the admin, or by `leave`) and `401 device_blocked`: the client stops
+   and tells the user. Only `device_removed` means removed.
+4. `sync` only: `401 link_changed` (the person's link was rotated since enrolment). The way out:
+   `POST <new link>/client/enrol` with the old key as Bearer and a NEW `device_key`; the device keeps its slot and
+   credentials. `leave` still works under `link_changed`.
+5. `403 cross_origin` (a browser's `Origin` or `Sec-Fetch-Site: cross-site`; native clients send neither).
+6. `503 {"error": "retry"}` with `Retry-After`: the key is valid, repeat after the delay and keep the key.
+   `500 internal`.
+
+The operator's switch does not gate `sync` or `leave` (only discovery and enrolment).
+
 ### sync
 
-`sync_every_s` is the panel's choice (expect about an hour). Sync through the tunnel puts all users of a node behind
-one exit address: the client adds jitter and honours `Retry-After`. What it answers:
-- `200` + body + `ETag`; `304` when nothing changed;
-- user disabled, expired or over quota: `200` with that status and no servers;
-- `401 device_removed` (removed on the page, by the admin, or by `leave`): the client says so and stops;
-- `401 device_blocked`;
-- `401 link_changed` (the link was rotated since enrolment): enrolling again with the new link and the old key
-  keeps the device;
-- user deleted, or an unknown key: the decoy.
+`GET <base>/sync` answers `200` with JSON and a strong `ETag`; a matching `If-None-Match` gets `304` with no body.
+The ETag covers the whole body except `asn` and changes with ANY data, including the used bytes and server load, so
+a `304` is rare for an active user: **a new ETag is not a configuration change.** The active tunnel is rebuilt only
+when the settings of its own path changed.
 
+`sync_every_s` is the panel's choice (expect about an hour). Sync through the tunnel puts all users of a node behind
+one exit address: the client adds jitter and honours `Retry-After`. Side effects on the panel: the device is touched
+(last seen, the app version from the User-Agent, the OS version) at most once in 10 minutes, and missing credentials
+are issued (for example the AmneziaWG peer of a new profile).
+
+The body (stable key order; the client ignores fields it does not know):
 ```json
 {
-  "format": 1,
+  "v": 1,
+  "device_id": "dev_…",
+  "status": "active|disabled|expired|limited",
   "sync_every_s": 3600,
-  "brand": { "name": "…", "accent": "#7c6cff", "logo_svg": "<svg…>", "support_url": "https://…" },
-  "plan":  { "status": "active|disabled|expired|limited", "expire_unix": 0, "used_bytes": 0, "total_bytes": 0,
-             "quota_reset": "none|daily|weekly|monthly", "next_reset_unix": 0,
-             "devices_used": 2, "devices_limit": 5, "this_device": "…" },
-  "notice": "…",
-  "debug": { "intake": false },
+  "brand": { "parts": ["Mist", "gate"], "accent": "#rrggbb", "logo_svg": "<svg…>" },
+  "support_url": "https://…",
+  "notice": { "id": "<sha256 hex of the text>", "text": "…" },
+  "plan": { "expires_unix": 0, "quota_bytes": 0, "used_bytes": 0,
+            "quota_reset": "none|day|week|month|rolling_month", "next_reset_unix": 0 },
   "probe": { "intake": true, "v": 1 },
+  "debug": { "intake": false },
+  "asn": 0,
+  "dns": { "transport": "plain|dot|doh",
+           "servers": [ { "transport": "plain|dot|doh", "address": "…", "ips": ["…"] } ],
+           "split": [ { "suffixes": ["ru"], "geo": ["cn"], "servers": [ ] } ],
+           "split_direct": false, "block_ads": false, "ipv4_only": false },
   "servers": [
-    { "id": "…", "country": "de", "city": "", "load": "low|medium|high",
+    { "id": "srv_…", "country": "DE", "city": "Frankfurt", "load": "low|medium|high",
       "paths": [
-        { "id": "…", "protocol": "hysteria2", "via": "", "dns": ["…", "…"], "settings": { } },
-        { "id": "…", "protocol": "awg", "via": "relay", "dns": ["…", "…"], "settings": { } }
+        { "id": "pth_…", "protocol": "hysteria2|awg", "via": "direct|relay|warp", "ipv6": false, "settings": { } }
       ] }
-  ],
-  "telegram": [ { "name": "…", "link": "tg://proxy?…" } ]
+  ]
 }
 ```
-- A `format` the client does not know is refused loudly.
-- `brand.logo_svg` is inline and sanitised by the panel; the client draws it only as an image. There is no page URL
-  in `sync`: the page is the subscription link the user gave, and a rotated link must cut the old one off.
-- Server names are country and city (the client adds flags); path ids are opaque and stable, never node names.
-  `via` belongs to a path (a relay or an IPv6 copy is one more path of the same exit). DNS is per path.
-- `debug.request: {"id", "until_unix"}` is reserved for an admin's request aimed at this device: the client asks the
-  user and sends with that id, never on its own.
-- The active tunnel is rebuilt only when its own path changed.
+- `v` the client does not know is refused loudly.
+- `brand.parts` is one or two strings (the name, split for two-tone drawing); `logo_svg` may be empty and is drawn
+  only as an image.
+- **Absent when empty**: `support_url`, `notice`, a server's `load` (unknown), `asn`, `dns`.
+- `plan`: `expires_unix` 0 = never, `quota_bytes` 0 = unlimited, `next_reset_unix` 0 = none.
+- `asn` comes only with `X-Mistgate-Direct: 1`, on the VPS edition, when known. It is not stored by the panel, is not
+  part of the ETag and is not on a `304`.
+- `dns` is one object for the whole subscription. Server addresses: plain `ip` or `ip:port`, DoT `host[:port]`, DoH a
+  URL; `ips` are absent when unknown. `split` is empty unless `split_direct`. `dns` is absent when the status is not
+  `active` or the panel has no usable preset.
+- `servers` is `[]` unless the status is `active`. With another status the answer is still `200`, with the status,
+  plan, brand, notice, probe and debug.
+- Ids are opaque and stable. A server is one exit node; its IPv6 entry and each relay are more **paths** of the same
+  server. A server with no path this client can use is not listed.
+- IPv6 addresses in `server` (hysteria2) and `endpoint.host` (awg) are bare, without square brackets; the port is a
+  separate field and the client joins them.
+- Never in the body: node names, the link, the token, the page address, other people, the HWID, the device key.
 
-`settings`, a Mistgate JSON shape per protocol rendered by the panel's plugins (no existing format carries
-everything: links drop Gecko and port ranges, others cannot carry AmneziaWG):
-- `hysteria2`: `{ "server": "host", "port": 443, "ports": "20000-40000", "hop_interval_s": 30, "auth": "…",
-  "tls": "ca|pin", "pin_sha256": "hex", "sni": "…", "alpn": ["h3"], "obfs": "none|salamander|gecko",
-  "obfs_password": "…" }`. `tls: "pin"` only for self-signed nodes, and then the pin is the only check; there is no
-  "insecure". `sni` is absent for nodes known by address only. `ports` + `hop_interval_s` when the node hops ports.
-- `awg`: `{ "version": "2.0|3.1", "endpoint": "host:port", "private_key": "base64", "server_public_key": "base64",
-  "preshared_key": "base64", "addresses": ["…/32"], "allowed_ips": ["0.0.0.0/0"], "mtu": 1280, "keepalive": 25,
-  "jc": 4, "jmin": 27, "jmax": 84, "s1": 32, "s2": 32, "s3": 32, "s4": 32, "h1": "1", "h2": "2-5", "h3": "…", "h4": "…",
-  "i1": "…", … "i5": "…" }` plus, for 3.1, the header-protection key and the padding, rekey, keepalive-timeout,
-  handshake, trailers and cookies fields. `h1`-`h4` are strings and may be ranges; `i1`-`i5` are per device; an IPv6
-  address only if the profile has IPv6.
+`settings`, the Mistgate shape per protocol:
+- `hysteria2`: `{ "server": "host", "port": 443, "ports": "20000-30000", "hop_interval_s": 30, "auth": "…",
+  "tls": "ca|pin", "pin_sha256": "hex", "sni": "…", "alpn": ["h3"], "obfs": { "type": "salamander|gecko",
+  "password": "…" } }`. `ports` is absent without port hopping (`hop_interval_s` comes with it); `pin_sha256` only
+  with `tls: "pin"`, and then the pin ALONE is the check; `sni` is absent for nodes known by address only; `obfs` is
+  absent without obfuscation, and `gecko` is given only to caps with `gecko=1`. A relay path has the forwarded port
+  and no `ports`.
+- `awg`: `{ "version": "2.0|3.1", "endpoint": { "host": "…", "port": 0 }, "public_key": "…", "private_key": "…",
+  "preshared_key": "…", "address_v4": "a.b.c.d/32", "address_v6": "…/128", "allowed_ips": ["0.0.0.0/0", "::/0"],
+  "dns": ["ip", "ip"], "mtu": 1280, "keepalive_s": 25, "params": { } }`. `address_v6` is absent without IPv6;
+  `allowed_ips` ALWAYS has both families: the client routes or blocks IPv6 even without an IPv6 address;
+  `keepalive_s` is absent when the profile has none.
+  `params`: `jc`, `jmin`, `jmax`, `s1`-`s4` (integers), `h1`-`h4` (strings, may be ranges), `i1`-`i5` (strings, per
+  device, absent when empty); for 3.1 only: `header_protection_key`, `random_trailers` (bool), `disable_cookies`, and
+  as strings, only when the profile has them: `content_padding_addition`, `rekey_after_time`, `rekey_timeout`,
+  `reject_after_time`, `keepalive_timeout`, `max_handshake_attempts`.
+  A version is given only when caps list it (`awg=2.0,3.1`). When the operator switched AmneziaWG off for link apps,
+  no `awg` paths are given.
 
-**AmneziaWG keys (OWNER).** v1: the panel generates the device's key pairs and delivers them in `sync`, as it does
-for app devices today. A key the client makes itself does not fit the panel as it is (one peer per profile per
-device, direct and relay paths are separate peers, rotation is server-side, the panel already holds the pre-shared
-and header-protection keys). If private keys must stay on the device, that is a later capability `awg-keys=1`:
-`sync` marks a path `"key": "needed"` and the client posts one public key per profile.
+**AmneziaWG keys.** The panel generates the device's key pairs and delivers them in `sync` (the owner's ruling). A
+key the client makes itself would be a later capability.
 
 ### leave
 
-Removes this device and its peers. `204`. The client forgets the device key and the subscription.
+`POST <base>/leave`, no body. `200 {"ok": true}`. Removes exactly this device and its peers; afterwards the key
+answers `401 device_removed` (a second `leave` too). The client forgets the device key and the subscription.
 
 ### probe: v1, as the panel takes it today
 
@@ -177,10 +220,10 @@ the panel does not take debug reports.
 
 ## What changes in the client meanwhile
 
-- Basic mode against a Mistgate panel: `User-Agent: Mistgate/x` matches no rule there and gets the plain link list
-  (Hysteria2 only, no AmneziaWG, no Gecko, one hop port). Until this API exists the client gets no AmneziaWG from a
-  Mistgate subscription. (kl!ck announces itself as a Mihomo client to get the Mihomo profile; this client does not
-  read that format.) **OWNER**: live with that until the API, or teach the client the Mihomo profile as a stopgap.
+- Basic mode against a Mistgate panel: the client announces itself as a Mihomo client and reads the Mihomo profile
+  (Hysteria2 with Gecko and port ranges, AmneziaWG), see `docs/ipc.md`. That is the stopgap until this API is live.
+- The ASN for a report comes from `sync` (`X-Mistgate-Direct: 1`, outside the tunnel), never from a third-party
+  service.
 - `hwid` must become per operator's panel and survive a reinstall (today it is one per install).
 - The client's own network check does not map to report v1 yet: v1 wants the ASN from the app and has other
   verdict names.
