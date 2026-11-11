@@ -130,6 +130,9 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       v.cancel = () => void rpc<State>('diag.cancel').then((s) => this.applyDiag(s), () => {});
       Object.assign(v, { showHelp: false, asked: false, bestCls: 'hide' });
 
+      // a check that could not start (no subscription, no network) says so where the results would be
+      const fail = d.state === 'failed' && !r ? words().diagFail[d.error] : undefined;
+      if (fail) [v.emT, v.emS] = fail;
       if (d.state === 'running') {
         v.runPct = d.pct + '%';
         v.runTime = '';
