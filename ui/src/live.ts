@@ -11,7 +11,8 @@ import { pref } from './live-settings';
 
 type Status = { state: string; step: string; since_unix: number; server: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
-type Server = { id: string; name: string; protocol: string };
+// node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
+type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean };
 type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
@@ -34,6 +35,68 @@ export function flagOf(name: string) {
   const cc = [...m[0]].map((c) => String.fromCharCode(c.codePointAt(0)! - 0x1f1e6 + 97)).join('');
   return { flag: (FLAGS as Record<string, string>)[cc] ?? '', text: name.replace(m[0], '').trim() || name };
 }
+
+// One row per node, with its protocols in the menu. A plain subscription names its entries for people
+// ("de · HY2 · WARP", "be · HY2 · через RU"), and the panel may word them differently.
+// ponytail: grouped by the first part of the name; an entry that does not parse is a row of its own. The client
+// API's servers[].paths (protocol, via, ipv6) replace this guess when the panel has it switched on.
+type Entry = { s: Server; fam: string; label: string; full: string };
+type Node = { key: string; name: string; flag: string; via: string; extra: string; entries: Entry[] };
+const PROTO_WORD = /^(hy2|hysteria ?2?|awg( ?[\d.]+)?|amneziawg( ?[\d.]+)?)$/i;
+const VIA_WORD = /^(через|via)\s+\S/i;
+export function nodesOf(servers: Server[]): Node[] {
+  const out = new Map<string, Node>();
+  for (const s of servers) {
+    if (s.node) {
+      // the panel's own structure: one node, its paths as the protocol menu
+      const [fam, label, full] = PROTO[s.protocol] ?? ['', s.protocol, s.protocol];
+      const cc = (s.country ?? '').toLowerCase();
+      const tail = (s.via === 'warp' ? ' · WARP' : s.via && s.via !== 'direct' ? ' · ' + s.via : '') + (s.ipv6 ? ' · IPv6' : '');
+      let node = out.get(s.node);
+      if (!node) out.set(s.node, (node = { key: s.node, name: countryName(cc) || s.city || s.name, flag: (FLAGS as Record<string, string>)[cc] ?? '', via: '', extra: countryName(cc) ? s.city ?? '' : '', entries: [] }));
+      const entry = { s, fam, label: label + tail, full: full + tail };
+      // the plain path first: it is what a press on the row connects to
+      if (tail) node.entries.push(entry); else node.entries.splice(node.entries.findIndex((e) => e.label !== PROTO[e.s.protocol]?.[1]) >>> 0, 0, entry);
+      continue;
+    }
+    const { flag, text } = flagOf(s.name);
+    const [name, ...rest] = text.split(' · ').map((x) => x.trim());
+    const [fam, label, full] = PROTO[s.protocol] ?? ['', s.protocol, s.protocol];
+    let via = '', warp = false;
+    const extra: string[] = [];
+    for (const t of rest) {
+      if (PROTO_WORD.test(t)) continue;
+      if (/^warp$/i.test(t)) warp = true;
+      else if (VIA_WORD.test(t)) via = t;
+      else extra.push(t);
+    }
+    const key = [flag, name, via, ...extra].join('|');
+    let node = out.get(key);
+    if (!node) out.set(key, (node = { key, name, flag, via, extra: extra.join(' · '), entries: [] }));
+    node.entries.push({ s, fam, label: warp ? label + ' · WARP' : label, full: warp ? full + ' · WARP' : full });
+  }
+  // nodes of one country with no city to tell them apart are numbered, as the design does ("Germany 2")
+  const seen = new Map<string, number>();
+  for (const n of out.values()) {
+    if (n.extra || n.via) continue;
+    const k = (seen.get(n.name) ?? 0) + 1;
+    seen.set(n.name, k);
+    if (k > 1) n.extra = String(k);
+  }
+  return [...out.values()];
+}
+// a number follows the name; a city comes after the design's dot
+const sufOf = (n: Node) => (!n.extra ? '' : /^\d+$/.test(n.extra) ? ' ' + n.extra : ' · ' + n.extra);
+// "DE" -> "Germany", in the window's language
+function countryName(cc: string) {
+  if (!/^[a-z]{2}$/.test(cc)) return '';
+  try { return new Intl.DisplayNames([words().locale], { type: 'region' }).of(cc.toUpperCase()) ?? ''; } catch { return ''; }
+}
+const quality = (ms: number) => (ms <= 50 ? 'q3' : ms <= 90 ? 'q2' : 'q1'); // the design's three bars
+
+// Latency numbers outlive the screen: Home is built again on every visit, the numbers stay until the window closes.
+const PINGS: Record<string, number> = {};
+let pingedAtStart = false; // the first list of the session is measured without being asked
 
 export function liveHome(Base: typeof DCLogic): typeof DCLogic {
   return class LiveHome extends (Base as any) {
@@ -74,7 +137,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       document.addEventListener('keydown', this.onKeyDown, true);
       document.addEventListener('click', this.onClickAway);
       // the choice made before the window went to another screen, or was closed
-      this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined }, () => this.sync());
+      this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined, pings: { ...PINGS } }, () => this.sync());
     }
     componentWillUnmount() {
       super.componentWillUnmount();
@@ -95,8 +158,10 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const t = [...a.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
         if (!t || !r) return;
         a.dataset.smart ??= t.nodeValue ?? '';
-        const [only, all] = words().modes;
-        const text = r.mode === 'smart' ? a.dataset.smart.replace('RU', (r.effective || 'ru').toUpperCase()) : r.mode === 'selected' ? only : all;
+        const [only, all, smart] = words().modes;
+        // Smart without a region has no "except … sites": the mode's own name
+        const region = /^[a-z]{2}$/.test(r.effective) ? r.effective.toUpperCase() : '';
+        const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
@@ -145,15 +210,38 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       pref.set('sub', sub?.id ?? '');
       pref.set('server', sel);
       this.setState({ si: !sub ? 5 : expired ? 4 : 0, svN: sub?.servers.length ? 8 : 0, subst: 'ok', liveSub: sub?.id, sel });
+      if (sub?.servers.length && !pingedAtStart) {
+        pingedAtStart = true;
+        this.pingNodes(sub.servers);
+      }
     }
     connect() {
       const sel = this.st().sel;
       this.ask('connect', { server: sel && sel !== 'auto' ? sel : 'auto', sub: this.sub()?.id ?? '' });
     }
-    choose(id: string) {
+    // picked: the protocol was chosen in the protocol menu (the design words that "Picked by you"; its own switch
+    // for it is `prof`, a protocol of its sample node)
+    choose(id: string, picked = false) {
       pref.set('server', id);
-      this.setState({ sel: id, pop: false }, () => {
+      this.setState({ sel: id, pop: false, prof: picked ? 'h2' : 'auto' }, () => {
         if (this.live && ['connected', 'connecting', 'reconnecting'].includes(this.live.state)) this.connect();
+      });
+    }
+    // node by node, as the design staggers it: the numbers arrive down the list
+    pingNodes(servers: Server[]) {
+      nodesOf(servers).forEach((n, i) => setTimeout(() => this.ping(n.entries.map((e) => e.s.id)), i * 140));
+    }
+    // latency to the given servers, measured by the service outside the tunnel
+    ping(ids: string[]) {
+      const sub = this.sub();
+      if (!sub || !ids.length) return;
+      const mark = (on: boolean) => Object.fromEntries(ids.map((id) => [id, on]));
+      this.setState({ checking: { ...this.st().checking, ...mark(true) } });
+      rpc<{ rtt: Record<string, number> }>('servers.ping', { sub: sub.id, servers: ids }).then((r) => r.rtt, () => ({} as Record<string, number>)).then((rtt) => {
+        // a server that did not answer keeps no number
+        Object.assign(PINGS, Object.fromEntries(ids.map((id) => [id, rtt[id] ?? 0])));
+        this.setState({ pings: { ...PINGS }, checking: { ...this.st().checking, ...mark(false) }, flash: { ...this.st().flash, ...mark(true) } });
+        setTimeout(() => this.setState({ flash: { ...this.st().flash, ...mark(false) } }), 750); // the design's flash on a fresh number
       });
     }
     // preview first: nothing is added until the user presses the button on the sheet
@@ -237,7 +325,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         return {
           name: u.name, ini: (u.name.trim()[0] ?? '?').toUpperCase(), tone: 'lav', host: u.host, st, stCls: tone,
           // a stopped subscription says why (a panel that is inactive puts its status, or its own text, in the notice)
-          meta: u.error ? w.subErr[u.error === 'inactive' ? u.notice ?? '' : u.error] || (u.error === 'inactive' && u.notice) || w.stale(w.time(u.updated_unix)) : `${w.servers(u.servers.length)} · ${forever ? w.noEnd : ended ? w.expiredMeta(w.date(u.expire_unix)) : w.left(w.days(daysLeft))}`,
+          meta: u.error ? w.subErr[u.error === 'inactive' ? u.notice ?? '' : u.error] || (u.error === 'inactive' && u.notice) || w.stale(w.time(u.updated_unix)) : `${w.servers(nodesOf(u.servers).length)} · ${forever ? w.noEnd : ended ? w.expiredMeta(w.date(u.expire_unix)) : w.left(w.days(daysLeft))}`,
           metaC: u.error ? 'stale' : '',
           tV: forever ? w.lifetime : ended ? w.expired : w.days(daysLeft), tS: forever ? w.noEnd : ended ? w.expiredOn(w.date(u.expire_unix)) : w.until(w.date(u.expire_unix)),
           tP: forever ? '100%' : `${Math.max(0, Math.min(100, Math.round((daysLeft / 30) * 100)))}%`, tG: forever ? 'inf' : tone, tN: 1, tInf: forever, tFin: !forever,
@@ -277,39 +365,61 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       v.refreshSub = () => {
         if (!sub || this.st().ref) return;
         this.setState({ ref: true });
-        void rpc('subs.refresh', { id: sub.id }).catch(() => {}).then(() => this.setState({ ref: false }));
+        // the button turns for a moment even when the panel answers at once
+        void Promise.all([rpc('subs.refresh', { id: sub.id }).catch(() => {}), new Promise((done) => setTimeout(done, 800))]).then(() => this.setState({ ref: false }));
       };
       // Telegram proxies come from a Mistgate panel only
       Object.assign(v, { tgN: 0, noTg: true, hasTg: false });
 
-      // ---- servers
+      // ---- servers: one row per node
       const servers = sub?.servers ?? [];
-      const current = servers.find((n) => n.id === sel) ?? servers[0];
-      const row = (n: Server) => {
-        const { flag, text } = flagOf(n.name);
-        const [fam, , full] = PROTO[n.protocol] ?? ['', '', n.protocol];
+      const nodes = nodesOf(servers);
+      const has = (n: Node, id: string) => n.entries.some((e) => e.s.id === id);
+      const pings: Record<string, number> = this.st().pings ?? {}, checking: Record<string, boolean> = this.st().checking ?? {}, flash: Record<string, boolean> = this.st().flash ?? {};
+      const row = (n: Node) => {
+        const ids = n.entries.map((e) => e.s.id);
+        const best = Math.min(...ids.map((id) => pings[id] || Infinity));
+        const busy = ids.some((id) => checking[id]);
+        const fams = new Set(n.entries.map((e) => e.fam));
         return {
-          id: n.id, country: text, suf: '', mark: '', mkc: 'hide', flag, via: '', hasVia: false,
-          now: !!on && (sel === n.id || (sel === 'auto' && on.server === n.name)),
-          h2: fam === 'h2', vless: false, awg: fam === 'awg', label: full,
-          rcls: sel === n.id ? 'on' : '', on: sel === n.id ? 'true' : 'false', pick: () => this.choose(n.id),
+          id: n.name, country: n.name, suf: sufOf(n), mark: n.via, mkc: n.via ? '' : 'hide', flag: n.flag, via: n.via, hasVia: !!n.via,
+          now: !!on && n.entries.some((e) => e.s.name === on.server),
+          h2: fams.has('h2'), vless: false, awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
+          rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
           vd: '', vt: '', vi: 'check', vc: 'hide', vo: 0, vrow: '', pisC: '',
-          sigX: 'nov', sig: '', ping: () => {}, ms: '—', // ponytail: no latency tests yet; they come with the detectors
+          sigX: best === Infinity ? 'nov' : '', sig: (best === Infinity ? '' : quality(best)) + (busy ? ' busy' : '') + (ids.some((id) => flash[id]) ? ' flash' : ''), ping: () => this.ping(ids), ms: best === Infinity ? '—' : String(best),
         };
       };
+      const allIds = servers.map((n) => n.id);
+      const bestAll = Math.min(Infinity, ...allIds.map((id) => pings[id] || Infinity));
       Object.assign(v, {
-        rows: servers.map(row), rowsBad: [], badLbl: 'hide', srvN: servers.length, hasSrv: servers.length > 0, noSrvList: servers.length === 0,
-        isAuto: sel === 'auto', autoCls: sel === 'auto' ? 'on' : '', pickAuto: () => this.choose('auto'), pingAll: () => {}, allBusy: '',
+        rows: nodes.map(row), rowsBad: [], badLbl: 'hide', srvN: nodes.length, hasSrv: nodes.length > 0, noSrvList: nodes.length === 0,
+        isAuto: sel === 'auto', autoCls: sel === 'auto' ? 'on' : '', pickAuto: () => this.choose('auto'),
+        pingAll: () => this.pingNodes(servers), allBusy: allIds.some((id) => checking[id]) ? 'busy' : '',
       });
-      v.sigCls.de = 'nov';
-      v.msTxt.de = '—';
-      // the bar under the button: the server in use, or the one a press would connect to
-      const shown = on ? { name: on.server, protocol: on.protocol } : current;
-      if (shown) {
-        const { flag, text } = flagOf(shown.name);
-        const [fam, label] = PROTO[shown.protocol] ?? ['', shown.protocol];
-        Object.assign(v.cur, { country: text, suf: '', title: text, flag, fam, label, isH2: fam === 'h2', isAwg: fam === 'awg', isVless: false });
+      // the Auto row carries the best number of the list (the design keys it to its sample node "de")
+      v.sigCls.de = bestAll === Infinity ? 'nov' : quality(bestAll);
+      v.msTxt.de = bestAll === Infinity ? '—' : String(bestAll);
+      // the bar under the button: the node and protocol in use, or the ones a press would connect to
+      const node = (on && nodes.find((n) => n.entries.some((e) => e.s.name === on.server))) || nodes.find((n) => has(n, sel)) || nodes[0];
+      if (node) {
+        const entry = (on && node.entries.find((e) => e.s.name === on.server)) || node.entries.find((e) => e.s.id === sel) || node.entries[0];
+        const picked = this.st().prof === 'h2' && sel !== 'auto';
+        Object.assign(v.cur, {
+          country: node.name, suf: sufOf(node), title: node.name, flag: node.flag, fam: entry.fam, label: entry.label,
+          isH2: entry.fam === 'h2', isAwg: entry.fam === 'awg', isVless: false,
+          // the design says "direct" after the dot; a node reached through another says so in the subscription's words
+          srvSub: node.via ? String(v.cur.srvSub).split(' · ')[0] + ' · ' + node.via : v.cur.srvSub,
+        });
         if (!on || !this.traffic) v.msTxt.cur = v.cur.ms = '—';
+        Object.assign(v, {
+          profs: node.entries.map((e) => ({
+            fam: e.fam, label: e.label, full: e.full, isH2: e.fam === 'h2', isVless: false, isAwg: e.fam === 'awg',
+            cls: picked && e.s.id === sel ? 'on' : '', on: picked && e.s.id === sel ? 'true' : 'false', pick: () => this.choose(e.s.id, true),
+          })),
+          profAuto: !picked, poAutoCls: picked ? '' : 'on',
+          pickProfAuto: () => this.choose(sel === 'auto' ? 'auto' : node.entries[0].s.id),
+        });
       }
 
       // ---- the add sheet: the design's "from a file" variant is the basic mode's confirm
@@ -319,8 +429,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const link = p.sub.kind !== 'awg'; // the design's "file on this PC" wording is for a config file only
         Object.assign(v.ad, {
           name: p.sub.name, host: link ? p.sub.host : v.ad.host, srcT: link ? w.link : v.ad.srcT, srcI: link ? 'link' : v.ad.srcI,
-          f1: String(p.sub.servers.length), f2: String(new Set(p.sub.servers.map((n) => n.protocol)).size),
-          goT: w.add(w.servers(p.sub.servers.length)),
+          f1: String(nodesOf(p.sub.servers).length), f2: String(new Set(p.sub.servers.map((n) => n.protocol)).size),
+          goT: w.add(w.servers(nodesOf(p.sub.servers).length)),
           go: () => {
             this.setState({ add: 'check' });
             rpc<Sub>('subs.add', { text: p.text }).then(

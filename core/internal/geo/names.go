@@ -85,6 +85,7 @@ var regionTable = map[string]regionInfo{
 	"by": {ruResolvers, []string{"by", "xn--90ais", "бел"}},
 	"cn": {[]netip.Addr{netip.MustParseAddr("223.5.5.5"), netip.MustParseAddr("119.29.29.29")}, []string{"cn", "xn--fiqs8s", "中国"}},
 	"ir": {nil, []string{"ir"}},
+	"tr": {nil, []string{"tr"}},
 }
 
 // RegionTLD reports whether a lower-case name is under one of the region's own top-level domains.

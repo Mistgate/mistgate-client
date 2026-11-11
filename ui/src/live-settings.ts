@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
+import { version } from '../package.json';
 
 type Status = { state: string; server: string; protocol?: string };
 type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean; autoconnect: boolean };
@@ -37,6 +38,13 @@ function applyShell(changed?: 'auto' | 'min' | 'tray') {
 export function startShell() {
   applyShell();
   void listen<string>('mg://nav', (e) => window.dispatchEvent(new CustomEvent('mg-nav', { detail: e.payload })));
+  // "Subscription page" in the side bar of every screen: the design links its sample address. The page of the
+  // subscription shown is opened in the browser; a subscription without a page (pasted servers, a config) has none.
+  document.addEventListener('click', (e) => {
+    if (!(e.target as Element | null)?.closest?.('a.rb.sub')) return;
+    e.preventDefault();
+    void rpc<{ url: string }>('subs.link', { id: pref.get('sub') }).then((r) => invoke('open_url', { url: r.url }), () => {});
+  }, true);
   // Quit: "exit" is 'keep' (the VPN stays on, the default) or 'disconnect'.
   // ponytail: no control for it in the design yet, and no "ask" (that needs a designed dialog).
   void listen('mg://quit', async () => {
@@ -121,6 +129,11 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
       v.prSet.vless = () => {}; // drawn for the finished product; not in this build
+      // Sections drawn for the finished product and not in this build (Subscription, Privacy, Notifications, Updates,
+      // Local proxy): shown dimmed and closed, so that the design's samples are not taken for the real state.
+      const soon = new Set([1, 2, 4, 5, 6]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
+      v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
+      v.ver = version;
       v.tmSet.dark = () => setTheme('dark');
       v.tmSet.light = () => setTheme('light');
       const lang = document.documentElement.lang || 'en';

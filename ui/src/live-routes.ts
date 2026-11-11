@@ -19,7 +19,7 @@ type Routes = {
 };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
-const KNOWN = ['ru', 'by', 'cn', 'ir']; // the regions the design draws; anything else shows as its "None"
+const KNOWN = ['ru', 'by', 'cn', 'ir', 'tr']; // the regions the design draws; anything else shows as its "None"
 const geosite = (name: string) => 'geosite:' + name;
 
 // The design's tiles and the public site lists behind them (MetaCubeX meta-rules-dat geosite, and two lists the

@@ -15,7 +15,8 @@ const maxNeighbours = 10
 var neighbourProcesses = map[string]string{
 	"winws.exe": "zapret", "goodbyedpi.exe": "GoodbyeDPI", "ciadpi.exe": "ByeDPI", "byedpi.exe": "ByeDPI",
 	"wireguard.exe": "WireGuard", "openvpn.exe": "OpenVPN", "amneziavpn.exe": "AmneziaVPN",
-	"amneziavpn-service.exe": "AmneziaVPN", "outline.exe": "Outline", "sing-box.exe": "sing-box", "xray.exe": "Xray",
+	// not amneziavpn-service.exe: AmneziaVPN keeps it running with the app closed; its tunnel shows as an adapter
+	"outline.exe": "Outline", "sing-box.exe": "sing-box", "xray.exe": "Xray",
 	"v2rayn.exe": "v2rayN", "nekoray.exe": "NekoRay", "nekobox.exe": "NekoBox", "hiddify.exe": "Hiddify",
 	"clash-verge.exe": "Clash Verge", "happ.exe": "Happ", "mihomo.exe": "Mihomo",
 }

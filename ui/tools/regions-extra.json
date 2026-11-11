@@ -1,0 +1,58 @@
+{
+ "flag": "/_blob/bc9caa2c3d3cb9a41eee59f9fe3669ed",
+ "after": "ir",
+ "regions": {
+  "tr": {
+   "": {
+    "name": "Turkey",
+    "adj": "Turkish",
+    "cc": "TR",
+    "zones": ".tr",
+    "svc": "Banks, e-Devlet, local apps",
+    "blk": "Blocked in Turkey",
+    "chk": "hepsiburada.com",
+    "meta": ".tr sites, e-Devlet, banks"
+   },
+   "Ru": {
+    "name": "Турция",
+    "adj": "Турецкие",
+    "cc": "TR",
+    "zones": ".tr",
+    "svc": "Банки, e-Devlet, местные приложения",
+    "blk": "Заблокировано в Турции",
+    "chk": "hepsiburada.com",
+    "meta": "Сайты .tr, e-Devlet, банки"
+   },
+   "Tr": {
+    "name": "Türkiye",
+    "adj": "Türkiye",
+    "cc": "TR",
+    "zones": ".tr",
+    "svc": "Bankalar, e-Devlet, yerel uygulamalar",
+    "blk": "Türkiye’de engelli",
+    "chk": "hepsiburada.com",
+    "meta": ".tr siteleri, e-Devlet, bankalar"
+   },
+   "Zh": {
+    "name": "土耳其",
+    "adj": "土耳其",
+    "cc": "TR",
+    "zones": ".tr",
+    "svc": "银行、e-Devlet、本地应用",
+    "blk": "在土耳其被屏蔽",
+    "chk": "hepsiburada.com",
+    "meta": ".tr 网站、e-Devlet、银行"
+   },
+   "Fa": {
+    "name": "ترکیه",
+    "adj": "ترکیه‌ای",
+    "cc": "TR",
+    "zones": ".tr",
+    "svc": "بانک‌ها، e-Devlet، برنامه‌های داخلی",
+    "blk": "مسدودشده در ترکیه",
+    "chk": "hepsiburada.com",
+    "meta": "سایت‌های ‎.tr، e-Devlet، بانک‌ها"
+   }
+  }
+ }
+}

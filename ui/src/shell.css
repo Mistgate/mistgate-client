@@ -17,3 +17,7 @@ html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: 
 .shell .sec-h:has(.n.new):not(:has(+ .slist .sug)) { display: none; }
 /* A server whose name carries no flag has no picture: keep its place, show nothing. */
 .shell img:not([src]), .shell-tray img:not([src]) { visibility: hidden; }
+/* Diag: an open row is already tinted; the header's own hover tint on top of it shows as a box cut by the action button. */
+.shell .dr.open .dr-b:hover { background: none; }
+/* Settings: sections that are not in this build yet. */
+.shell .sx-ni.soon { opacity: .45; pointer-events: none; }

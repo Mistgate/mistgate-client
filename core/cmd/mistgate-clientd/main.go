@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"hash/crc32"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/ipc"
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
@@ -140,12 +142,16 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	var routeState session.RouteState
 	var routes func() geo.Routes
 	var check func(string) geo.Check
+	ping := ipc.PingFunc(diag.Handshake)
 	if useFake {
 		eng = engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
 		routeState.Effective = func(settings.Settings) string { return "all" }
 		routes = func() geo.Routes {
 			configured := settingsStore.Get()
 			return geoStore.Routes(configured.RouteMode, configured.RouteRegion, "")
+		}
+		ping = func(_ context.Context, p profile.Profile, _ time.Duration) (time.Duration, error) {
+			return time.Duration(20+crc32.ChecksumIEEE([]byte(p.ID))%180) * time.Millisecond, nil // plausible, stable per server
 		}
 		check = func(name string) geo.Check {
 			configured := settingsStore.Get()
@@ -200,7 +206,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
 		manager.Events().Publish("diag", state)
 	})
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check); err != nil {
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, ping); err != nil {
 		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}

@@ -85,6 +85,23 @@ fn quit_app(app: &AppHandle) {
     });
 }
 
+// The subscription page, in the user's browser. Only an https address: the window passes what the service keeps.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") || url.len() > 4096 || url.chars().any(|c| c.is_control() || c == '"') {
+        return Err("not an https address".into());
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let (verb, target) = (wide("open"), wide(&url));
+        ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn quit_now(app: AppHandle) {
     app.exit(0);
@@ -255,7 +272,7 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text])
+        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text, open_url])
         .run(tauri::generate_context!())
         .expect("the window could not start");
 }

@@ -10,13 +10,24 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
+)
+
+// PingFunc is one round trip to a profile's server outside the tunnel (diag.Handshake in the real service).
+type PingFunc func(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error)
+
+const (
+	pingTimeout  = 3 * time.Second  // per server
+	pingTotal    = 20 * time.Second // per request; servers not reached by then are left out
+	pingParallel = 8
 )
 
 const (
@@ -33,6 +44,7 @@ type Server struct {
 	Geo       *geo.Store
 	Routes    func() geo.Routes
 	Check     func(name string) geo.Check // routes.check
+	Ping      PingFunc                    // servers.ping
 	Logs      *LogStore
 	Logger    *slog.Logger
 	QueueSize int
@@ -389,9 +401,96 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, subscriptionRPCError(err)
 		}
 		return map[string]any{}, nil, nil
+	case "servers.ping":
+		var params struct {
+			Sub     string   `json:"sub"`
+			Servers []string `json:"servers"`
+		}
+		if !decodeParams(request.Params, &params) {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil || s.Ping == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "latency check is unavailable"}
+		}
+		rtt, err := s.pingServers(ctx, params.Sub, params.Servers)
+		if err != nil {
+			return nil, nil, subscriptionRPCError(err)
+		}
+		if s.Logger != nil {
+			s.Logger.Debug("servers pinged", "answered", len(rtt))
+		}
+		return map[string]any{"rtt": rtt}, nil, nil
+	case "subs.link":
+		var params struct {
+			ID string `json:"id"`
+		}
+		if !decodeParams(request.Params, &params) || params.ID == "" {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "subscription store is unavailable"}
+		}
+		link, err := s.Subs.Link(params.ID)
+		if err != nil {
+			return nil, nil, subscriptionRPCError(err)
+		}
+		return map[string]any{"url": link}, nil, nil
 	default:
 		return nil, nil, &RPCError{Code: "unknown_method", Message: "method is not supported"}
 	}
+}
+
+// pingServers measures the servers of a subscription (all of them when ids is empty; an empty sub is the first
+// subscription) and returns milliseconds by server id. A server that did not answer is not in the map.
+func (s *Server) pingServers(ctx context.Context, sub string, ids []string) (map[string]int64, error) {
+	all := s.Subs.List()
+	if sub == "" && len(all) > 0 {
+		sub = all[0].ID
+	}
+	known := false
+	for _, item := range all {
+		known = known || item.ID == sub
+	}
+	if !known {
+		return nil, &subs.Error{Code: "unknown_subscription"}
+	}
+	profiles, err := s.Subs.Profiles()
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	ctx, cancel := context.WithTimeout(ctx, pingTotal)
+	defer cancel()
+	rtt := make(map[string]int64)
+	var mu sync.Mutex
+	var wait sync.WaitGroup
+	slots := make(chan struct{}, pingParallel)
+launch:
+	for _, p := range profiles {
+		if p.Sub != sub || len(want) > 0 && !want[p.ID] {
+			continue
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			break launch
+		}
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			defer func() { <-slots }()
+			if d, err := s.Ping(ctx, p, pingTimeout); err == nil {
+				mu.Lock()
+				rtt[p.ID] = max(d.Milliseconds(), 1)
+				mu.Unlock()
+			}
+		}()
+	}
+	wait.Wait()
+	return rtt, nil
 }
 
 func subscriptionRPCError(err error) *RPCError {
@@ -532,13 +631,13 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, ping PingFunc) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Logs: logs}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Ping: ping, Logs: logs}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}

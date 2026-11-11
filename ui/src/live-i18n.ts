@@ -31,7 +31,7 @@ type Words = {
   neighbours: [name: string, verdict: string, meta: string];
   throttled: string; // the speed through the VPN falls after the first seconds
   diagFail: Record<string, [title: string, text: string]>; // why a network check did not run, by the service's code
-  modes: [only: string, all: string]; // the route modes on Home's chip, worded as on the Routes screen
+  modes: [only: string, all: string, smart: string]; // the route modes on Home's chip, worded as on the Routes screen
 };
 
 const ruForm = (n: number, one: string, few: string, many: string) =>
@@ -50,7 +50,7 @@ const WORDS: Record<string, Words> = {
     neighbours: ["Other VPN programs","Found","They can break the connection: close them while Mistgate is on"],
     throttled: "Speed through the VPN falls after the first seconds",
     diagFail: { no_subscription: ["Nothing to check yet", "Add a subscription first: the check tests its servers"], offline: ["No internet", "Connect to a network and run the check again"] },
-    modes: ['Only selected', 'Everything'],
+    modes: ['Only selected', 'Everything', 'Smart'],
   },
   ru: {
     locale: 'ru-RU', days: (n) => `${n} ${ruForm(n, 'день', 'дня', 'дней')}`, left: (d) => `осталось ${d}`, until: (d) => `до ${d}`,
@@ -63,7 +63,7 @@ const WORDS: Record<string, Words> = {
     neighbours: ["Другие VPN-программы","Найдены","Они могут мешать соединению: закройте их, пока включён Mistgate"],
     throttled: "Скорость через VPN падает после первых секунд",
     diagFail: { no_subscription: ["Пока нечего проверять", "Сначала добавьте подписку: проверка тестирует её серверы"], offline: ["Нет интернета", "Подключитесь к сети и запустите проверку снова"] },
-    modes: ['Только выбранное', 'Всё'],
+    modes: ['Только выбранное', 'Всё', 'Умный'],
   },
   tr: {
     locale: 'tr-TR', days: (n) => `${n} gün`, left: (d) => `${d} kaldı`, until: (d) => `bitiş: ${d}`,
@@ -76,7 +76,7 @@ const WORDS: Record<string, Words> = {
     neighbours: ["Diğer VPN programları","Bulundu","Bağlantıyı bozabilirler: Mistgate açıkken onları kapatın"],
     throttled: "VPN üzerinden hız ilk saniyelerden sonra düşüyor",
     diagFail: { no_subscription: ["Henüz kontrol edilecek bir şey yok", "Önce bir abonelik ekleyin: kontrol onun sunucularını test eder"], offline: ["İnternet yok", "Bir ağa bağlanın ve kontrolü yeniden başlatın"] },
-    modes: ['Yalnızca seçilenler', 'Her şey'],
+    modes: ['Yalnızca seçilenler', 'Her şey', 'Akıllı'],
   },
   zh: {
     locale: 'zh-CN', days: (n) => `${n} 天`, left: (d) => `剩余 ${d}`, until: (d) => `至 ${d}`,
@@ -89,7 +89,7 @@ const WORDS: Record<string, Words> = {
     neighbours: ["其他 VPN 程序","已发现","它们可能干扰连接：使用 Mistgate 时请关闭它们"],
     throttled: "通过 VPN 的速度在最初几秒后下降",
     diagFail: { no_subscription: ["暂无可检查的内容", "请先添加订阅：检查会测试其中的服务器"], offline: ["无网络连接", "请连接网络后重新检查"] },
-    modes: ['仅所选', '全部'],
+    modes: ['仅所选', '全部', '智能'],
   },
   fa: {
     locale: 'fa-IR-u-ca-gregory-nu-latn', days: (n) => `${n} روز`, left: (d) => `${d} مانده`, until: (d) => `تا ${d}`,
@@ -102,7 +102,7 @@ const WORDS: Record<string, Words> = {
     neighbours: ["برنامه‌های VPN دیگر","پیدا شد","ممکن است اتصال را مختل کنند: هنگام روشن بودن Mistgate آن‌ها را ببندید"],
     throttled: "سرعت از طریق VPN پس از چند ثانیهٔ اول افت می‌کند",
     diagFail: { no_subscription: ["هنوز چیزی برای بررسی نیست", "ابتدا یک اشتراک اضافه کنید: بررسی، سرورهای آن را می‌آزماید"], offline: ["اینترنت در دسترس نیست", "به یک شبکه وصل شوید و بررسی را دوباره اجرا کنید"] },
-    modes: ['فقط انتخابی‌ها', 'همه‌چیز'],
+    modes: ['فقط انتخابی‌ها', 'همه‌چیز', 'هوشمند'],
   },
 };
 

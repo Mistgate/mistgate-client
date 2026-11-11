@@ -51,6 +51,12 @@ type Server struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Protocol string `json:"protocol"`
+	// From a panel's client API only: the paths of one node share Node. Via is direct, relay or warp.
+	Node    string `json:"node,omitempty"`
+	Country string `json:"country,omitempty"`
+	City    string `json:"city,omitempty"`
+	Via     string `json:"via,omitempty"`
+	IPv6    bool   `json:"ipv6,omitempty"`
 }
 
 type Error struct {
@@ -149,6 +155,22 @@ func (s *Store) List() []Subscription {
 		result[i] = publicCopy(sub.Subscription)
 	}
 	return result
+}
+
+// Link is the link the user pasted for a url subscription (it carries the token: never log it). Other kinds have none.
+func (s *Store) Link(id string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.state.Subscriptions {
+		if sub.ID != id {
+			continue
+		}
+		if sub.Kind != "url" || sub.URL == "" {
+			return "", &Error{Code: "no_link"}
+		}
+		return sub.URL, nil
+	}
+	return "", &Error{Code: "unknown_subscription"}
 }
 
 func (s *Store) Preview(ctx context.Context, text string) (Subscription, error) {

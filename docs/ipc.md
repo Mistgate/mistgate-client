@@ -53,6 +53,8 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `subs.add` | `{"text": "<URL, links, Mihomo profile, or AWG config>"}` | Subscription |
 | `subs.refresh` | `{"id": "<subscription id>"}` | Subscription |
 | `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
+| `subs.link` | `{"id": "<subscription id>"}` | `{"url": "<link the user pasted>"}`; `no_link` for a subscription that is not a `url` one |
+| `servers.ping` | `{"sub": "<subscription id>", "servers": ["<server id>", …]}` (both optional; empty `sub` selects the first subscription, empty `servers` means all of its servers) | `{"rtt": {"<server id>": <ms>, …}}` |
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
 | `routes.get` | none | Route state, rules, and named collection status |
@@ -296,8 +298,14 @@ connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`), `subs` (`
 after subscription data changes, `settings` (a Settings object) after settings change, and `routes` (the same object
 as `routes.get`) after any route state changes. Subscribe to `subs`, `settings` or `routes` to receive those updates.
 
+`subs.link` returns the link of a `url` subscription, so the window can open its page or copy the link. The link holds the
+subscription token: the service never logs it, and the other kinds (pasted server links, AmneziaWG configs) answer
+`no_link`. `servers.ping` makes one handshake to each server outside the tunnel, at most 8 at a time, and gives the round
+trip in whole milliseconds (at least 1). A server that does not answer within 3 seconds, or is not in the subscription,
+is left out of `rtt`; the whole call stops after 20 seconds. An unknown `sub` answers `unknown_subscription`.
+
 Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `refused`, `offline`,
-`fetch_failed`, and `unknown_subscription`; managed subscriptions add the codes below. `connect` returns `no_subscription` if the selected subscription or
+`fetch_failed`, `unknown_subscription`, and `no_link` (`subs.link` only); managed subscriptions add the codes below. `connect` returns `no_subscription` if the selected subscription or
 server is no longer present. Removing a subscription does not stop an active tunnel; a later reconnect or connect
 must select a server that still exists.
 
@@ -309,6 +317,11 @@ panels that recognize Mihomo return their full client profile. A URL body may be
 or a Mihomo YAML profile with a top-level `proxies` list. Only `proxies` is used; groups, rules and DNS are ignored
 because Mistgate applies its own routing. Supported proxies are Hysteria2 and WireGuard with or without
 `amnezia-wg-option`; other types are counted as unsupported.
+
+A server of a panel's client API also carries its place in the panel's structure: `node` (the paths of one node share
+it), `country` (code), `city`, `via` (`direct`, `relay` or `warp`) and `ipv6`. The window draws one row per node and
+lists the node's paths as its protocols. Other subscriptions have only `id`, `name` and `protocol`; the window then
+groups by the first part of the name, which is a guess.
 
 Subscriptions expose `notice` (empty when the panel sent no message), the panel's `Announce` response header decoded
 from plain text or `base64:<value>`.

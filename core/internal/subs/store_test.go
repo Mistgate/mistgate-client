@@ -221,6 +221,32 @@ func TestPreviewAWGAndProfiles(t *testing.T) {
 	}
 }
 
+func TestLink(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("hy2://auth@one.example:443#first"))
+	}))
+	defer server.Close()
+	store := openTestStore(t, t.TempDir(), server)
+	link := server.URL + "/sub?token=private-token"
+	added, err := store.Add(context.Background(), link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.Link(added.ID); err != nil || got != link {
+		t.Fatalf("Link(url) = %q, %v", got, err)
+	}
+	links, err := store.Add(context.Background(), "hy2://auth@two.example:443#second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Link(links.ID); errorCode(err) != "no_link" {
+		t.Fatalf("Link(links) = %v", err)
+	}
+	if _, err := store.Link("missing"); errorCode(err) != "unknown_subscription" {
+		t.Fatalf("Link(missing) = %v", err)
+	}
+}
+
 func TestOpenQuarantinesUnparseableStore(t *testing.T) {
 	dir := t.TempDir()
 	bad := []byte("not a subscription store")
