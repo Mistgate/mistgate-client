@@ -2,6 +2,10 @@
 
 Needs Go, Rust (MSVC toolchain), Node with pnpm, on Windows x64.
 
+Go: `core/go.mod` asks for 1.27.4 and an older Go fetches it by itself. Never build the service with Go 1.26.0 or
+1.26.1: their Windows UDP read writes into freed stack memory (golang/go#78041) and the service dies at random, a few
+times an hour in the forwarder modes, without a message of its own.
+
 ```
 cd ui
 pnpm install

@@ -348,7 +348,7 @@ The log ring is in memory only and holds at most 500 entries. `src` is `ipc`, `s
 
 ## Link guard, sleep, and adapter DNS
 
-While connected, the service probes the tunnel every 15 seconds. After a failed probe it tries again 5 seconds after
+While connected, the service probes the tunnel every 10 seconds. After a failed probe it tries again 5 seconds after
 that probe ends, continuing at that interval until a probe succeeds or the link is declared dead. A failed streak
 starts with its first failed probe; the service reconnects after 20 seconds only if fewer than 1 KiB arrived through
 the tunnel since that failure. Receiving at least 1 KiB means the server is alive and restarts the failure streak.

@@ -94,6 +94,17 @@ func (run handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status
 	}
 }
 
+// serviceStderrTo: a service's standard error leads nowhere, and some of the runtime's last words (an access violation
+// with a broken stack, for one) go only there, not to the crash output. As a service, standard error is the file.
+func serviceStderrTo(file *os.File) {
+	if is, err := svc.IsWindowsService(); err != nil || !is {
+		return
+	}
+	if windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(file.Fd())) == nil {
+		os.Stderr = file
+	}
+}
+
 func sleptDuration(suspendedAt, resumedAt time.Time) time.Duration {
 	if suspendedAt.IsZero() || resumedAt.Before(suspendedAt) {
 		return 120 * time.Second

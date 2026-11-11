@@ -89,6 +89,7 @@ func keepCrashOutput(dataDir string) {
 	}
 	if file, err := os.OpenFile(path, flags, 0600); err == nil {
 		_ = debug.SetCrashOutput(file, debug.CrashOptions{})
+		serviceStderrTo(file)
 	}
 }
 

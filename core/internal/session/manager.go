@@ -122,7 +122,10 @@ type managerTiming struct {
 
 func defaultManagerTiming() managerTiming {
 	return managerTiming{
-		probeInterval:      15 * time.Second,
+		// Measured on the dev stand under packet loss (2026-11): the 20 s window is what keeps a live AmneziaWG link from
+		// being torn down (it fails single probes, up to three in a row, with no loss at all); the period only moves
+		// how soon a real cut is noticed (27 to 37 s with these values).
+		probeInterval:      10 * time.Second,
 		probeRetryInterval: 5 * time.Second,
 		probeFailureWindow: 20 * time.Second,
 		networkEventGrace:  30 * time.Second,
@@ -131,7 +134,7 @@ func defaultManagerTiming() managerTiming {
 }
 
 func NewManager(eng engine.Engine, getSettings func() settings.Settings, routes ...RouteState) *Manager {
-	return newManager(eng, getSettings, 15*time.Second, []time.Duration{
+	return newManager(eng, getSettings, 0, []time.Duration{
 		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
 		15 * time.Second, 30 * time.Second,
 	}, routes...)
