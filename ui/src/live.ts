@@ -43,6 +43,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     subsList: Sub[] | null = null; // null until the service has answered
     pending: { text: string; sub: Sub } | null = null; // the subscription on the confirm sheet
     lastText = '';
+    refusal = ''; // the panel's own words when it refuses a subscription (device limit, expired, switched off…)
     pasted = ''; // what was pasted into the link field, with its line breaks (the field itself drops them)
     onPaste = (e: ClipboardEvent) => {
       if ((e.target as Element | null)?.closest?.('.onb-in')) this.pasted = e.clipboardData?.getData('text') ?? '';
@@ -128,7 +129,10 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       this.setState({ add: 'check', subsPop: false });
       rpc<Sub>('subs.preview', { text }).then(
         (sub) => { this.pending = { text, sub }; this.setState({ add: 'basic' }); },
-        (err) => this.setState({ add: err?.code === 'offline' || err?.code === 'fetch_failed' ? 'offline' : 'badlink' }),
+        (err) => {
+          this.refusal = err?.code === 'refused' ? String(err.message ?? '') : '';
+          this.setState({ add: err?.code === 'offline' || err?.code === 'fetch_failed' ? 'offline' : 'badlink' });
+        },
       );
     }
     fromClipboard() {
@@ -292,6 +296,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         if (p.sub.expire_unix) Object.assign(v.ad, { f3: w.date(p.sub.expire_unix), f3s: w.validUntil });
       }
       if (v.ad.isErr) {
+        if (this.refusal) v.ad.ep = this.refusal; // the panel says why; the design's text would only guess
         const retry = this.st().add === 'offline';
         v.ad.b1Go = () => (retry ? this.startAdd(this.lastText) : this.setState({ add: 'none' }));
         v.ad.b2Go = () => this.setState({ add: 'none' });

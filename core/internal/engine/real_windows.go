@@ -25,6 +25,7 @@ import (
 	"github.com/apernet/hysteria/core/v2/client"
 	coreerrs "github.com/apernet/hysteria/core/v2/errors"
 	"github.com/apernet/hysteria/extras/v2/obfs"
+	"github.com/apernet/hysteria/extras/v2/transport/udphop"
 	"github.com/mistgate/mistgate-client/core/internal/firewall"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
@@ -1004,17 +1005,58 @@ func (f hy2ObfsFactory) New(net.Addr) (net.PacketConn, error) {
 	if err != nil {
 		return nil, errors.New("open Hysteria2 UDP socket")
 	}
+	return wrapHy2Obfs(packetConn, f.kind, f.password)
+}
+
+func wrapHy2Obfs(packetConn net.PacketConn, kind string, password []byte) (net.PacketConn, error) {
 	var wrapped net.PacketConn
-	if f.kind == "gecko" {
-		wrapped, err = obfs.WrapPacketConnGecko(packetConn, obfs.GeckoOptions{Password: f.password})
+	var err error
+	if kind == "none" {
+		return packetConn, nil
+	}
+	if kind == "gecko" {
+		wrapped, err = obfs.WrapPacketConnGecko(packetConn, obfs.GeckoOptions{Password: password})
 	} else {
-		wrapped, err = obfs.WrapPacketConnSalamander(packetConn, f.password)
+		wrapped, err = obfs.WrapPacketConnSalamander(packetConn, password)
 	}
 	if err != nil {
 		_ = packetConn.Close()
 		return nil, errors.New("configure Hysteria2 obfuscation")
 	}
 	return wrapped, nil
+}
+
+type hy2HopFactory struct {
+	kind           string
+	password       []byte
+	interval       time.Duration
+	interfaceIndex uint32
+	ipv6           bool
+}
+
+func (f hy2HopFactory) New(addr net.Addr) (net.PacketConn, error) {
+	hopAddr, ok := addr.(*udphop.UDPHopAddr)
+	if !ok {
+		return nil, errors.New("invalid Hysteria2 port hopping address")
+	}
+	listenUDP := func() (net.PacketConn, error) {
+		var config net.ListenConfig
+		config.Control = netcfg.SocketControl(f.interfaceIndex)
+		network := "udp4"
+		if f.ipv6 {
+			network = "udp6"
+		}
+		return config.ListenPacket(context.Background(), network, ":0")
+	}
+	interval := udphop.HopIntervalConfig{}
+	if f.interval > 0 {
+		interval.Min, interval.Max = f.interval, f.interval
+	}
+	packetConn, err := udphop.NewUDPHopPacketConn(hopAddr, interval, listenUDP)
+	if err != nil {
+		return nil, errors.New("open Hysteria2 hopping socket")
+	}
+	return wrapHy2Obfs(packetConn, f.kind, f.password)
 }
 
 func startHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort) (client.Client, error) {
@@ -1032,7 +1074,27 @@ func startHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort) (cli
 	}
 	done := make(chan result, 1)
 	go func() {
-		addr := &net.UDPAddr{IP: net.IP(endpoint.Addr().AsSlice()), Port: int(endpoint.Port()), Zone: endpoint.Addr().Zone()}
+		var serverAddr net.Addr = &net.UDPAddr{IP: net.IP(endpoint.Addr().AsSlice()), Port: int(endpoint.Port()), Zone: endpoint.Addr().Zone()}
+		var connFactory client.ConnFactory
+		if p.Ports != "" {
+			hopAddr, err := udphop.ResolveUDPHopAddr(net.JoinHostPort(endpoint.Addr().String(), p.Ports))
+			if err != nil {
+				done <- result{err: errors.New("configure Hysteria2 port hopping")}
+				return
+			}
+			interfaceIndex, err := netcfg.PhysicalInterfaceIndexFor(endpoint.Addr())
+			if err != nil {
+				done <- result{err: errors.New("select Hysteria2 physical interface")}
+				return
+			}
+			serverAddr = hopAddr
+			connFactory = hy2HopFactory{
+				kind: p.Obfs, password: []byte(p.ObfsPassword), interval: p.HopInterval,
+				interfaceIndex: interfaceIndex, ipv6: endpoint.Addr().Is6(),
+			}
+		} else if p.Obfs != "none" {
+			connFactory = hy2ObfsFactory{kind: p.Obfs, password: []byte(p.ObfsPassword)}
+		}
 		tlsConfig := client.TLSConfig{ServerName: p.ServerName}
 		if p.HasPin {
 			pin := p.PinSHA256
@@ -1050,10 +1112,7 @@ func startHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort) (cli
 		} else {
 			tlsConfig.InsecureSkipVerify = p.Insecure
 		}
-		config := &client.Config{ServerAddr: addr, Auth: p.Auth, TLSConfig: tlsConfig}
-		if p.Obfs != "none" {
-			config.ConnFactory = hy2ObfsFactory{kind: p.Obfs, password: []byte(p.ObfsPassword)}
-		}
+		config := &client.Config{ServerAddr: serverAddr, Auth: p.Auth, TLSConfig: tlsConfig, ConnFactory: connFactory}
 		hclient, err := client.NewReconnectableClient(func() (*client.Config, error) { return config, nil }, nil, false)
 		done <- result{client: hclient, err: err}
 	}()

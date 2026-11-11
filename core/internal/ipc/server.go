@@ -359,7 +359,11 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 func subscriptionRPCError(err error) *RPCError {
 	var coded *subs.Error
 	if errors.As(err, &coded) && coded.Code != "" {
-		return &RPCError{Code: coded.Code, Message: "subscription request failed"}
+		message := "subscription request failed"
+		if coded.Notice != "" {
+			message = coded.Notice
+		}
+		return &RPCError{Code: coded.Code, Message: message}
 	}
 	return &RPCError{Code: "service_error", Message: "subscription request failed"}
 }

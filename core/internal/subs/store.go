@@ -40,6 +40,7 @@ type Subscription struct {
 	UsedBytes   int64    `json:"used_bytes"`
 	TotalBytes  int64    `json:"total_bytes"`
 	Error       string   `json:"error"`
+	Notice      string   `json:"notice"`
 	Unsupported int      `json:"unsupported"`
 	Servers     []Server `json:"servers"`
 }
@@ -50,7 +51,10 @@ type Server struct {
 	Protocol string `json:"protocol"`
 }
 
-type Error struct{ Code string }
+type Error struct {
+	Code   string
+	Notice string
+}
 
 func (e *Error) Error() string { return e.Code }
 
@@ -171,7 +175,7 @@ func (s *Store) Add(ctx context.Context, text string) (Subscription, error) {
 	}
 	sub, entries, interval, err := s.preview(ctx, text, id)
 	if err != nil {
-		return Subscription{}, err
+		return publicCopy(sub), err
 	}
 	sub.ID = id
 	stored := storedSubscription{Subscription: sub, Entries: entries, IntervalHours: interval}
@@ -250,8 +254,11 @@ func (s *Store) Refresh(ctx context.Context, id string) (Subscription, error) {
 		candidate := cloneState(s.state)
 		for i := range candidate.Subscriptions {
 			if candidate.Subscriptions[i].ID == id {
-				if candidate.Subscriptions[i].Error != code {
+				if candidate.Subscriptions[i].Error != code || updated.Notice != "" && candidate.Subscriptions[i].Notice != updated.Notice {
 					candidate.Subscriptions[i].Error = code
+					if updated.Notice != "" {
+						candidate.Subscriptions[i].Notice = updated.Notice
+					}
 					if saveErr := s.save(candidate); saveErr != nil {
 						s.mu.Unlock()
 						return publicCopy(current.Subscription), saveErr
@@ -300,9 +307,17 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 			var err error
 			switch entry.Server.Protocol {
 			case "hysteria2":
-				p.Hy2, err = profile.ParseHy2(entry.Raw)
+				if strings.Contains(entry.Raw, "://") {
+					p.Hy2, err = profile.ParseHy2(entry.Raw)
+				} else {
+					p.Hy2, _, err = parseMihomoEntry(entry.Raw, entry.Server.Protocol)
+				}
 			case "awg":
-				p.AWG, err = profile.ParseAWG(entry.Raw)
+				if strings.HasPrefix(strings.TrimSpace(entry.Raw), "[Interface]") {
+					p.AWG, err = profile.ParseAWG(entry.Raw)
+				} else {
+					_, p.AWG, err = parseMihomoEntry(entry.Raw, entry.Server.Protocol)
+				}
 			default:
 				err = errors.New("unsupported profile protocol")
 			}
@@ -393,7 +408,7 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (Subscription, [
 	s.mu.RLock()
 	hwid := s.state.InstallID
 	s.mu.RUnlock()
-	request.Header.Set("User-Agent", "Mistgate/0.0.1 (Windows)")
+	request.Header.Set("User-Agent", "mihomo/1.19.33 Mistgate/0.0.1 (Windows)")
 	request.Header.Set("x-hwid", hwid)
 	request.Header.Set("x-device-os", "Windows")
 	client := *s.client
@@ -420,33 +435,45 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (Subscription, [
 	if err != nil || len(body) > maxBodyBytes {
 		return Subscription{}, nil, 0, &Error{Code: "fetch_failed"}
 	}
-	servers, entries, unsupported, err := parseURLBody(string(body), id)
-	if err != nil {
-		return Subscription{}, nil, 0, err
-	}
 	name := responseName(response.Header.Get("profile-title"), parsed.Host)
 	used, total, expire := parseUserInfo(response.Header.Get("subscription-userinfo"))
 	sub := Subscription{
 		ID: id, Kind: "url", Name: name, Host: parsed.Host, UpdatedUnix: time.Now().Unix(),
-		ExpireUnix: expire, UsedBytes: used, TotalBytes: total, Unsupported: unsupported, Servers: servers,
+		ExpireUnix: expire, UsedBytes: used, TotalBytes: total, Notice: responseNotice(response.Header.Get("Announce")),
 	}
+	servers, entries, unsupported, err := parseURLBody(string(body), id)
+	if err != nil {
+		var coded *Error
+		if errors.As(err, &coded) && coded.Notice != "" {
+			sub.Notice = coded.Notice
+		}
+		return sub, nil, parseInterval(response.Header.Get("profile-update-interval")), err
+	}
+	sub.Unsupported, sub.Servers = unsupported, servers
 	return sub, entries, parseInterval(response.Header.Get("profile-update-interval")), nil
 }
 
 func parseURLBody(body, id string) ([]Server, []storedEntry, int, error) {
+	body = strings.TrimSpace(body)
 	if !strings.Contains(body, "://") {
 		if decoded, err := decodeSubscription(body); err == nil {
-			body = string(decoded)
+			decodedBody := strings.TrimSpace(string(decoded))
+			if strings.Contains(decodedBody, "://") && !mihomoProxiesKey.MatchString(decodedBody) {
+				body = decodedBody
+			}
 		}
 	}
-	trimmed := strings.TrimSpace(body)
-	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") || strings.Contains(body, "proxies:") {
+	if strings.Contains(body, "://") && !mihomoProxiesKey.MatchString(body) {
+		return parseEntries(body, id)
+	}
+	if strings.HasPrefix(body, "{") || strings.HasPrefix(body, "[") {
 		return nil, nil, 0, &Error{Code: "unsupported_format"}
 	}
-	return parseEntries(body, id)
+	return parseMihomoProfile(body, id)
 }
 
 var linkStart = regexp.MustCompile(`\s+([a-zA-Z][a-zA-Z0-9+.-]*://)`)
+var mihomoProxiesKey = regexp.MustCompile(`(?m)^proxies\s*:`)
 
 func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 	servers := make([]Server, 0)
@@ -469,16 +496,11 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 			unsupported++
 			continue
 		}
-		parsed, err := url.Parse(line)
-		if err != nil {
-			unsupported++
-			continue
-		}
 		if _, err := profile.ParseHy2(line); err != nil {
 			unsupported++
 			continue
 		}
-		name := parsed.Fragment
+		name := linkFragment(line)
 		entry := strings.SplitN(line, "#", 2)[0]
 		server := Server{ID: serverID(id, entry), Name: name, Protocol: "hysteria2"}
 		if seen[server.ID] {
@@ -495,6 +517,17 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 		return nil, nil, unsupported, &Error{Code: "no_servers"}
 	}
 	return servers, entries, unsupported, nil
+}
+
+func linkFragment(line string) string {
+	_, fragment, ok := strings.Cut(line, "#")
+	if !ok {
+		return ""
+	}
+	if decoded, err := url.PathUnescape(fragment); err == nil {
+		return decoded
+	}
+	return fragment
 }
 
 func subscriptionURL(text string) (string, bool) {
@@ -550,6 +583,18 @@ func responseName(value, fallback string) string {
 		return fallback
 	}
 	return strings.ToValidUTF8(value, "�")
+}
+
+func responseNotice(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "base64:") {
+		decoded, err := decodeSubscription(strings.TrimPrefix(value, "base64:"))
+		if err != nil {
+			return ""
+		}
+		value = string(decoded)
+	}
+	return strings.Join(strings.Fields(strings.ToValidUTF8(value, "�")), " ")
 }
 
 func parseInterval(value string) int64 {

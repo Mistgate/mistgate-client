@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Profile struct {
@@ -28,7 +29,10 @@ type Hy2 struct {
 	Auth         string
 	Host         string
 	Port         uint16
+	Ports        string
+	HopInterval  time.Duration
 	ServerName   string
+	ALPN         []string
 	Obfs         string
 	ObfsPassword string
 	PinSHA256    [32]byte
@@ -48,20 +52,60 @@ type AWG struct {
 }
 
 func ParseHy2(raw string) (*Hy2, error) {
-	if hasPortHopping(raw) {
-		return nil, errors.New("Hysteria2 port hopping is not supported")
+	scheme, rest, ok := strings.Cut(raw, "://")
+	if !ok || (strings.ToLower(scheme) != "hysteria2" && strings.ToLower(scheme) != "hy2") {
+		return nil, errors.New("invalid Hysteria2 URI")
 	}
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "hysteria2" && u.Scheme != "hy2") || u.User == nil || u.Hostname() == "" {
+	authorityEnd := strings.IndexAny(rest, "/?#")
+	if authorityEnd < 0 {
+		authorityEnd = len(rest)
+	}
+	authority := rest[:authorityEnd]
+	userinfo, hostPort := "", authority
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		userinfo, hostPort = authority[:at+1], authority[at+1:]
+	}
+	host, portText, ok := splitHostPortText(hostPort)
+	if !ok || host == "" || userinfo == "" {
+		return nil, errors.New("invalid Hysteria2 URI")
+	}
+	ports := ""
+	basePort := ""
+	var err error
+	if primary, rangeText, hasRange := strings.Cut(portText, ","); hasRange {
+		basePort = primary
+		ports = rangeText
+	} else if _, err := parsePort(portText); err == nil {
+		basePort = portText
+	} else {
+		ports, basePort, err = parsePortRange(portText)
+		if err != nil {
+			return nil, errors.New("Hysteria2 URI has an invalid server port")
+		}
+	}
+	port, err := parsePort(basePort)
+	if err != nil {
+		return nil, errors.New("Hysteria2 URI has an invalid server port")
+	}
+	parseable := scheme + "://" + userinfo + host + ":" + strconv.Itoa(int(port)) + rest[authorityEnd:]
+	u, err := url.Parse(parseable)
+	if err != nil || u.User == nil || u.Hostname() == "" {
 		return nil, errors.New("invalid Hysteria2 URI")
 	}
 	query := u.Query()
-	if _, ok := query["mport"]; ok {
-		return nil, errors.New("Hysteria2 port hopping is not supported")
-	}
-	port, err := parsePort(u.Port())
-	if err != nil {
-		return nil, errors.New("Hysteria2 URI has an invalid server port")
+	if queryPorts, ok := query["mport"]; ok {
+		if len(queryPorts) != 1 {
+			return nil, errors.New("Hysteria2 URI has an invalid port range")
+		}
+		ports, _, err = parsePortRange(queryPorts[0])
+		if err != nil {
+			return nil, errors.New("Hysteria2 URI has an invalid port range")
+		}
+	} else if ports != "" {
+		ports, _, err = parsePortRange(ports)
+		if err != nil {
+			return nil, errors.New("Hysteria2 URI has an invalid port range")
+		}
 	}
 	auth := u.User.Username()
 	if password, ok := u.User.Password(); ok {
@@ -75,6 +119,7 @@ func ParseHy2(raw string) (*Hy2, error) {
 		Auth:       auth,
 		Host:       u.Hostname(),
 		Port:       port,
+		Ports:      ports,
 		ServerName: query.Get("sni"),
 		Obfs:       strings.ToLower(query.Get("obfs")),
 	}
@@ -111,35 +156,35 @@ func ParseHy2(raw string) (*Hy2, error) {
 	return profile, nil
 }
 
-func hasPortHopping(raw string) bool {
-	withoutFragment := strings.SplitN(raw, "#", 2)[0]
-	if _, query, ok := strings.Cut(withoutFragment, "?"); ok {
-		for _, item := range strings.Split(query, "&") {
-			key, _, _ := strings.Cut(item, "=")
-			if key == "mport" {
-				return true
-			}
+func splitHostPortText(value string) (host, port string, ok bool) {
+	if strings.HasPrefix(value, "[") {
+		end := strings.LastIndexByte(value, ']')
+		if end < 0 || end+1 >= len(value) || value[end+1] != ':' {
+			return "", "", false
 		}
+		return value[:end+1], value[end+2:], true
 	}
-	_, rest, ok := strings.Cut(withoutFragment, "://")
-	if !ok {
-		return false
+	colon := strings.LastIndexByte(value, ':')
+	if colon <= 0 || strings.Contains(value[:colon], ":") {
+		return "", "", false
 	}
-	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
-		rest = rest[:i]
+	return value[:colon], value[colon+1:], true
+}
+
+func parsePortRange(value string) (string, string, error) {
+	parts := strings.Split(strings.TrimSpace(value), "-")
+	if len(parts) != 2 {
+		return "", "", errors.New("invalid port range")
 	}
-	if i := strings.LastIndexByte(rest, '@'); i >= 0 {
-		rest = rest[i+1:]
+	from, err := parsePort(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return "", "", err
 	}
-	var port string
-	if strings.HasPrefix(rest, "[") {
-		if end := strings.LastIndexByte(rest, ']'); end >= 0 && end+1 < len(rest) && rest[end+1] == ':' {
-			port = rest[end+2:]
-		}
-	} else if i := strings.LastIndexByte(rest, ':'); i >= 0 {
-		port = rest[i+1:]
+	to, err := parsePort(strings.TrimSpace(parts[1]))
+	if err != nil || from > to {
+		return "", "", errors.New("invalid port range")
 	}
-	return strings.ContainsAny(port, ",- ")
+	return strconv.Itoa(int(from)) + "-" + strconv.Itoa(int(to)), strconv.Itoa(int(from)), nil
 }
 
 func parsePort(value string) (uint16, error) {

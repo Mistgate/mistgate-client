@@ -43,8 +43,8 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `disconnect` | — | Status |
 | `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings", "diag", "routes"]}` | `{}`; the events then arrive on this connection |
 | `subs.list` | — | `{"subs": [Subscription…]}` |
-| `subs.preview` | `{"text": "<URL, links, or AWG config>"}` | Subscription, not saved (`id` is empty) |
-| `subs.add` | `{"text": "<URL, links, or AWG config>"}` | Subscription |
+| `subs.preview` | `{"text": "<URL, links, Mihomo profile, or AWG config>"}` | Subscription, not saved (`id` is empty) |
+| `subs.add` | `{"text": "<URL, links, Mihomo profile, or AWG config>"}` | Subscription |
 | `subs.refresh` | `{"id": "<subscription id>"}` | Subscription |
 | `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
 | `settings.get` | — | Settings |
@@ -161,14 +161,26 @@ connected), `log` (`{"t_unix_ms": 0, "level": "info", "msg": "…"}`), `subs` (`
 after subscription data changes, `settings` (a Settings object) after settings change, and `routes` (the same object
 as `routes.get`) after any route state changes. Subscribe to `subs`, `settings` or `routes` to receive those updates.
 
-Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `offline`,
+Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `refused`, `offline`,
 `fetch_failed`, and `unknown_subscription`. `connect` returns `no_subscription` if the selected subscription or
 server is no longer present. Removing a subscription does not stop an active tunnel; a later reconnect or connect
 must select a server that still exists.
 
 The service stores subscriptions in `<data directory>\subscriptions.bin`. On Windows the JSON state is protected
 with DPAPI for the service account, and the data directory has a protected ACL granting access only to SYSTEM and
-Administrators. URLs, server links and AWG configs are stored there; IPC subscription objects contain no secrets.
+Administrators. URLs, server links, profile proxies and AWG configs are stored there; IPC subscription objects contain
+no secrets. URL fetches send `User-Agent: mihomo/1.19.33 Mistgate/0.0.1 (Windows)` with `x-hwid` and `x-device-os` so
+panels that recognize Mihomo return their full client profile. A URL body may be the usual plain or base64 link list,
+or a Mihomo YAML profile with a top-level `proxies` list. Only `proxies` is used; groups, rules and DNS are ignored
+because Mistgate applies its own routing. Supported proxies are Hysteria2 and WireGuard with or without
+`amnezia-wg-option`; other types are counted as unsupported.
+
+Subscriptions expose `notice` (empty when the panel sent no message), the panel's `Announce` response header decoded
+from plain text or `base64:<value>`.
+Port hopping is accepted from Hysteria2 `ports: "from-to"` profiles and the `mport` or `host:from-to` link forms;
+`hop-interval` is in seconds. If every profile proxy uses a refusal endpoint (`0.0.0.0`, `127.0.0.1`, `::`, or port
+0/1), the refresh fails with `refused`, its first proxy name becomes `notice`, and existing servers are kept. A first
+add also fails with `refused`; the RPC error message carries the notice.
 
 The `diag` event sends the full Diagnostic State after each state or progress change. Log events include `src` in the
 same shape returned by `log.get`. `log.get` returns `{"entries": [...]}` with entries shaped as

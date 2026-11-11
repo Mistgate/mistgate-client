@@ -42,13 +42,27 @@ func TestParseHy2WithoutPinAndInsecure(t *testing.T) {
 	}
 }
 
-func TestParseHy2RejectsPortHopping(t *testing.T) {
-	for _, raw := range []string{
-		"hy2://token@example.test:443,5000-6000",
-		"hy2://token@example.test:443?mport=5000",
+func TestParseHy2PortHopping(t *testing.T) {
+	for _, test := range []struct {
+		raw  string
+		port uint16
+	}{
+		{"hy2://token@example.test:443?mport=20000-20100", 443},
+		{"hy2://token@example.test:20000-20100", 20000},
+		{"hy2://token@example.test:443,20000-20100", 443},
 	} {
-		if _, err := ParseHy2(raw); err == nil || !strings.Contains(err.Error(), "port hopping") {
-			t.Errorf("ParseHy2(%q) error = %v, want port hopping error", raw, err)
+		got, err := ParseHy2(test.raw)
+		if err != nil || got.Port != test.port || got.Ports != "20000-20100" {
+			t.Errorf("ParseHy2(%q) = %#v, %v", test.raw, got, err)
+		}
+	}
+	for _, raw := range []string{
+		"hy2://token@example.test:443?mport=0-10",
+		"hy2://token@example.test:443?mport=200-100",
+		"hy2://token@example.test:20000-70000",
+	} {
+		if _, err := ParseHy2(raw); err == nil {
+			t.Errorf("ParseHy2(%q) should reject an invalid port range", raw)
 		}
 	}
 }
