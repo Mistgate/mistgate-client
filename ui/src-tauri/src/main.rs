@@ -90,6 +90,39 @@ fn quit_now(app: AppHandle) {
     app.exit(0);
 }
 
+// The clipboard's text, read by the window itself when the user presses "use the link from the clipboard": the
+// webview's own clipboard call shows a browser permission prompt. Capped: a subscription is never this long.
+#[tauri::command]
+fn clipboard_text() -> String {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+        use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+        const CF_UNICODETEXT: u32 = 13;
+        const MAX_UNITS: usize = 1 << 20;
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return String::new();
+        }
+        let mut text = String::new();
+        let handle = GetClipboardData(CF_UNICODETEXT);
+        if !handle.is_null() {
+            let data = GlobalLock(handle) as *const u16;
+            if !data.is_null() {
+                let mut len = 0;
+                while len < MAX_UNITS && *data.add(len) != 0 {
+                    len += 1;
+                }
+                text = String::from_utf16_lossy(std::slice::from_raw_parts(data, len));
+                GlobalUnlock(handle);
+            }
+        }
+        CloseClipboard();
+        text
+    }
+    #[cfg(not(windows))]
+    String::new()
+}
+
 #[tauri::command]
 fn show_main(app: AppHandle, screen: Option<String>) {
     if let Some(tray) = app.get_webview_window("tray") {
@@ -222,7 +255,7 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now])
+        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text])
         .run(tauri::generate_context!())
         .expect("the window could not start");
 }

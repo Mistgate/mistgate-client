@@ -19,7 +19,7 @@ wintun.net once and checked against a pinned SHA-256), then builds the window an
 ## What the installer does
 
 - Installs for the machine (asks for elevation once) into `Program Files\Mistgate`: `mistgate.exe` (the window),
-  `mistgate-clientd.exe` (the service), `wintun.dll`, the uninstaller, a Start menu shortcut.
+  `mistgate-clientd.exe` (the service), `wintun.dll`, the uninstaller, Start menu and desktop shortcuts.
 - Registers and starts the service (`mistgate-clientd install`: LocalSystem, automatic start). Installing over an
   existing copy stops and removes the old service first, so a VPN connection drops during an update.
 - Uninstalling removes the service, the files and the "start with Windows" entry. Subscriptions and settings in

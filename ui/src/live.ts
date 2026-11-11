@@ -48,6 +48,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     onPaste = (e: ClipboardEvent) => {
       if ((e.target as Element | null)?.closest?.('.onb-in')) this.pasted = e.clipboardData?.getData('text') ?? '';
     };
+    onEnter = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && (e.target as Element | null)?.closest?.('.onb-in')) this.addFromField();
+    };
     rmId = '';
 
     componentDidMount() {
@@ -59,12 +62,14 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? this.sync() : this.setState({ cs: 'svc', wave: false }))),
       ];
       document.addEventListener('paste', this.onPaste, true);
+      document.addEventListener('keydown', this.onEnter, true);
       // the choice made before the window went to another screen, or was closed
       this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined }, () => this.sync());
     }
     componentWillUnmount() {
       super.componentWillUnmount();
       document.removeEventListener('paste', this.onPaste, true);
+      document.removeEventListener('keydown', this.onEnter, true);
       this.off.forEach((p) => void p.then((un) => un()));
     }
 
@@ -136,7 +141,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       );
     }
     fromClipboard() {
-      navigator.clipboard.readText().then((t) => (t.trim() ? this.startAdd(t) : this.setState({ add: 'badlink', subsPop: false })),
+      invoke<string>('clipboard_text').then((t) => (t.trim() ? this.startAdd(t) : this.setState({ add: 'badlink', subsPop: false })),
         () => this.setState({ add: 'badlink', subsPop: false }));
     }
     addFromField() {

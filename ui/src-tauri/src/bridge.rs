@@ -444,6 +444,12 @@ fn open_verified_pipe() -> Result<tokio::net::windows::named_pipe::NamedPipeClie
     if unsafe { GetNamedPipeServerProcessId(pipe_handle, &mut server_pid) } == 0 {
         return Err("could not read the pipe server process id".into());
     }
+    // The installed service runs as LocalSystem: Windows does not let an ordinary program open that process, so its
+    // path cannot be read. The pipe's owner says the same thing: only LocalSystem itself can be that owner.
+    if pipe_owner_is_system(pipe_handle) {
+        return Ok(pipe);
+    }
+    // a console service (development) runs as this user: its path can be read
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, server_pid) };
     if process.is_null() {
         return Err("could not open the pipe server process".into());
@@ -473,6 +479,37 @@ fn open_verified_pipe() -> Result<tokio::net::windows::named_pipe::NamedPipeClie
         return Err("pipe server image is outside the trusted service path".into());
     }
     Ok(pipe)
+}
+
+#[cfg(windows)]
+fn pipe_owner_is_system(pipe: windows_sys::Win32::Foundation::HANDLE) -> bool {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_KERNEL_OBJECT};
+    use windows_sys::Win32::Security::{
+        IsWellKnownSid, WinLocalSystemSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+    };
+
+    let mut owner: PSID = null_mut();
+    let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+    let status = unsafe {
+        GetSecurityInfo(
+            pipe,
+            SE_KERNEL_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return false;
+    }
+    let system = !owner.is_null() && unsafe { IsWellKnownSid(owner, WinLocalSystemSid) } != 0;
+    unsafe { LocalFree(descriptor) };
+    system
 }
 
 fn server_path_allowed(

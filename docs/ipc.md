@@ -29,6 +29,12 @@ process and reads its image path. The connection is **trusted** when:
 - the service binary is unsigned (a development build): the caller's image is `Mistgate.exe` or `mistgate.exe` in the
   service's own directory, or the path in `MISTGATE_DEV_CLIENT` (read only by an unsigned build).
 
+The window checks the other end too. The installed service runs as LocalSystem, and Windows does not let an ordinary
+program open such a process to read its path; so the service names LocalSystem the pipe's owner, and the window
+trusts a pipe with that owner (a program without those rights that takes the pipe name first cannot be that owner).
+A console service (development) runs as the user: there the window reads the server's path and wants
+`mistgate-clientd.exe` in its own directory, or the path in `MISTGATE_DEV_SERVICE` (debug builds only).
+
 An untrusted connection may call `status` and nothing else: every other method (`hello` too) answers `not_trusted`,
 and it gets no events. `subscribe` sends future events only: ask `status` once after it. The 1 MiB cap counts the line
 without its `\n`. Signatures are checked offline (no revocation lookups); a catalog-only signature does not count. The result of the check is logged once per connection (pid, image path, verdict), never a token or a key.

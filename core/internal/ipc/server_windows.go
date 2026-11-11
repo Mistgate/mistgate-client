@@ -29,7 +29,7 @@ func runPipeServer(ctx context.Context, server *Server) error {
 	serviceSignature := inspectSignature(servicePath)
 	// go-winio v0.6.2 creates server pipes with FILE_PIPE_REJECT_REMOTE_CLIENTS.
 	listener, err := winio.ListenPipe(PipeName, &winio.PipeConfig{
-		SecurityDescriptor: PipeSDDL,
+		SecurityDescriptor: pipeSDDL(),
 		MessageMode:        false,
 		InputBufferSize:    32 * 1024,
 		OutputBufferSize:   32 * 1024,
@@ -80,6 +80,17 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			server.ServeConn(ctx, conn, trusted)
 		}(conn, trusted)
 	}
+}
+
+// pipeSDDL names LocalSystem the pipe's owner when the service runs as LocalSystem (its default owner would be the
+// Administrators group). The window cannot open a LocalSystem process to read its path, so the owner is how it knows
+// the pipe belongs to the service: a program without those rights that takes the name first cannot be that owner.
+// A console run (development) keeps its own owner: the window checks that one by path.
+func pipeSDDL() string {
+	if user, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil && user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
+		return "O:SY" + PipeSDDL
+	}
+	return PipeSDDL
 }
 
 func inspectPipeCaller(conn net.Conn) (uint32, string, signatureFacts, error) {
