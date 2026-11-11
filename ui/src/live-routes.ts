@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
+import { flagOf, PROTO } from './live';
 import { words } from './live-i18n';
 import { liveChip } from './live-settings';
 
@@ -113,8 +114,22 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       this.sent = JSON.stringify(this.wanted(next));
       this.setState({ mode: MODE[r.mode] ?? 'all', reg: KNOWN.includes(r.effective) ? r.effective : KNOWN.includes(r.region) ? r.region : 'other', regOpen: false, ...next });
     }
+    // The server on the "everything" scheme is the design's sample (Germany, VLESS): show the one in use, or none.
+    paintServer() {
+      const label = [...document.querySelectorAll<HTMLElement>('.nl')].find((n) => n.previousElementSibling?.classList.contains('srv'));
+      if (!label) return;
+      const { flag, text } = flagOf(this.server);
+      const name = this.server ? text : 'VPN';
+      const proto = PROTO[this.proto]?.[2] ?? '';
+      const img = label.previousElementSibling!.querySelector('img');
+      if (img) { img.style.visibility = flag ? '' : 'hidden'; if (flag && img.getAttribute('src') !== flag) img.setAttribute('src', flag); }
+      const small = label.querySelector('small');
+      if (label.firstChild && label.firstChild.nodeValue !== name) label.firstChild.nodeValue = name;
+      if (small && small.textContent !== proto) small.textContent = proto;
+    }
     componentDidUpdate() {
       super.componentDidUpdate?.();
+      this.paintServer();
       const r = this.routes;
       if (!r || !this.state?.sel) return;
       const want = this.wanted(this.state);

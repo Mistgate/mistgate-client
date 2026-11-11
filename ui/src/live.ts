@@ -20,7 +20,7 @@ type Sub = {
 const rpc = <T = Status>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
 // The design words four steps; its second ("UDP looks blocked") is a detector's line, not a step of ours.
 const STEP: Record<string, number> = { resolve: 0, handshake: 2, tunnel: 3, verify: 3 };
-const PROTO: Record<string, [fam: string, label: string, full: string]> = {
+export const PROTO: Record<string, [fam: string, label: string, full: string]> = {
   hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'],
 };
 const mbps = (bps: number) => (bps / 1e6).toFixed(1);
@@ -28,7 +28,7 @@ const DAY = 86400;
 
 // "🇩🇪 Germany" -> the design's flag for "de" and the name without the emoji. A name is shown as the subscription
 // gives it; a flag appears only when the name carries one the design has.
-function flagOf(name: string) {
+export function flagOf(name: string) {
   const m = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
   if (!m) return { flag: '', text: name };
   const cc = [...m[0]].map((c) => String.fromCharCode(c.codePointAt(0)! - 0x1f1e6 + 97)).join('');
@@ -51,6 +51,14 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     onEnter = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.target as Element | null)?.closest?.('.onb-in')) this.addFromField();
     };
+    // Esc, or a click outside it, closes the subscription switcher
+    onKeyDown = (e: KeyboardEvent) => { this.onEnter(e); if (e.key === 'Escape') this.closeSubs(); };
+    onClickAway = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (!t.closest('.subsel') && !document.querySelector('.pop-h')?.parentElement?.contains(t)) this.closeSubs();
+    };
+    closeSubs() { if (this.st().subsPop) this.setState({ subsPop: false, mFor: undefined }); }
+    route: { mode: string; effective: string } | null = null; // the route mode, for the chip beside the state
     rmId = '';
 
     componentDidMount() {
@@ -60,21 +68,44 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         listen<Traffic>('mg://traffic', (e) => { this.traffic = e.payload; this.forceUpdate(); }),
         listen<{ subs: Sub[] }>('mg://subs', (e) => this.applySubs(e.payload.subs)),
         listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? this.sync() : this.setState({ cs: 'svc', wave: false }))),
+        listen<{ mode: string; effective: string }>('mg://routes', (e) => { this.route = e.payload; this.paint(); }),
       ];
       document.addEventListener('paste', this.onPaste, true);
-      document.addEventListener('keydown', this.onEnter, true);
+      document.addEventListener('keydown', this.onKeyDown, true);
+      document.addEventListener('click', this.onClickAway);
       // the choice made before the window went to another screen, or was closed
       this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined }, () => this.sync());
     }
     componentWillUnmount() {
       super.componentWillUnmount();
       document.removeEventListener('paste', this.onPaste, true);
-      document.removeEventListener('keydown', this.onEnter, true);
+      document.removeEventListener('keydown', this.onKeyDown, true);
+      document.removeEventListener('click', this.onClickAway);
       this.off.forEach((p) => void p.then((un) => un()));
+    }
+
+    componentDidUpdate() {
+      super.componentDidUpdate?.();
+      this.paint();
+    }
+    // Words the design has as plain markup: the route chip (always "all except RU sites" there) and the link field's hint.
+    paint() {
+      const r = this.route;
+      document.querySelectorAll<HTMLElement>('.rchip').forEach((a) => {
+        const t = [...a.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
+        if (!t || !r) return;
+        a.dataset.smart ??= t.nodeValue ?? '';
+        const [only, all] = words().modes;
+        const text = r.mode === 'smart' ? a.dataset.smart.replace('RU', (r.effective || 'ru').toUpperCase()) : r.mode === 'selected' ? only : all;
+        if (t.nodeValue !== text) t.nodeValue = text;
+      });
+      const field = document.querySelector<HTMLInputElement>('.onb-in input');
+      if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
 
     sync() {
       this.ask('status');
+      rpc<{ mode: string; effective: string }>('routes.get').then((r) => { this.route = r; this.paint(); }, () => {});
       rpc<{ subs: Sub[] }>('subs.list').then((r) => this.applySubs(r.subs), () => {});
     }
     ask(method: string, params?: object) {
@@ -202,7 +233,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const tone = ended ? 'bad' : !forever && daysLeft <= 3 ? 'warn' : '';
         const capped = u.total_bytes > 0;
         const left = Math.max(0, u.total_bytes - u.used_bytes);
-        const file = u.kind !== 'url';
+        const file = u.kind === 'awg'; // pasted links are links; an AmneziaWG config is a file
         return {
           name: u.name, ini: (u.name.trim()[0] ?? '?').toUpperCase(), tone: 'lav', host: u.host, st, stCls: tone,
           // a stopped subscription says why (a panel that is inactive puts its status, or its own text, in the notice)
@@ -285,16 +316,20 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const p = this.pending;
       if (v.ad.isCheck) v.ad.host = /^https:\/\/[^\s]+$/.test(this.lastText) ? this.lastText.split('/')[2] : '';
       if (v.ad.isConfirm && p) {
-        const url = p.sub.kind === 'url';
+        const link = p.sub.kind !== 'awg'; // the design's "file on this PC" wording is for a config file only
         Object.assign(v.ad, {
-          name: p.sub.name, host: url ? p.sub.host : v.ad.host, srcT: url ? w.link : v.ad.srcT, srcI: url ? 'link' : v.ad.srcI,
+          name: p.sub.name, host: link ? p.sub.host : v.ad.host, srcT: link ? w.link : v.ad.srcT, srcI: link ? 'link' : v.ad.srcI,
           f1: String(p.sub.servers.length), f2: String(new Set(p.sub.servers.map((n) => n.protocol)).size),
           goT: w.add(w.servers(p.sub.servers.length)),
           go: () => {
             this.setState({ add: 'check' });
             rpc<Sub>('subs.add', { text: p.text }).then(
               // the list may have arrived before this answer: re-derive the screen for the new choice
-              (added) => { this.pending = null; this.setState({ add: 'none', liveSub: added.id, sel: 'auto' }, () => this.subsList && this.applySubs(this.subsList)); },
+              (added) => {
+                this.pending = null;
+                // with the list asked again: this answer can come before the list that has the new subscription
+                this.setState({ add: 'none', liveSub: added.id, sel: 'auto' }, () => rpc<{ subs: Sub[] }>('subs.list').then((r) => this.applySubs(r.subs), () => {}));
+              },
               () => this.setState({ add: 'badlink' }),
             );
           },

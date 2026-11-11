@@ -30,6 +30,7 @@ type Words = {
   // other VPNs and DPI-bypass tools running on this machine (the design has no row for them yet)
   neighbours: [name: string, verdict: string, meta: string];
   throttled: string; // the speed through the VPN falls after the first seconds
+  modes: [only: string, all: string]; // the route modes on Home's chip, worded as on the Routes screen
 };
 
 const ruForm = (n: number, one: string, few: string, many: string) =>
@@ -47,6 +48,7 @@ const WORDS: Record<string, Words> = {
     subErr: {"device_removed":"This device was removed from the subscription · add the link again","device_blocked":"This device is blocked by the provider","link_changed":"The link was replaced · paste the new one","device_limit":"Device limit reached · remove a device on the subscription page","device_exists":"This device is already registered · remove it on the subscription page","disabled":"The subscription is turned off by the provider","expired":"The subscription has expired","limited":"The traffic is used up"},
     neighbours: ["Other VPN programs","Found","They can break the connection: close them while Mistgate is on"],
     throttled: "Speed through the VPN falls after the first seconds",
+    modes: ['Only selected', 'Everything'],
   },
   ru: {
     locale: 'ru-RU', days: (n) => `${n} ${ruForm(n, 'день', 'дня', 'дней')}`, left: (d) => `осталось ${d}`, until: (d) => `до ${d}`,
@@ -58,6 +60,7 @@ const WORDS: Record<string, Words> = {
     subErr: {"device_removed":"Это устройство удалено из подписки · добавьте ссылку заново","device_blocked":"Это устройство заблокировано провайдером","link_changed":"Ссылку заменили · вставьте новую","device_limit":"Достигнут лимит устройств · удалите одно на странице подписки","device_exists":"Это устройство уже зарегистрировано · удалите его на странице подписки","disabled":"Подписка отключена провайдером","expired":"Срок подписки истёк","limited":"Трафик израсходован"},
     neighbours: ["Другие VPN-программы","Найдены","Они могут мешать соединению: закройте их, пока включён Mistgate"],
     throttled: "Скорость через VPN падает после первых секунд",
+    modes: ['Только выбранное', 'Всё'],
   },
   tr: {
     locale: 'tr-TR', days: (n) => `${n} gün`, left: (d) => `${d} kaldı`, until: (d) => `bitiş: ${d}`,
@@ -69,6 +72,7 @@ const WORDS: Record<string, Words> = {
     subErr: {"device_removed":"Bu cihaz abonelikten kaldırıldı · bağlantıyı yeniden ekleyin","device_blocked":"Bu cihaz sağlayıcı tarafından engellendi","link_changed":"Bağlantı değiştirildi · yenisini yapıştırın","device_limit":"Cihaz sınırına ulaşıldı · abonelik sayfasında bir cihazı kaldırın","device_exists":"Bu cihaz zaten kayıtlı · abonelik sayfasında kaldırın","disabled":"Abonelik sağlayıcı tarafından kapatıldı","expired":"Aboneliğin süresi doldu","limited":"Trafik tükendi"},
     neighbours: ["Diğer VPN programları","Bulundu","Bağlantıyı bozabilirler: Mistgate açıkken onları kapatın"],
     throttled: "VPN üzerinden hız ilk saniyelerden sonra düşüyor",
+    modes: ['Yalnızca seçilenler', 'Her şey'],
   },
   zh: {
     locale: 'zh-CN', days: (n) => `${n} 天`, left: (d) => `剩余 ${d}`, until: (d) => `至 ${d}`,
@@ -80,6 +84,7 @@ const WORDS: Record<string, Words> = {
     subErr: {"device_removed":"此设备已从订阅中移除 · 请重新添加链接","device_blocked":"此设备已被服务商封禁","link_changed":"链接已更换 · 请粘贴新链接","device_limit":"设备数已达上限 · 请在订阅页面移除一台设备","device_exists":"此设备已注册 · 请在订阅页面将其移除","disabled":"订阅已被服务商停用","expired":"订阅已到期","limited":"流量已用完"},
     neighbours: ["其他 VPN 程序","已发现","它们可能干扰连接：使用 Mistgate 时请关闭它们"],
     throttled: "通过 VPN 的速度在最初几秒后下降",
+    modes: ['仅所选', '全部'],
   },
   fa: {
     locale: 'fa-IR-u-ca-gregory-nu-latn', days: (n) => `${n} روز`, left: (d) => `${d} مانده`, until: (d) => `تا ${d}`,
@@ -91,6 +96,7 @@ const WORDS: Record<string, Words> = {
     subErr: {"device_removed":"این دستگاه از اشتراک حذف شده است · لینک را دوباره اضافه کنید","device_blocked":"این دستگاه توسط ارائه‌دهنده مسدود شده است","link_changed":"لینک عوض شده است · لینک جدید را وارد کنید","device_limit":"به سقف دستگاه‌ها رسیده‌اید · یک دستگاه را در صفحهٔ اشتراک حذف کنید","device_exists":"این دستگاه قبلاً ثبت شده است · آن را در صفحهٔ اشتراک حذف کنید","disabled":"اشتراک توسط ارائه‌دهنده غیرفعال شده است","expired":"مهلت اشتراک تمام شده است","limited":"ترافیک تمام شده است"},
     neighbours: ["برنامه‌های VPN دیگر","پیدا شد","ممکن است اتصال را مختل کنند: هنگام روشن بودن Mistgate آن‌ها را ببندید"],
     throttled: "سرعت از طریق VPN پس از چند ثانیهٔ اول افت می‌کند",
+    modes: ['فقط انتخابی‌ها', 'همه‌چیز'],
   },
 };
 
