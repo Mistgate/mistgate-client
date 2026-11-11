@@ -64,13 +64,32 @@ func dnsQuestion(msg []byte) (name string, end int, ok bool) {
 	return string(buf[:n]), i + 4, true
 }
 
-// nxdomain turns a query into its answer in place and returns it: the id, the question and RD stay, QR and RA are
-// set, RCODE is 3 and there are no records.
-func nxdomain(msg []byte, end int) []byte {
+// noData turns a query into "the name exists, there is nothing of this type", in place: the id, the question and RD
+// stay, QR and RA are set, there are no records.
+func noData(msg []byte, end int) []byte {
 	msg[2] = 0x80 | msg[2]&0x01
-	msg[3] = 0x83
+	msg[3] = 0x80
 	clear(msg[6:12])
 	return msg[:end]
+}
+
+// blockedAnswer answers a blocked name with the unspecified address (0.0.0.0 or ::) and other types with no data.
+// Not NXDOMAIN: Windows then walks its suffix search list on every adapter and the app waits for seconds.
+func blockedAnswer(msg []byte, end int) []byte {
+	size := 0
+	switch int(msg[end-4])<<8 | int(msg[end-3]) {
+	case dnsTypeA:
+		size = 4
+	case dnsTypeAAAA:
+		size = 16
+	}
+	answer := noData(msg, end)
+	if size == 0 {
+		return answer
+	}
+	answer[7] = 1 // one answer: a pointer to the question's name, its type and class, TTL 60 s, the zero address
+	answer = append(answer, 0xC0, 12, msg[end-4], msg[end-3], 0, 1, 0, 0, 0, 60, 0, byte(size))
+	return append(answer, make([]byte, size)...)
 }
 
 // regionResolver is where a question of the region goes directly: the panel's split entry for the region, else the

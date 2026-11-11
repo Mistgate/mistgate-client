@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -550,7 +551,17 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			}
 		}
 	}
-	shouldDirect := func(address netip.Addr, name string) bool { return r.routeDirect(address, name) }
+	// The tunnel check must go through the tunnel whatever the rules say: in "selected" its address is not selected,
+	// would go direct, and the check would say nothing about the tunnel (or fail where that address is blocked).
+	var probeAddrs []netip.Addr
+	for _, target := range probeTargets(selected.Verify) {
+		if parsed, err := netip.ParseAddrPort(target); err == nil {
+			probeAddrs = append(probeAddrs, parsed.Addr())
+		}
+	}
+	shouldDirect := func(address netip.Addr, name string) bool {
+		return !slices.Contains(probeAddrs, address) && r.routeDirect(address, name)
+	}
 	hasSiteRules := func() bool {
 		if r.geo == nil {
 			return false
@@ -986,6 +997,9 @@ func (r *Real) Received() uint64 {
 	if r.current == nil || r.current.tunnel == nil {
 		return 0
 	}
+	if rx, forwarded := r.current.tunnel.forwardedRx(); forwarded {
+		return rx
+	}
 	adapter := r.current.tunnel.adapterSnapshot()
 	if adapter == nil {
 		return 0
@@ -1043,13 +1057,16 @@ func (r *Real) resolveServer(ctx context.Context, run *realRun, host string, hol
 	return address, nil
 }
 
-func probeTunnel(ctx context.Context, localIP netip.Addr, verify string, timeout time.Duration) (time.Duration, error) {
-	targets := []string{verify}
+func probeTargets(verify string) []string {
 	if verify == "" {
-		targets = []string{"1.1.1.1:443", "8.8.8.8:443"}
+		return []string{"1.1.1.1:443", "8.8.8.8:443"}
 	}
+	return []string{verify}
+}
+
+func probeTunnel(ctx context.Context, localIP netip.Addr, verify string, timeout time.Duration) (time.Duration, error) {
 	var lastErr error
-	for _, target := range targets {
+	for _, target := range probeTargets(verify) {
 		dialCtx, cancel := context.WithTimeout(ctx, timeout)
 		started := time.Now()
 		conn, err := (&net.Dialer{LocalAddr: &net.TCPAddr{IP: net.IP(localIP.AsSlice())}}).DialContext(dialCtx, "tcp", target)
@@ -1118,6 +1135,16 @@ func (t *realTunnel) setAWG(awg *device.Device) bool {
 	t.mu.Unlock()
 	awg.Close()
 	return false
+}
+
+// forwardedRx: with the forwarder, the bytes that came from the VPN side (the adapter also carries direct answers).
+func (t *realTunnel) forwardedRx() (uint64, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.bridge == nil {
+		return 0, false
+	}
+	return t.bridge.vpnRx.Load(), true
 }
 
 func (t *realTunnel) adapterSnapshot() *netcfg.Adapter {

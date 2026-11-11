@@ -226,8 +226,11 @@ Privacy: questions and names are not logged, not stored and not put into errors.
 
 `rules.block` (a selection like the other two, saved in `routes.json`; an older file without it loads as empty)
 lists names to block, ads for instance. In `smart` and `selected` a DNS question handled as above whose name
-matches (the name or a subdomain, as for the other lists) is answered by the service itself with `NXDOMAIN` (the id and
-the question are copied; QR and RA are set; no records) and goes nowhere, whether or not the name would go direct.
+matches (the name or a subdomain, as for the other lists) is answered by the service itself with the unspecified address (`0.0.0.0` for A, `::` for AAAA, TTL 60 s; no data for
+HTTPS) and goes nowhere, whether or not the name would go direct. It is not `NXDOMAIN`: Windows then walks its suffix
+search list over every adapter and the app waits for seconds. A name that goes direct gets no AAAA answer (no data)
+when the machine has no IPv6 route beside the tunnel, and a direct decision for an IPv6 address then falls to the VPN:
+the app would otherwise connect to an address the flow cannot reach, and would not fall back to IPv4.
 A TCP flow to port 80 or 443 whose sniffed name matches is closed without a dial. Block wins over `direct` and `vpn`.
 Flows that never show a name (other ports, QUIC) are not blocked by name. In `all` there is no forwarder:
 block does nothing (`block_active` is `false`).
@@ -349,7 +352,12 @@ While connected, the service probes the tunnel every 15 seconds. After a failed 
 that probe ends, continuing at that interval until a probe succeeds or the link is declared dead. A failed streak
 starts with its first failed probe; the service reconnects after 20 seconds only if fewer than 1 KiB arrived through
 the tunnel since that failure. Receiving at least 1 KiB means the server is alive and restarts the failure streak.
-A successful probe also ends the streak.
+A successful probe also ends the streak. "Arrived through the tunnel" is the adapter's receive counter with AmneziaWG
+in `all`, and the bytes read from the VPN side of the forwarder otherwise (the adapter there also carries the answers
+of direct flows). The probe's own address always goes through the VPN, whatever the routes say.
+
+When the service process dies, the runtime's last output (the panic and the goroutine stacks) is kept in `crash.log`
+in the data directory; the file is started again once it is over 256 KiB.
 
 A default-route or IPv4-gateway interface change triggers a probe immediately. Interface notifications are collapsed
 into one change after 1 second without another notification. For 30 seconds after a network change or wake-up, two

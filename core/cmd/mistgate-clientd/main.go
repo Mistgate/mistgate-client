@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -75,6 +76,22 @@ func shouldConnectAtStart(configured settings.Settings) bool {
 	return configured.LastServer != "" && (configured.Autoconnect || configured.Restore && configured.LastOn)
 }
 
+// keepCrashOutput: a service has no console, so what the runtime says when it dies (the panic and the goroutines'
+// stacks) goes to crash.log in the data directory. The file is started again once it is over 256 KiB.
+func keepCrashOutput(dataDir string) {
+	if os.MkdirAll(dataDir, 0700) != nil {
+		return
+	}
+	path := filepath.Join(dataDir, "crash.log")
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if info, err := os.Stat(path); err == nil && info.Size() > 256<<10 {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	}
+	if file, err := os.OpenFile(path, flags, 0600); err == nil {
+		_ = debug.SetCrashOutput(file, debug.CrashOptions{})
+	}
+}
+
 func defaultDataDir() string {
 	base := os.Getenv("ProgramData")
 	if base == "" {
@@ -88,6 +105,7 @@ func defaultDataDir() string {
 
 // run owns the lifecycle; the context ends it (Ctrl+C in a console, a stop request as a Windows service).
 func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents <-chan time.Duration) error {
+	keepCrashOutput(dataDir)
 	var eventMu sync.RWMutex
 	var eventHub *session.Hub
 	logs := ipc.NewLogStore()

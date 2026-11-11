@@ -86,6 +86,16 @@ func TestPrivateAndDNSDestinationsNeverUseDirectExit(t *testing.T) {
 }
 
 func TestPublicIPv6CanUseDirectExit(t *testing.T) {
+	// with IPv6 beside the tunnel; without it the same flows take the VPN
+	real := directIPv6
+	defer func() { directIPv6 = real }()
+	for _, has := range []bool{false, true} {
+		directIPv6 = func() bool { return has }
+		out, _ := selectOutbound(netip.MustParseAddrPort("[2001:4860:4860::8888]:443"), "", func(netip.Addr, string) bool { return true }, hy2Outbound{}, directOutbound{})
+		if _, direct := out.(directOutbound); direct != has {
+			t.Fatalf("direct IPv6 available = %v, flow direct = %v", has, direct)
+		}
+	}
 	vpn := &countOutbound{}
 	direct := &countOutbound{}
 	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string) bool { return true }}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
+	"github.com/mistgate/mistgate-client/core/internal/netcfg"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -33,6 +34,7 @@ const hy2UDPIdleTimeout = 60 * time.Second
 type gvisorBridge struct {
 	tun          tun.Device
 	vpn          outbound
+	vpnRx        atomic.Uint64 // bytes that arrived from the VPN side: the link guard's sign of a live server
 	direct       outbound
 	shouldDirect func(netip.Addr, string) bool
 	hasSiteRules func() bool
@@ -109,6 +111,7 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 	bridge.wg.Add(2)
 	go bridge.readTun()
 	go bridge.writeTun()
+	bridge.vpn = countedOutbound{vpn, &bridge.vpnRx}
 	return bridge, nil
 }
 
@@ -435,11 +438,17 @@ func (f *udpFlow) dnsPacket(payload []byte) bool {
 	}
 	block, resolver := f.names(name)
 	if block {
-		_, _ = f.local.Write(nxdomain(payload, end))
+		_, _ = f.local.Write(blockedAnswer(payload, end))
 		return true
 	}
 	if !resolver.IsValid() || f.direct == nil || time.Now().UnixNano() < f.down.Load() {
 		return false
+	}
+	// A name that goes direct on a machine without IPv6 beside the tunnel must not get IPv6 addresses: the app would
+	// connect to one, the flow could not leave, and the app would not fall back to IPv4.
+	if payload[end-4] == 0 && payload[end-3] == dnsTypeAAAA && !directIPv6() {
+		_, _ = f.local.Write(noData(payload, end))
+		return true
 	}
 	return f.askDirect(payload, end, resolver)
 }
@@ -699,10 +708,72 @@ func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort) (pa
 func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, vpn, direct outbound) (outbound, geo.Route) {
 	address := target.Addr()
 	// Keep the adapter's configured DNS resolver on the VPN.
-	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && shouldDirect != nil && shouldDirect(address, name) {
+	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && shouldDirect != nil && shouldDirect(address, name) && (address.Is4() || directIPv6()) {
 		return direct, geo.ViaDirect
 	}
 	return vpn, geo.ViaVPN
+}
+
+// countedOutbound counts what arrives through the VPN. The adapter's own counter will not do here: in the forwarder
+// modes it also counts the answers of direct flows, and a busy machine would hide a dead server for ever.
+type countedOutbound struct {
+	outbound
+	rx *atomic.Uint64
+}
+
+func (o countedOutbound) DialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
+	conn, err := o.outbound.DialTCP(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	return countedConn{conn, o.rx}, nil
+}
+
+func (o countedOutbound) ListenUDP(ctx context.Context) (packetFlow, error) {
+	flow, err := o.outbound.ListenUDP(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return countedFlow{flow, o.rx}, nil
+}
+
+type countedConn struct {
+	net.Conn
+	rx *atomic.Uint64
+}
+
+func (c countedConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.rx.Add(uint64(n))
+	return n, err
+}
+
+type countedFlow struct {
+	packetFlow
+	rx *atomic.Uint64
+}
+
+func (f countedFlow) ReadFrom() ([]byte, netip.AddrPort, error) {
+	payload, source, err := f.packetFlow.ReadFrom()
+	f.rx.Add(uint64(len(payload)))
+	return payload, source, err
+}
+
+var direct6 struct{ at, ok atomic.Int64 }
+
+// directIPv6 says whether this machine reaches IPv6 beside the tunnel; the routing table is asked at most once in 30 s.
+var directIPv6 = func() bool { // a variable for the tests
+	now := time.Now().Unix()
+	if now-direct6.at.Load() < 30 {
+		return direct6.ok.Load() == 1
+	}
+	var ok int64
+	if _, err := netcfg.PhysicalInterfaceIndexFor(netip.MustParseAddr("2001:4860:4860::8888")); err == nil {
+		ok = 1
+	}
+	direct6.ok.Store(ok)
+	direct6.at.Store(now)
+	return ok == 1
 }
 
 func directAddressAllowed(address netip.Addr) bool {

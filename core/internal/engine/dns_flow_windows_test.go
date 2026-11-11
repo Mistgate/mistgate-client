@@ -177,7 +177,7 @@ func TestUDPFlowAnswersBlockedNamesItself(t *testing.T) {
 	rig.ask(t, query)
 	var parser dnsmessage.Parser
 	header, err := parser.Start(rig.heard(t))
-	if err != nil || header.ID != 0x0102 || !header.Response || header.RCode != dnsmessage.RCodeNameError {
+	if err != nil || header.ID != 0x0102 || !header.Response || header.RCode != dnsmessage.RCodeSuccess {
 		t.Fatalf("answer header = %+v, %v", header, err)
 	}
 	nothingSent(t, rig.vpn)

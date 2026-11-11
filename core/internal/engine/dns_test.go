@@ -127,46 +127,56 @@ func repeat(c byte, n int) []byte {
 	return out
 }
 
-func TestNXDOMAINAnswer(t *testing.T) {
-	query := dnsQuery(t, 0xBEEF, "ads.example.com", dnsmessage.TypeA, dnsmessage.ClassINET)
-	// an EDNS record after the question must not survive into the answer
-	query[11] = 1
-	query = append(query, 0, 0, 41, 16, 0, 0, 0, 0, 0, 0, 0)
-	_, end, ok := dnsQuestion(query)
-	if !ok {
-		t.Fatal("query not read")
-	}
-	question := append([]byte(nil), query[12:end]...)
-	answer := nxdomain(query, end)
-	if len(answer) != end {
-		t.Fatalf("answer is %d bytes; want the header and the question (%d)", len(answer), end)
-	}
-
-	var parser dnsmessage.Parser
-	header, err := parser.Start(answer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if header.ID != 0xBEEF || !header.Response || header.RCode != dnsmessage.RCodeNameError || !header.RecursionAvailable ||
-		!header.RecursionDesired || header.Authoritative || header.Truncated || header.OpCode != 0 {
-		t.Fatalf("header = %+v", header)
-	}
-	q, err := parser.Question()
-	if err != nil || q.Name.String() != "ads.example.com." || q.Type != dnsmessage.TypeA || q.Class != dnsmessage.ClassINET {
-		t.Fatalf("question = %+v, %v", q, err)
-	}
-	if _, err := parser.Question(); err != dnsmessage.ErrSectionDone {
-		t.Fatalf("second question: %v", err)
-	}
-	if answers, err := parser.AllAnswers(); err != nil || len(answers) != 0 {
-		t.Fatalf("answers = %v, %v", answers, err)
-	}
-	if string(answer[12:]) != string(question) {
-		t.Fatal("question section changed")
-	}
-	// and it is not mistaken for a query again
-	if _, _, ok := dnsQuestion(answer); ok {
-		t.Fatal("an answer was read as a question")
+func TestBlockedAnswer(t *testing.T) {
+	for _, c := range []struct {
+		qtype dnsmessage.Type
+		size  int
+	}{{dnsmessage.TypeA, 4}, {dnsmessage.TypeAAAA, 16}, {dnsmessage.TypeHTTPS, 0}} {
+		query := dnsQuery(t, 0xBEEF, "ads.example.com", c.qtype, dnsmessage.ClassINET)
+		// an EDNS record after the question must not survive into the answer
+		query[11] = 1
+		query = append(query, 0, 0, 41, 16, 0, 0, 0, 0, 0, 0, 0)
+		_, end, ok := dnsQuestion(query)
+		if !ok {
+			t.Fatal("query not read")
+		}
+		answer := blockedAnswer(query, end)
+		if want := end + min(c.size, 1)*12 + c.size; len(answer) != want || answer[10]|answer[11] != 0 {
+			t.Fatalf("%v: answer is %d bytes, want %d, and no additional records", c.qtype, len(answer), want)
+		}
+		var parser dnsmessage.Parser
+		header, err := parser.Start(answer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if header.ID != 0xBEEF || !header.Response || header.RCode != dnsmessage.RCodeSuccess || !header.RecursionAvailable || !header.RecursionDesired {
+			t.Fatalf("header = %+v", header)
+		}
+		q, err := parser.Question()
+		if err != nil || q.Name.String() != "ads.example.com." || q.Type != c.qtype {
+			t.Fatalf("question = %+v, %v", q, err)
+		}
+		if err := parser.SkipAllQuestions(); err != nil {
+			t.Fatal(err)
+		}
+		answers, err := parser.AllAnswers()
+		if err != nil || len(answers) != min(c.size, 1) {
+			t.Fatalf("%v: answers = %+v, %v", c.qtype, answers, err)
+		}
+		for _, answer := range answers {
+			switch body := answer.Body.(type) {
+			case *dnsmessage.AResource:
+				if body.A != [4]byte{} {
+					t.Fatalf("A = %v", body.A)
+				}
+			case *dnsmessage.AAAAResource:
+				if body.AAAA != [16]byte{} {
+					t.Fatalf("AAAA = %v", body.AAAA)
+				}
+			default:
+				t.Fatalf("answer = %+v", answer)
+			}
+		}
 	}
 }
 
