@@ -95,7 +95,13 @@ func normalizeSiteDomain(value string) (string, bool) {
 	if value == "" || len(value) > 253 || strings.ContainsAny(value, " /:\\?#@") {
 		return "", false
 	}
-	for _, label := range strings.Split(value, ".") {
+	// Labels are walked in place: this runs for every DNS question, and strings.Split allocates.
+	for start, i := 0, 0; i <= len(value); i++ {
+		if i < len(value) && value[i] != '.' {
+			continue
+		}
+		label := value[start:i]
+		start = i + 1
 		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
 			return "", false
 		}
@@ -108,6 +114,9 @@ func normalizeSiteDomain(value string) (string, bool) {
 	}
 	return value, true
 }
+
+// NormalizeSite is the check every site entry passes: a host name, or an https URL of one.
+func NormalizeSite(value string) (string, bool) { return normalizeUserSite(value) }
 
 func (s *Store) Sites(collection string) (*SiteSet, bool) {
 	if s == nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ type Selection struct {
 type Rules struct {
 	Direct Selection `json:"direct"`
 	VPN    Selection `json:"vpn"`
+	Block  Selection `json:"block"`
 }
 
 type SiteCollection struct {
@@ -28,8 +30,10 @@ type SiteCollection struct {
 type SiteRules struct {
 	Direct    *SiteSet
 	VPN       *SiteSet
+	Block     *SiteSet
 	HasDirect bool
 	HasVPN    bool
+	HasBlock  bool
 }
 
 var ErrBadRules = errors.New("bad route rules")
@@ -38,8 +42,12 @@ func emptySelection() Selection {
 	return Selection{Collections: []string{}, Sites: []string{}}
 }
 
+func emptyRules() Rules {
+	return Rules{Direct: emptySelection(), VPN: emptySelection(), Block: emptySelection()}
+}
+
 func (s *Store) loadRules() {
-	s.rules = Rules{Direct: emptySelection(), VPN: emptySelection()}
+	s.rules = emptyRules()
 	data, err := os.ReadFile(s.routesPath)
 	if err != nil {
 		return
@@ -55,7 +63,7 @@ func (s *Store) loadRules() {
 
 func (s *Store) GetRules() Rules {
 	if s == nil {
-		return Rules{Direct: emptySelection(), VPN: emptySelection()}
+		return emptyRules()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -105,6 +113,7 @@ func (s *Store) rebuildSiteRules() {
 	rules := s.GetRules()
 	direct := &SiteSet{domains: make(map[string]struct{})}
 	vpn := &SiteSet{domains: make(map[string]struct{})}
+	block := &SiteSet{domains: make(map[string]struct{})}
 	add := func(target *SiteSet, selection Selection) {
 		for _, domain := range selection.Sites {
 			target.add(domain)
@@ -119,11 +128,14 @@ func (s *Store) rebuildSiteRules() {
 	}
 	add(direct, rules.Direct)
 	add(vpn, rules.VPN)
+	add(block, rules.Block)
 	s.siteRules.Store(&SiteRules{
 		Direct:    direct,
 		VPN:       vpn,
+		Block:     block,
 		HasDirect: len(rules.Direct.Collections)+len(rules.Direct.Sites) != 0,
 		HasVPN:    len(rules.VPN.Collections)+len(rules.VPN.Sites) != 0,
+		HasBlock:  len(rules.Block.Collections)+len(rules.Block.Sites) != 0,
 	})
 }
 
@@ -143,7 +155,11 @@ func normalizeRules(rules Rules) (Rules, error) {
 	if err != nil {
 		return Rules{}, err
 	}
-	return Rules{Direct: direct, VPN: vpn}, nil
+	block, err := normalizeSelection(rules.Block)
+	if err != nil {
+		return Rules{}, err
+	}
+	return Rules{Direct: direct, VPN: vpn, Block: block}, nil
 }
 
 func normalizeSelection(selection Selection) (Selection, error) {
@@ -194,12 +210,14 @@ func cloneRules(rules Rules) Rules {
 	return Rules{
 		Direct: Selection{Collections: append([]string{}, rules.Direct.Collections...), Sites: append([]string{}, rules.Direct.Sites...)},
 		VPN:    Selection{Collections: append([]string{}, rules.VPN.Collections...), Sites: append([]string{}, rules.VPN.Sites...)},
+		Block:  Selection{Collections: append([]string{}, rules.Block.Collections...), Sites: append([]string{}, rules.Block.Sites...)},
 	}
 }
 
 func sameRules(a, b Rules) bool {
 	return sameStrings(a.Direct.Collections, b.Direct.Collections) && sameStrings(a.Direct.Sites, b.Direct.Sites) &&
-		sameStrings(a.VPN.Collections, b.VPN.Collections) && sameStrings(a.VPN.Sites, b.VPN.Sites)
+		sameStrings(a.VPN.Collections, b.VPN.Collections) && sameStrings(a.VPN.Sites, b.VPN.Sites) &&
+		sameStrings(a.Block.Collections, b.Block.Collections) && sameStrings(a.Block.Sites, b.Block.Sites)
 }
 
 func sameStrings(a, b []string) bool {
@@ -215,9 +233,9 @@ func sameStrings(a, b []string) bool {
 }
 
 func ruleCollections(rules Rules) []string {
-	seen := make(map[string]struct{}, len(rules.Direct.Collections)+len(rules.VPN.Collections))
+	seen := make(map[string]struct{}, len(rules.Direct.Collections)+len(rules.VPN.Collections)+len(rules.Block.Collections))
 	collections := make([]string, 0, len(seen))
-	for _, collection := range append(append([]string(nil), rules.Direct.Collections...), rules.VPN.Collections...) {
+	for _, collection := range slices.Concat(rules.Direct.Collections, rules.VPN.Collections, rules.Block.Collections) {
 		if _, ok := seen[collection]; !ok {
 			seen[collection] = struct{}{}
 			collections = append(collections, collection)

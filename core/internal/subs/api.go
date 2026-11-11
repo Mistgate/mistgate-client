@@ -11,8 +11,11 @@ import (
 	"errors"
 	"io"
 	mrand "math/rand/v2"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +45,9 @@ type apiState struct {
 	SyncEvery int64  `json:"sync_every_s,omitempty"`
 	NextUnix  int64  `json:"next_unix,omitempty"` // no automatic sync before this
 	Halt      bool   `json:"halt,omitempty"`      // no automatic refresh at all
+	// The panel's plain resolvers: the tunnel's DNS, and per region the ones its own people use. Not secret.
+	DNS      []netip.Addr       `json:"dns,omitempty"`
+	DNSSplit []profile.DNSSplit `json:"dns_split,omitempty"`
 }
 
 type syncBody struct {
@@ -59,11 +65,88 @@ type syncBody struct {
 		QuotaBytes  int64 `json:"quota_bytes"`
 		UsedBytes   int64 `json:"used_bytes"`
 	} `json:"plan"`
+	DNS     *syncDNS `json:"dns"`
 	Servers []struct {
 		Country string     `json:"country"`
 		City    string     `json:"city"`
 		Paths   []syncPath `json:"paths"`
 	} `json:"servers"`
+}
+
+type syncDNS struct {
+	Servers []syncResolver `json:"servers"`
+	Split   []struct {
+		Geo     []string       `json:"geo"`
+		Servers []syncResolver `json:"servers"`
+	} `json:"split"`
+	SplitDirect bool `json:"split_direct"`
+}
+
+type syncResolver struct {
+	Transport string   `json:"transport"`
+	Address   string   `json:"address"`
+	IPs       []string `json:"ips"`
+}
+
+// plainResolvers are the addresses of the plain entries (at most two): the address when it is an IP, or an IP with
+// port 53, else the entry's ips. ponytail: plain only; DoT and DoH need a resolver client, and a port other than 53
+// cannot be given to the direct path.
+func plainResolvers(entries []syncResolver) []netip.Addr {
+	var out []netip.Addr
+	add := func(text string) {
+		if address, err := netip.ParseAddr(text); err == nil && !address.IsUnspecified() && !address.IsLoopback() && !address.IsMulticast() && len(out) < 2 && !slices.Contains(out, address) {
+			out = append(out, address)
+		}
+	}
+	for _, entry := range entries {
+		if entry.Transport == "plain" {
+			for _, text := range entry.addresses() {
+				add(text)
+			}
+		}
+	}
+	return out
+}
+
+// addresses are the IPs a plain entry names: its address when that is an IP (or an IP with port 53), else its ips.
+func (r syncResolver) addresses() []string {
+	if _, err := netip.ParseAddr(r.Address); err == nil {
+		return []string{r.Address}
+	}
+	host, port, err := net.SplitHostPort(r.Address)
+	if err != nil {
+		return r.IPs // a host name
+	}
+	if port != "53" {
+		return nil
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return []string{host}
+	}
+	return r.IPs
+}
+
+// panelDNS keeps what the engine can use: the resolvers for the tunnel and, when the panel splits direct, those of
+// each region it names.
+func panelDNS(dns *syncDNS) ([]netip.Addr, []profile.DNSSplit) {
+	if dns == nil {
+		return nil, nil
+	}
+	var split []profile.DNSSplit
+	if dns.SplitDirect {
+		for _, entry := range dns.Split {
+			var codes []string
+			for _, code := range entry.Geo {
+				if code = strings.ToLower(code); len(code) == 2 && code[0] >= 'a' && code[0] <= 'z' && code[1] >= 'a' && code[1] <= 'z' {
+					codes = append(codes, code)
+				}
+			}
+			if servers := plainResolvers(entry.Servers); len(codes) != 0 && len(servers) != 0 {
+				split = append(split, profile.DNSSplit{Geo: codes, Servers: servers})
+			}
+		}
+	}
+	return plainResolvers(dns.Servers), split
 }
 
 type syncPath struct {
@@ -247,7 +330,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 		etag = st.ETag
 	}
 	// ponytail: X-Mistgate-Direct is not sent, the service does not know yet whether this request leaves outside the
-	// tunnel; `asn` comes with it. The top-level `dns` object is ignored too (regional DNS is a later step).
+	// tunnel; `asn` comes with it.
 	r, err := s.call(ctx, http.MethodGet, target, st.Key, nil, 15*time.Second, etag)
 	if err != nil {
 		return fail(fetchErrorCode(err))
@@ -283,6 +366,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	}
 	st.ExpireUnix, st.TotalBytes, st.UsedBytes = b.Plan.ExpiresUnix, b.Plan.QuotaBytes, b.Plan.UsedBytes
 	st.Notice = strings.Join(strings.Fields(b.Notice.Text), " ")
+	st.DNS, st.DNSSplit = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
 	st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
 	if b.Status != "active" {
 		st.Error = "inactive"

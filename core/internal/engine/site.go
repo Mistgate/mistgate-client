@@ -321,12 +321,12 @@ func directByRules(address netip.Addr, name, mode string, region *geo.Set, rules
 	}
 	switch mode {
 	case "smart":
-		if rules != nil && rules.Direct != nil && rules.Direct.Match(name) {
+		if rules.ByName(mode, name) == geo.RuleDirect {
 			return true
 		}
 		return region != nil && region.Contains(address)
 	case "selected":
-		return rules == nil || rules.VPN == nil || !rules.VPN.Match(name)
+		return rules.ByName(mode, name) != geo.RuleVPN
 	default:
 		return false
 	}

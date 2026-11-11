@@ -137,6 +137,7 @@ type Routes struct {
 	Entries     int              `json:"entries"`
 	UpdatedUnix int64            `json:"updated_unix"`
 	Rules       Rules            `json:"rules"`
+	BlockActive bool             `json:"block_active"` // names are blocked in smart and selected; "all" has no forwarder
 	Collections []SiteCollection `json:"collections"`
 	Suggest     Suggest          `json:"suggest"`
 	Version     uint64           `json:"-"`
@@ -283,7 +284,7 @@ func (s *Store) Routes(mode, region, autoRegion string) Routes {
 			effective = "none"
 		}
 	}
-	routes := Routes{Mode: mode, Region: region, Effective: effective, Rules: Rules{Direct: emptySelection(), VPN: emptySelection()}, Collections: []SiteCollection{}, Suggest: Suggest{VPN: []SuggestSite{}, Direct: []SuggestSite{}}}
+	routes := Routes{Mode: mode, Region: region, Effective: effective, Rules: emptyRules(), BlockActive: mode != "all", Collections: []SiteCollection{}, Suggest: Suggest{VPN: []SuggestSite{}, Direct: []SuggestSite{}}}
 	if s == nil {
 		return routes
 	}

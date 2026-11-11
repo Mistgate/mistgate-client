@@ -120,12 +120,21 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	var eng engine.Engine
 	var routeState session.RouteState
 	var routes func() geo.Routes
+	var check func(string) geo.Check
 	if useFake {
 		eng = engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
 		routeState.Effective = func(settings.Settings) string { return "all" }
 		routes = func() geo.Routes {
 			configured := settingsStore.Get()
 			return geoStore.Routes(configured.RouteMode, configured.RouteRegion, "")
+		}
+		check = func(name string) geo.Check {
+			configured := settingsStore.Get()
+			region := ""
+			if geo.ValidRegion(configured.RouteRegion) {
+				region = configured.RouteRegion
+			}
+			return geoStore.CheckName(configured.RouteMode, region, name, false)
 		}
 	} else {
 		real := engine.NewReal(store.Profiles, settingsStore.Get, geoStore, verify)
@@ -134,6 +143,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		routeState.Path = real.RoutePath
 		routeState.Refresh = real.RefreshAutoRegion
 		routes = func() geo.Routes { return real.Routes(settingsStore.Get()) }
+		check = func(name string) geo.Check { return real.CheckSite(settingsStore.Get(), name) }
 	}
 	routeState.Snapshot = func() geo.Routes { return routes() }
 	manager := session.NewManager(eng, settingsStore.Get, routeState)
@@ -171,7 +181,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
 		manager.Events().Publish("diag", state)
 	})
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes); err != nil {
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check); err != nil {
 		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}

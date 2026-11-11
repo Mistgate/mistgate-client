@@ -33,6 +33,9 @@ func (*Real) EffectiveRoute(settings.Settings) string { return "all" }
 func (r *Real) Routes(configured settings.Settings) geo.Routes {
 	return r.geo.Routes(configured.RouteMode, configured.RouteRegion, "")
 }
+func (r *Real) CheckSite(configured settings.Settings, name string) geo.Check {
+	return r.geo.CheckName(configured.RouteMode, "", name, false)
+}
 func (*Real) RefreshAutoRegion(onChange func()) {
 	if onChange != nil {
 		onChange()

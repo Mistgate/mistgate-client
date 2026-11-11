@@ -115,7 +115,9 @@ func EnableFirewall(luid uint64, doNotRestrict, allowLAN bool, restrictToDNSServ
 			return wrapErr(err)
 		}
 
-		if !doNotRestrict {
+		// Mistgate: the service's own sockets also pass the DNS-only rules (kill switch off), or its direct DNS
+		// questions (regional resolvers, the network check) would be refused with everyone else's.
+		if !doNotRestrict || len(restrictToDNSServers) > 0 {
 			err = permitWireGuardService(session, baseObjects, 15)
 			if err != nil {
 				return wrapErr(err)

@@ -12,7 +12,7 @@ import { liveChip } from './live-settings';
 type Selection = { collections: string[]; sites: string[] };
 type Routes = {
   mode: 'all' | 'smart' | 'selected'; region: string; effective: string; available: boolean; entries: number; updated_unix: number;
-  rules?: { direct: Selection; vpn: Selection };
+  rules?: { direct: Selection; vpn: Selection; block?: Selection };
   // sites that keep failing on their route: `vpn` fail direct, `direct` fail through the VPN
   suggest?: { vpn: { site: string; count: number }[]; direct: { site: string; count: number }[] };
 };
@@ -45,6 +45,8 @@ const COL: Record<string, string> = {
 const ALL = ['rkn', 'geo', 'allblk', 'rusvc', 'rusites', 'lan', 'ads', 'yt', 'ig', 'fb', 'wa', 'tg', 'dc', 'x', 'tt', 'th', 'rd', 'sg', 'pin',
   'allmedia', 'nf', 'sp', 'tw', 'dis', 'hbo', 'pv', 'sc', 'dz', 'td', 'vm', 'wiki', 'allai', 'oai', 'cl', 'gem', 'grok', 'ppx', 'cop', 'allgames',
   'steam', 'epic', 'ps', 'xb', 'nin', 'bz', 'ea', 'ubi', 'rbx', 'quest', 'bng', 'ms', 'apple', 'zoom', 'gplay', 'bsky', 'md', 'pat', 'hulu', 'bbc', 'tor'];
+// the "Ads" tile is not a route: its names are refused (the service answers "no such site")
+const ADS = geosite('category-ads-all');
 const BACK = Object.fromEntries(Object.entries(COL).map(([k, v]) => [v, k]));
 const MODE: Record<string, string> = { smart: 'except', selected: 'only', all: 'all' };
 
@@ -88,16 +90,22 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       const tiles = (chosen: string[], extra: Record<string, boolean>) =>
         Object.assign(Object.fromEntries(ALL.map((k) => [k, false])), Object.fromEntries(chosen.map((c) => [BACK[c], true]).filter(([k]) => k)), extra);
       const rules = r.rules ?? { direct: { collections: [], sites: [] }, vpn: { collections: [], sites: [] } };
+      const ads = !!rules.block?.collections.includes(ADS);
       return {
         // in Smart the region's own addresses and the local network always go direct: their tiles show it
-        sel: { except: tiles(rules.direct.collections, { rusites: r.available, lan: true }), only: tiles(rules.vpn.collections, {}) },
+        sel: { except: tiles(rules.direct.collections, { rusites: r.available, lan: true, ads }), only: tiles(rules.vpn.collections, { ads }) },
         sites: { except: rules.direct.sites.map((s) => [s, '']), only: rules.vpn.sites.map((s) => [s, '']) },
       };
     }
     wanted(state: any) {
       const pick = (m: string) => ALL.filter((k) => state.sel?.[m]?.[k] && COL[k]).map((k) => COL[k]).sort();
       const sites = (m: string) => ((state.sites?.[m] ?? []) as string[][]).map((x) => x[0]);
-      return { direct: { collections: pick('except'), sites: sites('except') }, vpn: { collections: pick('only'), sites: sites('only') } };
+      const m = state.mode === 'only' ? 'only' : 'except'; // the Ads tile of the mode on screen is the one the user flips
+      const others = (this.routes?.rules?.block?.collections ?? []).filter((c) => c !== ADS);
+      return {
+        direct: { collections: pick('except'), sites: sites('except') }, vpn: { collections: pick('only'), sites: sites('only') },
+        block: { collections: [...others, ...(state.sel?.[m]?.ads ? [ADS] : [])].sort(), sites: this.routes?.rules?.block?.sites ?? [] },
+      };
     }
     applyRoutes(r: Routes) {
       this.routes = r;

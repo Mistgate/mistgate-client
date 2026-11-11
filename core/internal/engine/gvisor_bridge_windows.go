@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -42,13 +43,18 @@ type gvisorBridge struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 
+	// names says, for a host name, whether it is blocked and which resolver (zero: none) its DNS question is sent to
+	// directly. nil: DNS questions and TLS names are left alone.
+	names   func(name string) (block bool, resolver netip.AddrPort)
+	dnsDown atomic.Int64 // unix nanoseconds until which regional resolvers are not tried, after one was silent
+
 	mu     sync.Mutex
 	closed bool
 	flows  map[*udpFlow]struct{}
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker) (*gvisorBridge, error) {
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort)) (*gvisorBridge, error) {
 	if vpn == nil {
 		return nil, errors.New("VPN outbound is unavailable")
 	}
@@ -87,6 +93,7 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 		shouldDirect: shouldDirect,
 		hasSiteRules: hasSiteRules,
 		track:        track,
+		names:        names,
 		dns:          &dnsMemory{entries: make(map[netip.Addr]dnsEntry)},
 		stack:        st,
 		link:         link,
@@ -193,6 +200,12 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		name := ""
 		if target.Port() == 443 || target.Port() == 80 {
 			name, sniffed = sniffTCPName(local, target.Port())
+		}
+		if name != "" && b.names != nil {
+			if block, _ := b.names(name); block {
+				_ = local.Close()
+				return
+			}
 		}
 		watching = watching && name != ""
 		var err error
@@ -350,6 +363,9 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 		cancel: cancel,
 		dns:    b.dns,
 	}
+	if target.Port() == 53 {
+		flow.names, flow.direct, flow.down = b.names, b.direct, &b.dnsDown
+	}
 	flow.lastActivity.Store(time.Now().UnixNano())
 	b.mu.Lock()
 	if b.closed {
@@ -375,7 +391,7 @@ func (b *gvisorBridge) removeFlow(flow *udpFlow) {
 }
 
 type udpFlow struct {
-	local        *gonet.UDPConn
+	local        net.Conn // the app's side; a *gonet.UDPConn
 	remote       packetFlow
 	target       netip.AddrPort
 	ctx          context.Context
@@ -383,6 +399,155 @@ type udpFlow struct {
 	lastActivity atomic.Int64
 	dns          *dnsMemory
 	once         sync.Once
+
+	// Set for port 53 only; names == nil leaves every packet alone.
+	names  func(string) (bool, netip.AddrPort)
+	direct outbound
+	down   *atomic.Int64
+
+	sendMu  sync.Mutex // the VPN flow takes one writer at a time (Hysteria2 reuses one send buffer)
+	mu      sync.Mutex // guards the fields below; never held across a send
+	dflow   packetFlow // the flow to the regional resolver, made at the first direct question
+	dtarget netip.AddrPort
+	pending map[uint16]*dnsAsk
+	closed  bool
+}
+
+// dnsAsk is a question sent to a regional resolver and not yet answered.
+type dnsAsk struct {
+	payload []byte
+	end     int // where its question section ends
+	timer   *time.Timer
+}
+
+var (
+	dnsDirectWait  = 2 * time.Second  // silence after which the question goes through the VPN as before
+	dnsDirectPause = 30 * time.Second // after one such silence, regional resolvers rest this long (a blocked one would cost every question 2 s)
+)
+
+// dnsPacket handles a DNS question on its way out and says whether it did: a blocked name is answered here, and a
+// name that goes direct is sent to the regional resolver. Everything else, and every failure, returns false and the
+// packet goes through the VPN.
+func (f *udpFlow) dnsPacket(payload []byte) bool {
+	name, end, ok := dnsQuestion(payload)
+	if !ok {
+		return false
+	}
+	block, resolver := f.names(name)
+	if block {
+		_, _ = f.local.Write(nxdomain(payload, end))
+		return true
+	}
+	if !resolver.IsValid() || f.direct == nil || time.Now().UnixNano() < f.down.Load() {
+		return false
+	}
+	return f.askDirect(payload, end, resolver)
+}
+
+func (f *udpFlow) askDirect(payload []byte, end int, resolver netip.AddrPort) bool {
+	f.mu.Lock()
+	flow, target, closed := f.dflow, f.dtarget, f.closed
+	f.mu.Unlock()
+	if closed || flow != nil && target != resolver {
+		return false
+	}
+	if flow == nil {
+		var err error
+		if flow, err = f.direct.ListenUDP(f.ctx); err != nil {
+			return false
+		}
+		f.mu.Lock()
+		if f.closed {
+			f.mu.Unlock()
+			_ = flow.Close()
+			return false
+		}
+		f.dflow, f.dtarget = flow, resolver
+		f.mu.Unlock()
+		go f.readDirect(flow, resolver)
+	}
+	id := uint16(payload[0])<<8 | uint16(payload[1])
+	ask := &dnsAsk{payload: payload, end: end}
+	f.mu.Lock()
+	if f.pending == nil {
+		f.pending = make(map[uint16]*dnsAsk)
+	}
+	f.pending[id] = ask
+	f.mu.Unlock()
+	if err := flow.WriteTo(payload, resolver); err != nil {
+		f.settle(id, ask)
+		f.down.Store(time.Now().Add(dnsDirectPause).UnixNano())
+		return false
+	}
+	timer := time.AfterFunc(dnsDirectWait, func() { f.fallback(id, ask) })
+	f.mu.Lock()
+	if f.pending[id] == ask {
+		ask.timer = timer
+		timer = nil
+	}
+	f.mu.Unlock()
+	if timer != nil { // answered, or the flow closed, before the timer existed
+		timer.Stop()
+	}
+	return true
+}
+
+// settle takes a question off the pending list, if it is still the one for id.
+func (f *udpFlow) settle(id uint16, ask *dnsAsk) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.pending[id] != ask {
+		return false
+	}
+	delete(f.pending, id)
+	if ask.timer != nil {
+		ask.timer.Stop()
+	}
+	return true
+}
+
+// fallback asks through the VPN a question the regional resolver left unanswered.
+func (f *udpFlow) fallback(id uint16, ask *dnsAsk) {
+	if !f.settle(id, ask) {
+		return
+	}
+	f.down.Store(time.Now().Add(dnsDirectPause).UnixNano())
+	_ = f.send(ask.payload)
+}
+
+func (f *udpFlow) send(payload []byte) error {
+	f.sendMu.Lock()
+	defer f.sendMu.Unlock()
+	return f.remote.WriteTo(payload, f.target)
+}
+
+// readDirect hands the app the answers of the regional resolver. An answer counts only for a pending question: same
+// id and same question section.
+func (f *udpFlow) readDirect(flow packetFlow, resolver netip.AddrPort) {
+	for {
+		payload, source, err := flow.ReadFrom()
+		if err != nil {
+			return
+		}
+		if source != resolver || len(payload) < 2 {
+			continue
+		}
+		id := uint16(payload[0])<<8 | uint16(payload[1])
+		f.mu.Lock()
+		ask := f.pending[id]
+		f.mu.Unlock()
+		if ask == nil || len(payload) < ask.end || !bytes.Equal(payload[12:ask.end], ask.payload[12:ask.end]) || !f.settle(id, ask) {
+			continue
+		}
+		if f.dns != nil {
+			f.dns.remember(payload)
+		}
+		f.lastActivity.Store(time.Now().UnixNano())
+		if _, err := f.local.Write(payload); err != nil {
+			f.close()
+			return
+		}
+	}
 }
 
 func (f *udpFlow) run() {
@@ -408,7 +573,10 @@ func (f *udpFlow) run() {
 			}
 			f.lastActivity.Store(time.Now().UnixNano())
 			payload := append([]byte(nil), buf[:n]...)
-			if err := f.remote.WriteTo(payload, f.target); err != nil {
+			if f.names != nil && f.dnsPacket(payload) {
+				continue
+			}
+			if err := f.send(payload); err != nil {
 				done <- struct{}{}
 				return
 			}
@@ -460,7 +628,20 @@ func (f *udpFlow) run() {
 func (f *udpFlow) close() {
 	f.once.Do(func() {
 		f.cancel()
+		f.mu.Lock()
+		f.closed = true
+		dflow := f.dflow
+		for _, ask := range f.pending {
+			if ask.timer != nil {
+				ask.timer.Stop()
+			}
+		}
+		clear(f.pending)
+		f.mu.Unlock()
 		_ = f.remote.Close()
+		if dflow != nil {
+			_ = dflow.Close()
+		}
 		_ = f.local.Close()
 	})
 }

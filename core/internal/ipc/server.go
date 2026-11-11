@@ -32,6 +32,7 @@ type Server struct {
 	Settings  *settings.Store
 	Geo       *geo.Store
 	Routes    func() geo.Routes
+	Check     func(name string) geo.Check // routes.check
 	Logs      *LogStore
 	Logger    *slog.Logger
 	QueueSize int
@@ -227,6 +228,10 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 				if !mergeSelection(raw, &rules.VPN) {
 					return nil, nil, badParams()
 				}
+			case "block":
+				if !mergeSelection(raw, &rules.Block) {
+					return nil, nil, badParams()
+				}
 			default:
 				return nil, nil, badParams()
 			}
@@ -237,6 +242,21 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "route rules could not be saved"}
 		}
 		return s.Routes(), nil, nil
+	case "routes.check":
+		var params struct {
+			Site string `json:"site"`
+		}
+		if !decodeParams(request.Params, &params) {
+			return nil, nil, badParams()
+		}
+		name, ok := geo.NormalizeSite(params.Site)
+		if !ok {
+			return nil, nil, badParams()
+		}
+		if s.Check == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route check is unavailable"}
+		}
+		return s.Check(name), nil, nil
 	case "routes.dismiss":
 		var params struct {
 			Route string `json:"route"`
@@ -512,13 +532,13 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Logs: logs}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Logs: logs}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
@@ -59,6 +60,7 @@ type Real struct {
 	routeCB              *winipcfg.RouteChangeCallback
 	interfaceCB          *winipcfg.InterfaceChangeCallback
 	gatewayInterfaces    map[winipcfg.LUID]struct{}
+	panelSplit           atomic.Pointer[[]profile.DNSSplit] // the panel's regional resolvers of the profile last started
 }
 
 type realRun struct {
@@ -306,6 +308,41 @@ func (r *Real) routeDirect(address netip.Addr, name string) bool {
 	return directByRules(address, name, configured.RouteMode, region, rules)
 }
 
+// nameRoute is the bridge's view of a host name: blocked, or the regional resolver its DNS question goes to (zero: the
+// VPN as before). It runs for every DNS question of the machine, so it only reads.
+func (r *Real) nameRoute(name string) (block bool, resolver netip.AddrPort) {
+	configured := r.settings()
+	if configured.RouteMode != "smart" && configured.RouteMode != "selected" {
+		return false, netip.AddrPort{}
+	}
+	var rules *geo.SiteRules
+	if r.geo != nil {
+		rules = r.geo.ActiveSiteRules()
+	}
+	region := r.routeRegion(configured)
+	switch route, _ := geo.DecideName(name, configured.RouteMode, region, rules); route {
+	case geo.NameBlock:
+		return true, netip.AddrPort{}
+	case geo.NameDirect:
+		return false, r.regionResolver(region)
+	}
+	return false, netip.AddrPort{}
+}
+
+func (r *Real) regionResolver(region string) netip.AddrPort {
+	var split []profile.DNSSplit
+	if p := r.panelSplit.Load(); p != nil {
+		split = *p
+	}
+	return regionResolver(region, split)
+}
+
+// CheckSite is routes.check: where the forwarder would send a site now, by the code the flows use.
+func (r *Real) CheckSite(configured settings.Settings, name string) geo.Check {
+	region := r.routeRegion(configured)
+	return r.geo.CheckName(configured.RouteMode, region, name, r.regionResolver(region).IsValid())
+}
+
 func (r *Real) Routes(configured settings.Settings) geo.Routes {
 	r.mu.Lock()
 	autoRegion := r.autoRegion
@@ -463,6 +500,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if r.verify != "" {
 		selected.Verify = r.verify
 	}
+	split := selected.PanelSplit
+	r.panelSplit.Store(&split)
 	host, port, err := profileEndpoint(selected)
 	if err != nil {
 		return Info{}, failure("no_subscription", "read profile endpoint")
@@ -522,9 +561,9 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		}
 		switch r.settings().RouteMode {
 		case "smart":
-			return rules.HasDirect
+			return rules.HasDirect || rules.HasBlock
 		case "selected":
-			return rules.HasVPN
+			return rules.HasVPN || rules.HasBlock
 		default:
 			return false
 		}
@@ -542,14 +581,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	var awgMTU int
 	if selected.Protocol == "awg" {
 		awgMTU = selected.AWG.MTU
-		awgDNS = selected.AWG.DNS
-		if len(awgDNS) == 0 {
-			// ponytail: fixed resolvers until settings and the subscription carry them.
-			awgDNS = []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
-		}
-		if len(customDNS) != 0 {
-			awgDNS = customDNS
-		}
+		awgDNS = tunnelDNS(customDNS, selected.AWG.DNS, selected.PanelDNS, defaultTunnelDNS)
 		if customMTU != 0 && customMTU < awgMTU {
 			awgMTU = customMTU // a size above the server's own only breaks packets
 		}
@@ -618,10 +650,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if !run.tunnel.setAdapter(adapter) {
 			return Info{}, context.Canceled
 		}
-		dns := []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
-		if len(customDNS) != 0 {
-			dns = customDNS
-		}
+		dns := tunnelDNS(customDNS, selected.PanelDNS, defaultTunnelDNS)
 		configured = r.settings()
 		if err := r.setFirewall(run, configured.KillSwitch == "off", adapter.LUID(), dns, configured.LAN); err != nil {
 			if runCtx.Err() != nil {
@@ -634,9 +663,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := adapter.Configure(netcfg.Config{
 			MTU:       mtu,
 			Addresses: []netip.Prefix{netip.MustParsePrefix("198.18.0.1/30")},
-			// ponytail: fixed resolvers until settings and the subscription carry them.
-			DNS:    dns,
-			Bypass: serverIP,
+			DNS:       dns,
+			Bypass:    serverIP,
 		}); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
@@ -649,7 +677,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules, track); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -687,7 +715,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
-			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track); err != nil {
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute); err != nil {
 				if runCtx.Err() != nil {
 					return Info{}, runCtx.Err()
 				}
@@ -1066,13 +1094,13 @@ func (t *realTunnel) setClient(hclient client.Client) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort)) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return context.Canceled
 	}
-	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track)
+	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track, names)
 	if err != nil {
 		return err
 	}

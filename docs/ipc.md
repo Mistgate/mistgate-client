@@ -50,7 +50,8 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
 | `routes.get` | none | Route state, rules, and named collection status |
-| `routes.set` | `{"direct": Selection, "vpn": Selection}` (either key may be omitted) | The `routes.get` object |
+| `routes.set` | `{"direct": Selection, "vpn": Selection, "block": Selection}` (any key may be omitted; an omitted one keeps what is stored) | The `routes.get` object |
+| `routes.check` | `{"site": "<name>"}`; a host name or an https URL of one, checked like a site entry | `{"route": "direct" \| "vpn" \| "block", "by": "mode" \| "site" \| "collection" \| "region" \| "default", "rule": "<entry or collection id>", "dns": "direct" \| "vpn"}` |
 | `routes.dismiss` | `{"route": "direct" \| "vpn", "site": "<name>"}`; `route` is the `suggest` list the site was in | The `routes.get` object |
 | `diag.run` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | Diagnostic State |
 | `diag.get` | none | Diagnostic State |
@@ -113,7 +114,7 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 |---|---|---|---|
 | `on_server_down` | `reconnect`, `next`, `fastest` | `reconnect` | What the retries do when the server stays down: keep trying the same server, move to the next server of the subscription, or move to the one that answers soonest (see the reconnect text above) |
 | `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
-| `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` keeps the profile's (AmneziaWG) or `1.1.1.1`, `1.0.0.1` (Hysteria2) |
+| `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` takes the first that exists of: the profile's own (AmneziaWG), the panel's (managed subscriptions, see "The panel's DNS"), `1.1.1.1` and `1.0.0.1` |
 | `mtu` | `0`, or `1280` to `1500` | `0` | The tunnel adapter's MTU. `0` is automatic |
 
 `dns` takes one or two valid IPv4 or IPv6 addresses (no port, not unspecified, not loopback); a value is stored
@@ -158,10 +159,11 @@ local country lookup, then discarded; it is never stored, logged or returned.
 `routes.get` and the `routes` event share this object: `mode` and `region` are the configured settings; `effective`
 is the selected country (`none` when auto has no match), `selected` in selected mode, or `none` in all mode;
 `available` reports whether the smart-mode region list is cached; `entries` is the number of IPv4 prefixes in that
-list; and `updated_unix` is the cached file time, or `0` when no file exists. `rules` has `direct` and `vpn`
+list; and `updated_unix` is the cached file time, or `0` when no file exists. `rules` has `direct`, `vpn` and `block`
 selections, each with `collections` and `sites` arrays. `collections` reports each named collection's `id`,
 `available` (whether a valid cached list is present), `entries` (the number of valid unique domains), and
-`updated_unix`.
+`updated_unix`, for the collections of all three selections. `block_active` is `true` in `smart` and `selected` and
+`false` in `all`: the block lists work only where the forwarder runs (see "Blocking by name").
 
 `suggest` is the "Doesn't open?" part of the same object: `{"vpn": [{"site": "example.com", "count": 3}], "direct": [...]}`.
 `vpn` lists sites that failed on the direct path and could go through the VPN; `direct` lists sites that failed
@@ -188,8 +190,71 @@ In `all`, all public destinations use the VPN. In `smart`, a public destination 
 matches `rules.direct` or its address is in the selected region; other destinations use the VPN. In `selected`, a
 public destination uses the VPN only when its site matches `rules.vpn`; all other destinations use the direct path.
 An unknown site is decided by address alone: smart uses the region list, while selected uses the direct path. DNS
-to port 53 always uses the VPN. Private, loopback, link-local, multicast, and unspecified destinations always use
-the VPN. Existing flows keep their chosen path; rule updates and list refreshes affect new flows immediately.
+to port 53 uses the VPN, except the questions of regional DNS below. Private, loopback, link-local, multicast, and
+unspecified destinations always use the VPN. Existing flows keep their chosen path; rule updates and list refreshes
+affect new flows immediately.
+
+### Regional DNS
+
+In `smart` and `selected` the forwarder reads every UDP DNS question (port 53) once: one question, class IN, type A,
+AAAA or HTTPS, no answer records, a name of letters, digits and hyphens. Any other packet (other types, TCP, a name
+with `_`, junk) travels as before. A question whose name *goes direct* is sent outside the tunnel to a resolver of the
+region instead of the address the app asked, so that a site of the user's own region gets an address chosen for the
+user's own network and not for the VPN's exit country. The answer returns to the app on the same flow, as if from
+the address it asked, and is remembered like any other answer (the names learned from DNS for QUIC and other ports).
+
+A name goes direct when: in `smart`, it matches `rules.direct`, or the effective region has its own top-level domains
+and the name is under one; in `selected`, it does not match `rules.vpn`. Block wins over both (below). The
+decision is the same code that routes flows (`rules` by name), with no address.
+
+Regions: `ru` (resolvers `77.88.8.8`, `77.88.8.1`; top-level domains `ru`, `su`, `рф`, `москва`, `дети`), `by`
+(the `ru` resolvers; `by`, `бел`), `cn` (`223.5.5.5`, `119.29.29.29`; `cn`, `中国`), `ir` (no resolver; `ir`).
+A resolver given by the panel for the region replaces the table's. Without a resolver for the region (`none`, an
+unknown region, `ir`, `auto` not yet detected, a `selected` mode whose `route_region` is `auto`), and with `all`,
+nothing changes: the question goes through the VPN. In `selected` the region is the configured `route_region` (or the
+detected one), used only to pick the resolver.
+
+If the resolver does not answer within 2 seconds, the same question is sent through the VPN, so the app never loses
+DNS to a resolver that is blocked on this network; after one such silence, or a failed send, regional resolvers rest for 30
+seconds and every question goes through the VPN. An answer counts only with the same id and the same question; a late
+answer after the fallback is dropped. The kill switch limits DNS to the tunnel's resolvers for other programs; the service's own
+sockets are exempt in every kill switch mode, and in a console run there is no firewall.
+
+Privacy: questions and names are not logged, not stored and not put into errors.
+
+### Blocking by name
+
+`rules.block` (a selection like the other two, saved in `routes.json`; an older file without it loads as empty)
+lists names to block, ads for instance. In `smart` and `selected` a DNS question handled as above whose name
+matches (the name or a subdomain, as for the other lists) is answered by the service itself with `NXDOMAIN` (the id and
+the question are copied; QR and RA are set; no records) and goes nowhere, whether or not the name would go direct.
+A TCP flow to port 80 or 443 whose sniffed name matches is closed without a dial. Block wins over `direct` and `vpn`.
+Flows that never show a name (other ports, QUIC) are not blocked by name. In `all` there is no forwarder:
+block does nothing (`block_active` is `false`).
+
+### Where a site goes
+
+`routes.check {"site": "example.com"}` answers what the forwarder would do with that name now, by the same code
+as a flow (no lookup, no network): `route` is `direct`, `vpn` or `block`; `by` is `mode` (the `all` mode; always
+`vpn`), `site` (an entry of the matching selection, named in `rule`), `collection` (the collection id in `rule`),
+`region` (the name is under the effective region's own top-level domain; `rule` is empty) or `default`; `dns` says
+where the question goes: `direct` when `route` is `direct` and a regional resolver is known, otherwise `vpn` (a
+blocked name's question is answered by the service and reported as `vpn`). In `smart`, `vpn` with `default`
+means that no rule names the site: the address of the flow still decides, so it may go direct. A name under a
+region's top-level domain is `direct` by `region` here because its question goes direct; the flow itself still follows
+the address list. `selected` reports `direct` with `default` for names that match no `rules.vpn`. A bad name is `bad_params`.
+The answer is not logged.
+
+### The panel's DNS
+
+For a managed subscription each `sync` carries a `dns` object (`docs/client-api.md`). The service keeps, with the
+subscription, the plain resolvers only: from `dns.servers` the entries with transport `plain` (the `address` when it is
+an IP, or an IP with port 53, else the entry's `ips`), at most two, and, when `split_direct` is true, for every entry of
+`dns.split` its `geo` codes and its plain resolvers (at most two). DoT and DoH entries and other ports are skipped. A
+sync without `dns`, or with a status other than `active`, clears them. They are not part of the `Subscription` object.
+The tunnel's DNS is the first that exists of: the user's `dns` setting, the profile's own servers (AmneziaWG), the panel's
+`dns.servers`, `1.1.1.1` and `1.0.0.1`. A split entry whose `geo` contains the effective region gives that region's
+resolver in place of the table's. Both are read when the tunnel starts (a new `sync` applies to the next connect).
 
 Each selection accepts at most 200 collections and 500 sites. A collection is `geosite:<name>` (lower-case letters,
 digits, `!`, `@`, and `-`, up to 48 characters) or `list:<https URL>` (up to 512 URL characters, HTTPS only, no

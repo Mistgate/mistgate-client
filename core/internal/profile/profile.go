@@ -23,6 +23,15 @@ type Profile struct {
 	Hy2      *Hy2
 	AWG      *AWG
 	Verify   string
+	// What the panel's sync said about DNS (plain resolvers only); empty for a subscription that is not managed.
+	PanelDNS   []netip.Addr
+	PanelSplit []DNSSplit
+}
+
+// DNSSplit is a panel's resolver list for the regions in Geo (lower-case country codes).
+type DNSSplit struct {
+	Geo     []string     `json:"geo"`
+	Servers []netip.Addr `json:"servers"`
 }
 
 type Hy2 struct {
