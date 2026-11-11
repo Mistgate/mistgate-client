@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ type Status struct {
 
 type RouteState struct {
 	Effective func(settings.Settings) string
+	Path      func(settings.Settings, engine.Target, string) string
 	Snapshot  func() geo.Routes
 	Refresh   func(func())
 }
@@ -82,7 +84,7 @@ type actorState struct {
 	probeCancel      context.CancelFunc
 	workerDone       <-chan struct{}
 	routeSettings    settings.Settings
-	attemptRoute     string
+	attemptPath      string
 	holdReconnect    bool
 	probeFailures    int
 	probePending     bool
@@ -324,6 +326,7 @@ func (m *Manager) run() {
 					if state.status.Route == "" && m.routes.Effective != nil {
 						state.status.Route = m.routes.Effective(m.currentSettings())
 					}
+					state.attemptPath = m.routePath(m.currentSettings(), state.target, state.status.Protocol)
 					state.status.SinceUnix = time.Now().Unix()
 					state.probeFailures = 0
 					state.retryIndex = 0
@@ -505,9 +508,7 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	state.runCancel = cancel
 	state.target = target
 	state.routeSettings = m.currentSettings()
-	if m.routes.Effective != nil {
-		state.attemptRoute = m.routes.Effective(state.routeSettings)
-	}
+	state.attemptPath = m.routePath(state.routeSettings, target, "")
 	if state.status.Step != string(engine.StepResolve) {
 		state.status.Step = string(engine.StepResolve)
 		m.hub.Publish("status", state.status)
@@ -592,19 +593,29 @@ func (m *Manager) settingsChanged(state *actorState) {
 	routeSettingsChanged := state.routeSettings.RouteMode != configured.RouteMode || state.routeSettings.RouteRegion != configured.RouteRegion
 	switch state.status.State {
 	case "connected":
-		if m.routes.Effective != nil && state.status.Route != m.routes.Effective(configured) {
+		path := m.routePath(configured, state.target, state.status.Protocol)
+		if state.attemptPath != "" && path != state.attemptPath {
 			m.reconnectRoute(state, configured)
 		} else {
 			state.routeSettings = configured
+			state.attemptPath = path
+			if m.routes.Effective != nil {
+				if route := m.routes.Effective(configured); route != state.status.Route {
+					state.status.Route = route
+					m.hub.Publish("status", state.status)
+				}
+			}
 			if m.engine != nil {
 				m.engine.Reapply()
 			}
 		}
 	case "connecting", "reconnecting":
-		if m.routes.Effective != nil && state.attemptRoute != m.routes.Effective(configured) {
+		path := m.routePath(configured, state.target, "")
+		if state.attemptPath != "" && path != state.attemptPath {
 			m.reconnectRoute(state, configured)
 		} else {
 			state.routeSettings = configured
+			state.attemptPath = path
 		}
 		state.target.Hold = state.holdReconnect || holdFor(configured, true)
 		if configured.KillSwitch == "off" && !state.holdReconnect && state.status.State == "reconnecting" {
@@ -679,22 +690,18 @@ func (m *Manager) publishRoutes(state *actorState) {
 		return
 	}
 	routes := m.routes.Snapshot()
-	versionChanged := m.hasRoutes && m.lastRoutes.Effective == routes.Effective && m.lastRoutes.Available && routes.Available &&
-		m.lastRoutes.Mode == "smart" && routes.Mode == "smart" && m.lastRoutes.Version != routes.Version
-	objectChanged := !m.hasRoutes || m.lastRoutes.Mode != routes.Mode || m.lastRoutes.Region != routes.Region ||
-		m.lastRoutes.Effective != routes.Effective || m.lastRoutes.Available != routes.Available ||
-		m.lastRoutes.Entries != routes.Entries || m.lastRoutes.UpdatedUnix != routes.UpdatedUnix
+	objectChanged := !m.hasRoutes || !reflect.DeepEqual(m.lastRoutes, routes)
 	m.lastRoutes, m.hasRoutes = routes, true
-	if versionChanged && state != nil {
-		route := "smart:" + routes.Effective
-		if state.status.State == "connected" && state.status.Route == route ||
-			(state.status.State == "connecting" || state.status.State == "reconnecting") && state.attemptRoute == route {
-			m.reconnectRoute(state, m.currentSettings())
-		}
-	}
 	if objectChanged {
 		m.hub.Publish("routes", routes)
 	}
+}
+
+func (m *Manager) routePath(configured settings.Settings, target engine.Target, protocol string) string {
+	if m.routes.Path == nil {
+		return ""
+	}
+	return m.routes.Path(configured, target, protocol)
 }
 
 func (m *Manager) currentSettings() settings.Settings {

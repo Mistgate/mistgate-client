@@ -187,7 +187,11 @@ func (directOutbound) DialTCP(ctx context.Context, target netip.AddrPort) (net.C
 	if err != nil {
 		return nil, err
 	}
-	return (&net.Dialer{Control: netcfg.SocketControl(index)}).DialContext(ctx, "tcp4", target.String())
+	network := "tcp6"
+	if target.Addr().Is4() {
+		network = "tcp4"
+	}
+	return (&net.Dialer{Control: netcfg.SocketControl(index)}).DialContext(ctx, network, target.String())
 }
 
 func (directOutbound) ListenUDP(ctx context.Context) (packetFlow, error) {
@@ -221,7 +225,11 @@ func (f *directPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error 
 		}
 		var listen net.ListenConfig
 		listen.Control = netcfg.SocketControl(index)
-		conn, err := listen.ListenPacket(f.ctx, "udp4", ":0")
+		network := "udp6"
+		if target.Addr().Is4() {
+			network = "udp4"
+		}
+		conn, err := listen.ListenPacket(f.ctx, network, ":0")
 		if err != nil {
 			f.mu.Unlock()
 			return err
@@ -237,7 +245,7 @@ func (f *directPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error 
 	if err := f.ctx.Err(); err != nil {
 		return err
 	}
-	_, err := conn.WriteTo(payload, &net.UDPAddr{IP: net.IP(target.Addr().AsSlice()), Port: int(target.Port())})
+	_, err := conn.WriteTo(payload, &net.UDPAddr{IP: net.IP(target.Addr().AsSlice()), Port: int(target.Port()), Zone: target.Addr().Zone()})
 	return err
 }
 

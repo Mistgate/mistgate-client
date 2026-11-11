@@ -115,9 +115,46 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 func (r *Real) Changed() <-chan struct{} { return r.changed }
 
 func (r *Real) EffectiveRoute(configured settings.Settings) string {
-	if configured.RouteMode != "smart" {
+	switch configured.RouteMode {
+	case "selected":
+		return "selected"
+	case "all":
 		return "all"
 	}
+	region := r.routeRegion(configured)
+	if !geo.ValidRegion(region) || r.geo == nil {
+		return "smart"
+	}
+	if _, available := r.geo.Region(region); !available {
+		return "smart"
+	}
+	return "smart:" + region
+}
+
+func (r *Real) RoutePath(configured settings.Settings, target Target, activeProtocol string) string {
+	protocol := activeProtocol
+	if protocol == "" || protocol == "auto" {
+		if r.load != nil {
+			if profiles, err := r.load(); err == nil {
+				if selected, ok := profile.PickForSettings(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game); ok {
+					protocol = selected.Protocol
+				}
+			}
+		}
+	}
+	if protocol == "" || protocol == "auto" {
+		protocol = target.Protocol
+	}
+	if protocol == "" || protocol == "auto" {
+		protocol = configured.Protocol
+	}
+	if protocol == "awg" && configured.RouteMode == "all" {
+		return "native"
+	}
+	return "forwarder"
+}
+
+func (r *Real) routeRegion(configured settings.Settings) string {
 	region := configured.RouteRegion
 	if region == "" {
 		region = "auto"
@@ -126,17 +163,26 @@ func (r *Real) EffectiveRoute(configured settings.Settings) string {
 		r.mu.Lock()
 		region = r.autoRegion
 		r.mu.Unlock()
-		if region == "" || region == "none" {
-			return "all"
+	}
+	if region == "auto" || region == "none" || !geo.ValidRegion(region) {
+		return ""
+	}
+	return region
+}
+
+func (r *Real) routeDirect(address netip.Addr, name string) bool {
+	configured := r.settings()
+	var region *geo.Set
+	var rules *geo.SiteRules
+	if r.geo != nil {
+		rules = r.geo.ActiveSiteRules()
+		if configured.RouteMode == "smart" {
+			if cc := r.routeRegion(configured); cc != "" {
+				region, _ = r.geo.Region(cc)
+			}
 		}
 	}
-	if region == "none" || !geo.ValidRegion(region) || r.geo == nil {
-		return "all"
-	}
-	if _, available := r.geo.Region(region); !available {
-		return "all"
-	}
-	return "smart:" + region
+	return directByRules(address, name, configured.RouteMode, region, rules)
 }
 
 func (r *Real) Routes(configured settings.Settings) geo.Routes {
@@ -318,8 +364,11 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	endpoint := netip.AddrPortFrom(serverIP, port)
 	r.setAutoRegion("")
 	route := "all"
-	var routeSet *geo.Set
-	if configured.RouteMode == "smart" {
+	useForwarder := configured.RouteMode == "smart" || configured.RouteMode == "selected"
+	if configured.RouteMode == "selected" {
+		route = "selected"
+	} else if configured.RouteMode == "smart" {
+		route = "smart"
 		region := configured.RouteRegion
 		if region == "" {
 			region = "auto"
@@ -336,15 +385,28 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			r.mu.Unlock()
 		}
 		if region != "none" && geo.ValidRegion(region) && r.geo != nil {
-			if set, available := r.geo.Region(region); available {
-				routeSet = set
+			if _, available := r.geo.Region(region); available {
 				route = "smart:" + region
 			}
 		}
 	}
-	var shouldDirect func(netip.Addr) bool
-	if routeSet != nil {
-		shouldDirect = routeSet.Contains
+	shouldDirect := func(address netip.Addr, name string) bool { return r.routeDirect(address, name) }
+	hasSiteRules := func() bool {
+		if r.geo == nil {
+			return false
+		}
+		rules := r.geo.ActiveSiteRules()
+		if rules == nil {
+			return false
+		}
+		switch r.settings().RouteMode {
+		case "smart":
+			return rules.HasDirect
+		case "selected":
+			return rules.HasVPN
+		default:
+			return false
+		}
 	}
 
 	var awgNet *netstack.Net
@@ -383,7 +445,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return Info{}, context.Canceled
 		}
 		awgTun := adapter.Device()
-		if routeSet != nil {
+		if useForwarder {
 			// ponytail: two stacks in a row cost throughput; a packet-level split would be faster.
 			addresses := make([]netip.Addr, 0, len(selected.AWG.Addresses))
 			for _, address := range selected.AWG.Addresses {
@@ -445,7 +507,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), 1500, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), 1500, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -479,11 +541,11 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			}
 			return Info{}, failure("tunnel_failed", "AmneziaWG tunnel configuration")
 		}
-		if routeSet != nil {
+		if useForwarder {
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
-			if err := run.tunnel.createBridge(runCtx, adapter.Device(), selected.AWG.MTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect); err != nil {
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), selected.AWG.MTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
 				if runCtx.Err() != nil {
 					return Info{}, runCtx.Err()
 				}
@@ -799,13 +861,13 @@ func (t *realTunnel) setClient(hclient client.Client) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr) bool) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return context.Canceled
 	}
-	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect)
+	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules)
 	if err != nil {
 		return err
 	}

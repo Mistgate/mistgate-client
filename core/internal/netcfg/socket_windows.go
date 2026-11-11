@@ -8,13 +8,22 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const ipUnicastIf = 31
+const (
+	ipUnicastIf   = 31
+	ipv6UnicastIf = 31
+)
 
 func SocketControl(index uint32) func(string, string, syscall.RawConn) error {
-	return func(_, _ string, raw syscall.RawConn) error {
+	return func(network, _ string, raw syscall.RawConn) error {
 		var optionErr error
 		if err := raw.Control(func(fd uintptr) {
-			optionErr = windows.SetsockoptInt(windows.Handle(fd), windows.IPPROTO_IP, ipUnicastIf, int(int32(reverseBytes32(index))))
+			level, option := int(windows.IPPROTO_IP), ipUnicastIf
+			indexValue := int(int32(reverseBytes32(index)))
+			if len(network) > 0 && network[len(network)-1] == '6' {
+				level, option = int(windows.IPPROTO_IPV6), ipv6UnicastIf
+				indexValue = int(index)
+			}
+			optionErr = windows.SetsockoptInt(windows.Handle(fd), level, option, indexValue)
 		}); err != nil {
 			return err
 		}

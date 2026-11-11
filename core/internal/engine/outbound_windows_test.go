@@ -47,7 +47,7 @@ func TestBridgeSelectsExitForNewTCPAndUDPFlows(t *testing.T) {
 	bridge := &gvisorBridge{
 		vpn:    vpn,
 		direct: direct,
-		shouldDirect: func(netip.Addr) bool {
+		shouldDirect: func(netip.Addr, string) bool {
 			return true
 		},
 	}
@@ -70,8 +70,8 @@ func TestBridgeSelectsExitForNewTCPAndUDPFlows(t *testing.T) {
 func TestPrivateAndDNSDestinationsNeverUseDirectExit(t *testing.T) {
 	vpn := &countOutbound{}
 	direct := &countOutbound{}
-	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr) bool { return true }}
-	addresses := []string{"10.1.2.3:443", "127.0.0.1:443", "169.254.1.2:443", "224.0.0.1:443", "203.0.113.7:53", "[2001:4860:4860::8888]:443"}
+	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string) bool { return true }}
+	addresses := []string{"10.1.2.3:443", "127.0.0.1:443", "169.254.1.2:443", "224.0.0.1:443", "203.0.113.7:53", "[::1]:443", "[fd00::1]:443", "[fe80::1]:443", "[ff02::1]:443"}
 	for _, address := range addresses {
 		if _, err := bridge.dialTCP(context.Background(), netip.MustParseAddrPort(address)); err != nil {
 			t.Fatal(err)
@@ -82,6 +82,22 @@ func TestPrivateAndDNSDestinationsNeverUseDirectExit(t *testing.T) {
 	}
 	if direct.tcp.Load() != 0 || direct.udp.Load() != 0 || vpn.tcp.Load() != int32(len(addresses)) || vpn.udp.Load() != int32(len(addresses)) {
 		t.Fatalf("direct tcp=%d udp=%d, VPN tcp=%d udp=%d", direct.tcp.Load(), direct.udp.Load(), vpn.tcp.Load(), vpn.udp.Load())
+	}
+}
+
+func TestPublicIPv6CanUseDirectExit(t *testing.T) {
+	vpn := &countOutbound{}
+	direct := &countOutbound{}
+	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string) bool { return true }}
+	target := netip.MustParseAddrPort("[2001:4860:4860::8888]:443")
+	if _, err := bridge.dialTCP(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bridge.listenUDP(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	if direct.tcp.Load() != 1 || direct.udp.Load() != 1 || vpn.tcp.Load() != 0 || vpn.udp.Load() != 0 {
+		t.Fatalf("public IPv6 exits: direct tcp=%d udp=%d; VPN tcp=%d udp=%d", direct.tcp.Load(), direct.udp.Load(), vpn.tcp.Load(), vpn.udp.Load())
 	}
 }
 

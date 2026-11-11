@@ -30,6 +30,7 @@ type Server struct {
 	Diag      *diag.Runner
 	Subs      *subs.Store
 	Settings  *settings.Store
+	Geo       *geo.Store
 	Routes    func() geo.Routes
 	Logs      *LogStore
 	Logger    *slog.Logger
@@ -204,6 +205,35 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "route state is unavailable"}
 		}
 		return s.Routes(), nil, nil
+	case "routes.set":
+		var patch map[string]json.RawMessage
+		if !decodeParams(request.Params, &patch) || patch == nil {
+			return nil, nil, badParams()
+		}
+		if s.Geo == nil || s.Routes == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route rules store is unavailable"}
+		}
+		rules := s.Geo.GetRules()
+		for key, raw := range patch {
+			switch key {
+			case "direct":
+				if !mergeSelection(raw, &rules.Direct) {
+					return nil, nil, badParams()
+				}
+			case "vpn":
+				if !mergeSelection(raw, &rules.VPN) {
+					return nil, nil, badParams()
+				}
+			default:
+				return nil, nil, badParams()
+			}
+		}
+		if _, _, err := s.Geo.SetRules(rules); errors.Is(err, geo.ErrBadRules) {
+			return nil, nil, badParams()
+		} else if err != nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route rules could not be saved"}
+		}
+		return s.Routes(), nil, nil
 	case "settings.set":
 		var patch map[string]json.RawMessage
 		if !decodeParams(request.Params, &patch) || patch == nil {
@@ -349,6 +379,25 @@ func decodeParams(raw json.RawMessage, target any) bool {
 	return decoder.Decode(new(any)) == io.EOF
 }
 
+func mergeSelection(raw json.RawMessage, selection *geo.Selection) bool {
+	var patch map[string]json.RawMessage
+	if json.Unmarshal(raw, &patch) != nil || patch == nil {
+		return false
+	}
+	for key, value := range patch {
+		var items []string
+		if key != "collections" && key != "sites" || strings.TrimSpace(string(value)) == "null" || json.Unmarshal(value, &items) != nil || items == nil {
+			return false
+		}
+		if key == "collections" {
+			selection.Collections = items
+		} else {
+			selection.Sites = items
+		}
+	}
+	return true
+}
+
 func emptyParams(raw json.RawMessage) bool {
 	if len(raw) == 0 || string(raw) == "null" {
 		return true
@@ -447,7 +496,7 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Routes: routes, Logs: logs}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Logs: logs}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}

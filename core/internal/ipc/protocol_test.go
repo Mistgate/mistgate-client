@@ -145,11 +145,18 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "smart", RouteRegion: "ru"}) {
 		t.Fatalf("route settings.set = %#v, %#v", result, rpcErr)
 	}
+	request, parseErr = ParseRequest([]byte(`{"id":11,"method":"settings.set","params":{"route_mode":"selected"}}`))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "selected", RouteRegion: "ru"}) {
+		t.Fatalf("selected route settings.set = %#v, %#v", result, rpcErr)
+	}
 	request, parseErr = ParseRequest([]byte(`{"id":10,"method":"routes.get","params":{}}`))
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
-	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != wantRoutes {
+	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || !sameJSON(result, wantRoutes) {
 		t.Fatalf("routes.get = %#v, %#v; want %#v", result, rpcErr, wantRoutes)
 	}
 
@@ -182,7 +189,7 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 	manager.Events().Publish("routes", wantRoutes)
 	select {
 	case event := <-events.C:
-		if event.Name != "routes" || event.Data != wantRoutes {
+		if event.Name != "routes" || !sameJSON(event.Data, wantRoutes) {
 			t.Fatalf("routes event = %#v", event)
 		}
 	case <-time.After(time.Second):

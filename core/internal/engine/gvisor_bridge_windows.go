@@ -32,7 +32,9 @@ type gvisorBridge struct {
 	tun          tun.Device
 	vpn          outbound
 	direct       outbound
-	shouldDirect func(netip.Addr) bool
+	shouldDirect func(netip.Addr, string) bool
+	hasSiteRules func() bool
+	dns          *dnsMemory
 	stack        *stack.Stack
 	link         *channel.Endpoint
 	ctx          context.Context
@@ -44,7 +46,7 @@ type gvisorBridge struct {
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr) bool) (*gvisorBridge, error) {
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool) (*gvisorBridge, error) {
 	if vpn == nil {
 		return nil, errors.New("VPN outbound is unavailable")
 	}
@@ -81,6 +83,8 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 		vpn:          vpn,
 		direct:       direct,
 		shouldDirect: shouldDirect,
+		hasSiteRules: hasSiteRules,
+		dns:          &dnsMemory{entries: make(map[netip.Addr]dnsEntry)},
 		stack:        st,
 		link:         link,
 		ctx:          ctx,
@@ -167,20 +171,60 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		return
 	}
 	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
-	remote, err := b.dialTCP(b.ctx, target)
-	if err != nil {
-		req.Complete(true)
-		return
+	needsName := b.hasSiteRules != nil && b.hasSiteRules()
+	var remote net.Conn
+	var local *gonet.TCPConn
+	var sniffed []byte
+	if needsName {
+		var queue waiter.Queue
+		endpoint, endpointErr := req.CreateEndpoint(&queue)
+		if endpointErr != nil {
+			req.Complete(true)
+			return
+		}
+		req.Complete(false)
+		local = gonet.NewTCPConn(&queue, endpoint)
+		name := ""
+		if target.Port() == 443 || target.Port() == 80 {
+			name, sniffed = sniffTCPName(local, target.Port())
+		}
+		var err error
+		remote, err = b.dialTCPName(b.ctx, target, name)
+		if err != nil {
+			// We cannot send a RST after accepting the local endpoint, so close it.
+			_ = local.Close()
+			return
+		}
+		for len(sniffed) > 0 {
+			n, writeErr := remote.Write(sniffed)
+			if n > 0 {
+				sniffed = sniffed[n:]
+			}
+			if writeErr != nil || n == 0 {
+				_ = local.Close()
+				_ = remote.Close()
+				return
+			}
+		}
+	} else {
+		var err error
+		remote, err = b.dialTCP(b.ctx, target)
+		if err != nil {
+			req.Complete(true)
+			return
+		}
 	}
-	var queue waiter.Queue
-	endpoint, endpointErr := req.CreateEndpoint(&queue)
-	if endpointErr != nil {
-		_ = remote.Close()
-		req.Complete(true)
-		return
+	if local == nil {
+		var queue waiter.Queue
+		endpoint, endpointErr := req.CreateEndpoint(&queue)
+		if endpointErr != nil {
+			_ = remote.Close()
+			req.Complete(true)
+			return
+		}
+		req.Complete(false)
+		local = gonet.NewTCPConn(&queue, endpoint)
 	}
-	req.Complete(false)
-	local := gonet.NewTCPConn(&queue, endpoint)
 	if !b.startForward(func() { proxyTCP(local, remote) }) {
 		_ = local.Close()
 		_ = remote.Close()
@@ -230,6 +274,7 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 		target: target,
 		ctx:    flowCtx,
 		cancel: cancel,
+		dns:    b.dns,
 	}
 	flow.lastActivity.Store(time.Now().UnixNano())
 	b.mu.Lock()
@@ -262,6 +307,7 @@ type udpFlow struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	lastActivity atomic.Int64
+	dns          *dnsMemory
 	once         sync.Once
 }
 
@@ -303,6 +349,9 @@ func (f *udpFlow) run() {
 			}
 			if source != f.target {
 				continue
+			}
+			if f.target.Port() == 53 && f.dns != nil {
+				f.dns.remember(payload)
 			}
 			f.lastActivity.Store(time.Now().UnixNano())
 			if _, err := f.local.Write(payload); err != nil {
@@ -369,24 +418,34 @@ func (b *gvisorBridge) Close() {
 }
 
 func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
-	return selectOutbound(target, b.shouldDirect, b.vpn, b.direct).DialTCP(ctx, target)
+	return b.dialTCPName(ctx, target, "")
+}
+
+func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string) (net.Conn, error) {
+	if name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
+		name = b.dns.lookup(target.Addr())
+	}
+	return selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct).DialTCP(ctx, target)
 }
 
 func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort) (packetFlow, error) {
-	return selectOutbound(target, b.shouldDirect, b.vpn, b.direct).ListenUDP(ctx)
+	name := ""
+	if target.Port() != 53 && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
+		name = b.dns.lookup(target.Addr())
+	}
+	return selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct).ListenUDP(ctx)
 }
 
-func selectOutbound(target netip.AddrPort, shouldDirect func(netip.Addr) bool, vpn, direct outbound) outbound {
+func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, vpn, direct outbound) outbound {
 	address := target.Addr()
 	// Keep the adapter's configured DNS resolver on the VPN.
-	inRegion := shouldDirect != nil && shouldDirect(address)
-	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && inRegion {
+	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && shouldDirect != nil && shouldDirect(address, name) {
 		return direct
 	}
 	return vpn
 }
 
 func directAddressAllowed(address netip.Addr) bool {
-	return address.Is4() && !address.IsPrivate() && !address.IsLoopback() && !address.IsLinkLocalUnicast() &&
+	return address.IsValid() && !address.IsPrivate() && !address.IsLoopback() && !address.IsLinkLocalUnicast() &&
 		!address.IsLinkLocalMulticast() && !address.IsMulticast() && !address.IsUnspecified()
 }

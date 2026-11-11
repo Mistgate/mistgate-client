@@ -126,7 +126,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 		value.Game = v
 	case "route_mode":
 		var v string
-		if json.Unmarshal(raw, &v) != nil || v != "all" && v != "smart" {
+		if json.Unmarshal(raw, &v) != nil || v != "all" && v != "smart" && v != "selected" {
 			return false
 		}
 		value.RouteMode = v

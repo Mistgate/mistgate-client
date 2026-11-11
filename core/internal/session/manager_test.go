@@ -32,14 +32,15 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "settings changes apply hold transitions", run: testSettingsChangesApplyHoldTransitions},
 		{name: "off reconnect does not hold", run: testOffReconnectDoesNotHold},
 		{name: "connected settings reapply firewall", run: testConnectedSettingsReapplyFirewall},
-		{name: "route change reconnects held only when effective route changes", run: testRouteChangeReconnectsHeld},
+		{name: "route rules and list refresh do not reconnect", run: testRouteChangesDoNotReconnect},
+		{name: "only AmneziaWG path transition reconnects", run: testOnlyAWGPathTransitionReconnects},
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)
 	}
 }
 
-func testRouteChangeReconnectsHeld(t *testing.T) {
+func testRouteChangesDoNotReconnect(t *testing.T) {
 	store := testSettings(t, "off")
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
 	var available atomic.Bool
@@ -85,23 +86,85 @@ func testRouteChangeReconnectsHeld(t *testing.T) {
 	available.Store(true)
 	manager.SettingsChanged()
 	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" && status.Route == "smart:ru" })
-	targets := fake.Targets()
-	if len(targets) != 2 || !targets[1].Hold {
-		t.Fatalf("route reconnect targets = %#v, want second Start with Hold true", targets)
+	if got := fake.StartCount(); got != 1 {
+		t.Fatalf("region availability caused reconnect: starts=%d", got)
 	}
 	version.Add(1)
 	manager.RoutesChanged()
+	time.Sleep(25 * time.Millisecond)
+	if got := fake.StartCount(); got != 1 {
+		t.Fatalf("region-list refresh caused reconnect: starts=%d", got)
+	}
+}
+
+func testOnlyAWGPathTransitionReconnects(t *testing.T) {
+	store := testSettings(t, "off")
+	path := func(configured settings.Settings, target engine.Target, protocol string) string {
+		if protocol == "" || protocol == "auto" {
+			protocol = target.Protocol
+		}
+		if protocol == "awg" && configured.RouteMode == "all" {
+			return "native"
+		}
+		return "forwarder"
+	}
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	manager := NewManager(fake, store.Get, RouteState{Path: path})
+	defer manager.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "server-a", Protocol: "awg"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "connected" })
+	setRouteMode(t, store, "smart")
+	manager.SettingsChanged()
+	waitForStarts(t, fake, 2)
+	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "connected" })
+	if targets := fake.Targets(); len(targets) != 2 || !targets[1].Hold {
+		t.Fatalf("AWG path transition targets = %#v; want held reconnect", targets)
+	}
+	setRouteMode(t, store, "selected")
+	manager.SettingsChanged()
+	time.Sleep(25 * time.Millisecond)
+	if got := fake.StartCount(); got != 2 {
+		t.Fatalf("smart-to-selected change reconnected AWG: starts=%d", got)
+	}
+
+	hy2Settings := testSettings(t, "off")
+	hy2 := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	hy2Manager := NewManager(hy2, hy2Settings.Get, RouteState{Path: path})
+	defer hy2Manager.Close()
+	if _, err := hy2Manager.Connect(context.Background(), engine.Target{Server: "server-b", Protocol: "hysteria2"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerStatus(t, hy2Manager, func(status Status) bool { return status.State == "connected" })
+	setRouteMode(t, hy2Settings, "selected")
+	hy2Manager.SettingsChanged()
+	time.Sleep(25 * time.Millisecond)
+	if got := hy2.StartCount(); got != 1 {
+		t.Fatalf("Hysteria2 route change reconnected: starts=%d", got)
+	}
+}
+
+func setRouteMode(t *testing.T, store *settings.Store, mode string) {
+	t.Helper()
+	encoded, err := json.Marshal(mode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Set(map[string]json.RawMessage{"route_mode": encoded}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitForStarts(t *testing.T, fake *engine.Fake, want uint64) {
+	t.Helper()
 	deadline := time.After(time.Second)
-	for fake.StartCount() < 3 {
+	for fake.StartCount() < want {
 		select {
 		case <-deadline:
-			t.Fatal("refreshed route did not reconnect")
+			t.Fatalf("engine starts = %d; want at least %d", fake.StartCount(), want)
 		case <-time.After(time.Millisecond):
 		}
-	}
-	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "connected" && status.Route == "smart:ru" })
-	if targets = fake.Targets(); len(targets) != 3 || !targets[2].Hold {
-		t.Fatalf("refreshed route targets = %#v, want third Start with Hold true", targets)
 	}
 }
 

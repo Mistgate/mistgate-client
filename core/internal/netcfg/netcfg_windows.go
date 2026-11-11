@@ -209,7 +209,11 @@ func PhysicalInterfaceIndex4() (uint32, error) {
 
 // PhysicalInterfaceIndexFor is the interface a destination is reached through when the tunnel is left out.
 func PhysicalInterfaceIndexFor(destination netip.Addr) (uint32, error) {
-	rows, err := winipcfg.GetIPForwardTable2(windows.AF_INET)
+	family := winipcfg.AddressFamily(windows.AF_INET)
+	if destination.Is6() {
+		family = winipcfg.AddressFamily(windows.AF_INET6)
+	}
+	rows, err := winipcfg.GetIPForwardTable2(family)
 	if err != nil {
 		return 0, ErrNoRoute
 	}
@@ -223,7 +227,7 @@ func PhysicalInterfaceIndexFor(destination netip.Addr) (uint32, error) {
 		if !prefix.IsValid() || !prefix.Contains(destination) {
 			continue
 		}
-		iface, err := row.InterfaceLUID.IPInterface(windows.AF_INET)
+		iface, err := row.InterfaceLUID.IPInterface(family)
 		if err != nil {
 			continue
 		}
@@ -235,7 +239,7 @@ func PhysicalInterfaceIndexFor(destination netip.Addr) (uint32, error) {
 	if !ok {
 		return 0, ErrNoRoute
 	}
-	iface, err := choice.luid.IPInterface(windows.AF_INET)
+	iface, err := choice.luid.IPInterface(family)
 	if err != nil || iface.InterfaceIndex == 0 {
 		return 0, ErrNoRoute
 	}

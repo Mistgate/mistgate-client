@@ -39,6 +39,9 @@ func TestStoreRoundTripAndChanges(t *testing.T) {
 	if got := reopened.Get(); got != store.Get() {
 		t.Fatalf("reopened settings = %#v, want %#v", got, store.Get())
 	}
+	if got, err := reopened.Set(map[string]json.RawMessage{"route_mode": json.RawMessage(`"selected"`)}); err != nil || got.RouteMode != "selected" {
+		t.Fatalf("selected route mode = %#v, %v", got, err)
+	}
 }
 
 func TestStoreDefaultsOnBrokenFile(t *testing.T) {

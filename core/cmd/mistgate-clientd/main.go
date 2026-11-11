@@ -125,6 +125,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 		real := engine.NewReal(store.Profiles, settingsStore.Get, geoStore, verify)
 		eng = real
 		routeState.Effective = real.EffectiveRoute
+		routeState.Path = real.RoutePath
 		routeState.Refresh = real.RefreshAutoRegion
 		routes = func() geo.Routes { return real.Routes(settingsStore.Get()) }
 	}

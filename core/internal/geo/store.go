@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -129,32 +130,45 @@ func parse(data []byte) (*Set, error) {
 }
 
 type Routes struct {
-	Mode        string `json:"mode"`
-	Region      string `json:"region"`
-	Effective   string `json:"effective"`
-	Available   bool   `json:"available"`
-	Entries     int    `json:"entries"`
-	UpdatedUnix int64  `json:"updated_unix"`
-	Version     uint64 `json:"-"`
+	Mode        string           `json:"mode"`
+	Region      string           `json:"region"`
+	Effective   string           `json:"effective"`
+	Available   bool             `json:"available"`
+	Entries     int              `json:"entries"`
+	UpdatedUnix int64            `json:"updated_unix"`
+	Rules       Rules            `json:"rules"`
+	Collections []SiteCollection `json:"collections"`
+	Version     uint64           `json:"-"`
 }
 
 type Options struct {
-	HTTPClient          *http.Client
-	PrimaryURLTemplate  string
-	FallbackURLTemplate string
+	HTTPClient              *http.Client
+	PrimaryURLTemplate      string
+	FallbackURLTemplate     string
+	SitePrimaryURLTemplate  string
+	SiteFallbackURLTemplate string
 }
 
 type Store struct {
-	dir         string
-	client      *http.Client
-	primaryURL  string
-	fallbackURL string
-	mu          sync.Mutex
-	sets        map[string]*Set
-	versions    map[string]uint64
-	loaded      map[string]bool
-	refreshing  map[string]bool
-	changes     chan struct{}
+	dir             string
+	routesPath      string
+	client          *http.Client
+	primaryURL      string
+	fallbackURL     string
+	sitePrimaryURL  string
+	siteFallbackURL string
+	mu              sync.Mutex
+	sets            map[string]*Set
+	versions        map[string]uint64
+	loaded          map[string]bool
+	refreshing      map[string]bool
+	siteSets        map[string]*SiteSet
+	siteLoaded      map[string]bool
+	siteRefreshing  map[string]bool
+	rules           Rules
+	rulesCompileMu  sync.Mutex
+	siteRules       atomic.Pointer[SiteRules]
+	changes         chan struct{}
 }
 
 func Open(dataDir string, options ...Options) (*Store, error) {
@@ -163,15 +177,21 @@ func Open(dataDir string, options ...Options) (*Store, error) {
 		return nil, errors.New("cannot create geo cache directory")
 	}
 	store := &Store{
-		dir:         dir,
-		client:      http.DefaultClient,
-		primaryURL:  "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/%s.list",
-		fallbackURL: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/%s.list",
-		sets:        make(map[string]*Set),
-		versions:    make(map[string]uint64),
-		loaded:      make(map[string]bool),
-		refreshing:  make(map[string]bool),
-		changes:     make(chan struct{}, 1),
+		dir:             dir,
+		client:          http.DefaultClient,
+		primaryURL:      "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/%s.list",
+		fallbackURL:     "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/%s.list",
+		sitePrimaryURL:  "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/%s.list",
+		siteFallbackURL: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/%s.list",
+		routesPath:      filepath.Join(dataDir, "routes.json"),
+		sets:            make(map[string]*Set),
+		versions:        make(map[string]uint64),
+		loaded:          make(map[string]bool),
+		refreshing:      make(map[string]bool),
+		siteSets:        make(map[string]*SiteSet),
+		siteLoaded:      make(map[string]bool),
+		siteRefreshing:  make(map[string]bool),
+		changes:         make(chan struct{}, 1),
 	}
 	if len(options) != 0 {
 		option := options[0]
@@ -184,7 +204,15 @@ func Open(dataDir string, options ...Options) (*Store, error) {
 		if option.FallbackURLTemplate != "" {
 			store.fallbackURL = option.FallbackURLTemplate
 		}
+		if option.SitePrimaryURLTemplate != "" {
+			store.sitePrimaryURL = option.SitePrimaryURLTemplate
+		}
+		if option.SiteFallbackURLTemplate != "" {
+			store.siteFallbackURL = option.SiteFallbackURLTemplate
+		}
 	}
+	store.loadRules()
+	store.rebuildSiteRules()
 	return store, nil
 }
 
@@ -234,24 +262,45 @@ func (s *Store) Detect(public netip.Addr, candidates []string) string {
 func (s *Store) Changes() <-chan struct{} { return s.changes }
 
 func (s *Store) Routes(mode, region, autoRegion string) Routes {
-	if mode != "smart" {
+	if mode != "smart" && mode != "selected" {
 		mode = "all"
 	}
 	if region == "" {
 		region = "auto"
 	}
-	effective := region
-	if region == "auto" {
-		effective = autoRegion
+	effective := "none"
+	if mode == "selected" {
+		effective = "selected"
+	} else if mode == "smart" {
+		effective = region
+		if region == "auto" {
+			effective = autoRegion
+		}
+		if effective == "" || effective == "auto" || effective == "none" || !ValidRegion(effective) {
+			effective = "none"
+		}
 	}
-	if effective == "" || effective == "auto" || effective == "none" || !ValidRegion(effective) {
-		effective = "none"
-	}
-	routes := Routes{Mode: mode, Region: region, Effective: effective}
+	routes := Routes{Mode: mode, Region: region, Effective: effective, Rules: Rules{Direct: emptySelection(), VPN: emptySelection()}, Collections: []SiteCollection{}}
 	if s == nil {
 		return routes
 	}
+	routes.Rules = s.GetRules()
+	for _, collection := range ruleCollections(routes.Rules) {
+		_, _ = s.Sites(collection)
+		set, available := s.siteSet(collection)
+		item := SiteCollection{ID: collection, Available: available}
+		if set != nil {
+			item.Entries = set.Len()
+		}
+		if info, err := os.Stat(s.sitePath(collection)); err == nil {
+			item.UpdatedUnix = info.ModTime().Unix()
+		}
+		routes.Collections = append(routes.Collections, item)
+	}
 	if ValidRegion(effective) {
+		if mode != "smart" {
+			return routes
+		}
 		_, _ = s.Region(effective)
 		s.mu.Lock()
 		set := s.sets[effective]
