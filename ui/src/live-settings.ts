@@ -37,6 +37,12 @@ function applyShell(changed?: 'auto' | 'min' | 'tray') {
 export function startShell() {
   applyShell();
   void listen<string>('mg://nav', (e) => window.dispatchEvent(new CustomEvent('mg-nav', { detail: e.payload })));
+  // Quit: "exit" is 'keep' (the VPN stays on, the default) or 'disconnect'.
+  // ponytail: no control for it in the design yet, and no "ask" (that needs a designed dialog).
+  void listen('mg://quit', async () => {
+    if (pref.get('exit') === 'disconnect') await Promise.race([rpc('disconnect').catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+    void invoke('quit_now');
+  });
 }
 
 // The chip in the title bar of every screen but Home: connected or not, where to, and a button for it.

@@ -71,6 +71,25 @@ fn shell_prefs(shell: State<'_, Shell>, close_to_tray: bool) {
     shell.close_to_tray.store(close_to_tray, Ordering::Relaxed);
 }
 
+/// Quitting the window. The VPN is the service's and stays as it is, unless the user chose "disconnect on exit":
+/// the main window's page knows that choice, so it is asked to finish (it calls quit_now). If it does not answer,
+/// quit anyway.
+fn quit_app(app: &AppHandle) {
+    if app.emit_to("main", "mg://quit", ()).is_err() {
+        return app.exit(0);
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(4));
+        app.exit(0);
+    });
+}
+
+#[tauri::command]
+fn quit_now(app: AppHandle) {
+    app.exit(0);
+}
+
 #[tauri::command]
 fn show_main(app: AppHandle, screen: Option<String>) {
     if let Some(tray) = app.get_webview_window("tray") {
@@ -152,8 +171,7 @@ fn main() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main_window(app, None),
-                    // the VPN is the service's: it stays as it is
-                    "quit" => app.exit(0),
+                    "quit" => quit_app(app),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -193,7 +211,9 @@ fn main() {
                     api.prevent_close();
                     let _ = window.hide();
                 } else {
-                    window.app_handle().exit(0);
+                    api.prevent_close();
+                    let _ = window.hide();
+                    quit_app(window.app_handle());
                 }
             }
             WindowEvent::Focused(false) if window.label() == "tray" => {
@@ -202,7 +222,7 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart])
+        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now])
         .run(tauri::generate_context!())
         .expect("the window could not start");
 }
