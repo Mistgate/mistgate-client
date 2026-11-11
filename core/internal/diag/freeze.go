@@ -70,7 +70,8 @@ func freezeVerdict(control transfer, targets []transfer) (overall string, each [
 		}
 	}
 	overall = "unknown"
-	for _, want := range []string{"freeze", "blocked", "ok"} {
+	// one host out of reach says nothing about the network while another completes: "blocked" only when none did
+	for _, want := range []string{"freeze", "ok", "blocked"} {
 		for _, v := range each {
 			if v == want {
 				return want, each

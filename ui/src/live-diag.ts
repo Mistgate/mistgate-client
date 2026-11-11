@@ -17,6 +17,8 @@ type Result = {
   udp: { verdict: string }; nat: { verdict: string };
   dns: { verdict: string; checked: number; replaced: number };
   foreign: { verdict: string; total: number; open: number };
+  freeze?: { verdict: string; targets: { name: string; bytes: number; verdict: string }[] };
+  neighbours?: { kind: string; name: string }[];
 };
 type State = { state: 'idle' | 'running' | 'done' | 'failed'; step: number; pct: number; error: string; result: Result | null };
 type LogEntry = { t_unix_ms: number; level: string; src?: string; msg: string };
@@ -97,6 +99,14 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       else if (r.dns.verdict === 'replaced') row(I.netRows[4], { v: 'blocked', alt: '', tone: 'sand', meta: w.dnsReplaced, lines: [w.dnsReplacedLine(r.dns.replaced, r.dns.checked)] });
       if (r.foreign.verdict === 'ok') row(I.netRows[6], { lines: [nums(I.netRows[6].lines[0], r.foreign.open, r.foreign.total)] });
       else if (r.foreign.verdict === 'cut') row(I.netRows[6], { v: 'blocked', alt: '', meta: w.foreignCut, lines: [nums(I.netRows[6].lines[0], r.foreign.open, r.foreign.total)] });
+      // a download that stalls: the design words it for a server ("stops after 64 KB"); here it is the network's row
+      const fz = r.freeze;
+      if (fz?.verdict === 'ok') row(I.netRows[5], { meta: '', lines: [] });
+      else if (fz?.verdict === 'freeze') {
+        const kb = String(Math.max(1, Math.round(Math.max(...fz.targets.filter((t) => t.verdict === 'freeze').map((t) => t.bytes)) / 1024)));
+        row(I.netRows[5], { v: 'freeze', alt: '', meta: I.srvRows[2].meta.replace('64', kb), lines: [I.srvRows[2].paths[0].m.replace('64', kb)] });
+      }
+      if (r.neighbours?.length) row(I.netRows[3], { name: w.neighbours[0], v: 'slow', alt: w.neighbours[1], meta: w.neighbours[2], lines: [r.neighbours.map((n) => n.name).join(' · ')], g: I.netRows[6].g, tone: 'neu' });
       return [...servers, ...net];
     }
 

@@ -71,7 +71,10 @@ func neighbours(processes, drivers, adapters []string) []Neighbour {
 		add("driver", name)
 	}
 	for _, description := range adapters {
-		add("adapter", adapterProduct(description))
+		// an adapter nobody can name adds nothing once a product is known: it is most likely that product's own
+		if product := adapterProduct(description); product != "VPN adapter" || len(found) == 0 {
+			add("adapter", product)
+		}
 	}
 	return found
 }
