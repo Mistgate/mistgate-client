@@ -26,6 +26,7 @@ import (
 	coreerrs "github.com/apernet/hysteria/core/v2/errors"
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/apernet/hysteria/extras/v2/transport/udphop"
+	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/firewall"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
@@ -739,6 +740,43 @@ func (r *Real) Next(target Target, after string) (string, bool) {
 	}
 	configured := r.settings()
 	return profile.Next(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, after)
+}
+
+// fastestTimeout bounds each server's handshake in Fastest.
+const fastestTimeout = 3 * time.Second
+
+func (r *Real) Fastest(ctx context.Context, target Target, except string) (string, bool) {
+	if r.load == nil {
+		return "", false
+	}
+	profiles, err := r.load()
+	if err != nil {
+		return "", false
+	}
+	configured := r.settings()
+	others := profile.Others(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, except)
+	round := make([]time.Duration, len(others)) // 0: no answer
+	var wait sync.WaitGroup
+	for i, p := range others {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if rtt, err := diag.Handshake(ctx, p, fastestTimeout); err == nil {
+				round[i] = rtt
+			}
+		}()
+	}
+	wait.Wait()
+	best := -1
+	for i, rtt := range round {
+		if rtt > 0 && (best < 0 || rtt < round[best]) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return "", false
+	}
+	return others[best].ID, true
 }
 
 func (r *Real) startRun(ctx context.Context, hold bool) (context.Context, *realRun, error) {

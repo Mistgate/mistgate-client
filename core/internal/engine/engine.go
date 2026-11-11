@@ -46,6 +46,9 @@ type Engine interface {
 	// Next names the server after `after` in the subscription of target's server, wrapping around.
 	// `after` "" or "auto" stands for the server target itself picks. ok is false when there is no other server.
 	Next(target Target, after string) (server string, ok bool)
+	// Fastest names the server of Next's round, except `except`, that answers a handshake soonest right now. ok is
+	// false when none answers in time (or there is no other server): the caller then falls back to Next.
+	Fastest(ctx context.Context, target Target, except string) (server string, ok bool)
 }
 
 type Failure struct {

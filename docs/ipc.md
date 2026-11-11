@@ -86,7 +86,13 @@ subscription (the order of the subscription's list, wrapping around), and again 
 shows the server being tried. Servers the `protocol` setting rules out are skipped; the server the user chose is always in
 the round, so after every server has had its two attempts the round starts again from it. The backoff keeps growing
 across switches. `auto` stands for the server automatic selection picks (the first match of the subscription and
-protocol), so it moves on from there too. A single server has no next one and is retried. This applies only to retries
+protocol), so it moves on from there too. A single server has no next one and is retried.
+
+With `"fastest"` the trigger is the same (two failed attempts in a row on one server), but the third attempt first
+sends a handshake to every other server of the round (the same set `"next"` walks, outside the tunnel, all at once,
+3 s each) and goes to the one that answered with the smallest round trip. If none answers, it goes to the next server in
+list order, as `"next"` does. `status.server` shows the new server once that attempt has finished (the pick itself takes
+up to 3 s). Everything else in the paragraph above holds. This applies only to retries
 of a session that was connected or is reconnecting, never to the first `connect`, and it does not change the user's choice:
 `last_server` stays, and a `connect` call goes to the server it names (an omitted or `auto` server in `reconnecting`
 means the user's original choice, not the one the retries moved to).
@@ -105,7 +111,7 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 
 | Key | Values | Default | Meaning |
 |---|---|---|---|
-| `on_server_down` | `reconnect`, `next` | `reconnect` | What the retries do when the server stays down: keep trying the same server, or move to the next server of the subscription (see the reconnect text above) |
+| `on_server_down` | `reconnect`, `next`, `fastest` | `reconnect` | What the retries do when the server stays down: keep trying the same server, move to the next server of the subscription, or move to the one that answers soonest (see the reconnect text above) |
 | `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
 | `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` keeps the profile's (AmneziaWG) or `1.1.1.1`, `1.0.0.1` (Hysteria2) |
 | `mtu` | `0`, or `1280` to `1500` | `0` | The tunnel adapter's MTU. `0` is automatic |
@@ -320,6 +326,7 @@ A completed `result` has this shape:
   "dns": {"verdict":"ok","checked":8,"replaced":0},
   "foreign": {"verdict":"ok","total":10,"open":10},
   "freeze": {"verdict":"ok","targets":[{"name":"cloudflare","bytes":131072,"verdict":"ok"}]},
+  "speed": {"verdict":"ok","down_mbps":42.5,"up_mbps":18.3,"first_mbps":44.1,"last_mbps":41.0,"server":"server name"},
   "neighbours": [{"kind":"process","name":"zapret"},{"kind":"driver","name":"WinDivert"},{"kind":"adapter","name":"WireGuard"}]
 }
 ```
@@ -349,6 +356,19 @@ was blocked, else `ok` if any completed, else `unknown`. If the control download
 `unknown`: a slow or broken network is not a freeze. The test runs in step 4 beside the foreign check and takes at
 most 15 s.
 
+`speed` is the speed of the connection the user actually has, measured through the tunnel with ordinary sockets, so
+it runs only while the VPN is up; with the VPN down `verdict` is `skipped` and the numbers are 0. It uses the user's
+traffic: a download of up to 8 MiB (stops at 6 s or 8 MiB) and an upload of up to 4 MiB of zeros (stops at 3 s or
+4 MiB), about 12 MiB at most, and the stage takes at most 12 s. It runs in step 4, after the freeze test has finished, so
+the two do not share the link. `down_mbps` is the download's average in Mbit/s without its first 500 ms (ramp-up),
+`first_mbps` and `last_mbps` are the averages of its first and last 2 s, `up_mbps` is the upload's (0 if the host
+refused it or the download failed, which skips the upload). All are rounded to one decimal. `server` is what the session
+status calls the connected server (the profile's name, or its id when it has no name); empty if unknown. Verdicts:
+`ok`; `throttled` (at least 4 s were measured, `first_mbps` is 2 or more and `last_mbps` fell below 0.4 times
+`first_mbps`: the speed drops after the first megabytes, as a shaper does it); `failed` (under 64 KiB arrived);
+`skipped`. A download that ends early at 8 MiB on a fast link is `ok`: there is nothing to compare. The log line holds
+the verdict and the five numbers only.
+
 `neighbours` lists other software on this machine that competes with a VPN client for the same traffic: `kind`
 `process` (a known DPI-bypass tool, VPN or proxy core is running), `driver` (the WinDivert packet-interception driver
 is running) or `adapter` (another VPN's tunnel adapter, such as WireGuard, Wintun or TAP, is up). `name` is the
@@ -361,7 +381,7 @@ service's existing kill-switch allowance for its own sockets lets these probes l
 
 Diagnostic results and logs contain verdicts, counters, and timings only. They do not include authentication values,
 keys, subscription links, profile configs, or the machine's public address; the STUN address is discarded after its
-mapped port is read. The freeze test counts bytes only; checks in this slice do not measure speed or Wi-Fi quality. The neighbour list holds
+mapped port is read. The freeze test counts bytes only; the speed test measures through the tunnel only; no check here measures Wi-Fi quality. The neighbour list holds
 product names only.
 
 ## Running it by hand

@@ -521,32 +521,55 @@ func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 // around. `after` "" or "auto" stands for the picked server itself. Servers the protocol rules out are skipped,
 // except the picked one, so a full round always comes back to it. It is false when no other server exists.
 func Next(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool, after string) (string, bool) {
-	home, ok := PickForSettings(profiles, server, requestedProtocol, sub, configuredProtocol, game)
+	home, ring, ok := Ring(profiles, server, requestedProtocol, sub, configuredProtocol, game)
 	if !ok {
 		return "", false
 	}
 	if after == "" || after == "auto" {
 		after = home.ID
 	}
+	for i, p := range ring {
+		if p.ID == after {
+			if len(ring) == 1 {
+				return "", false
+			}
+			return ring[(i+1)%len(ring)].ID, true
+		}
+	}
+	return home.ID, true // `after` left the subscription
+}
+
+// Ring is the round Next walks: the picked server (home) and the servers of its subscription that the protocol allows.
+func Ring(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool) (home Profile, ring []Profile, ok bool) {
+	home, ok = PickForSettings(profiles, server, requestedProtocol, sub, configuredProtocol, game)
+	if !ok {
+		return Profile{}, nil, false
+	}
 	protocol := requestedProtocol
 	if protocol == "" || protocol == "auto" {
 		protocol = configuredProtocol
 	}
-	var ring []string
 	for _, p := range profiles {
 		if p.Sub == home.Sub && (p.ID == home.ID || protocol == "" || protocol == "auto" || p.Protocol == protocol) {
-			ring = append(ring, p.ID)
+			ring = append(ring, p)
 		}
 	}
-	for i, id := range ring {
-		if id == after {
-			if len(ring) == 1 {
-				return "", false
-			}
-			return ring[(i+1)%len(ring)], true
+	return home, ring, true
+}
+
+// Others is the round without `except` ("" and "auto" stand for the picked server itself).
+func Others(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool, except string) []Profile {
+	home, ring, _ := Ring(profiles, server, requestedProtocol, sub, configuredProtocol, game)
+	if except == "" || except == "auto" {
+		except = home.ID
+	}
+	var others []Profile
+	for _, p := range ring {
+		if p.ID != except {
+			others = append(others, p)
 		}
 	}
-	return home.ID, true // `after` left the subscription
+	return others
 }
 
 func PickForSettings(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool) (Profile, bool) {

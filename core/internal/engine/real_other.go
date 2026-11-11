@@ -38,3 +38,5 @@ func (*Real) RefreshAutoRegion(onChange func()) {
 		onChange()
 	}
 }
+
+func (*Real) Fastest(context.Context, Target, string) (string, bool) { return "", false }

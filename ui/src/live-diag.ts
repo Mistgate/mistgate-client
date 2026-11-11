@@ -19,6 +19,8 @@ type Result = {
   foreign: { verdict: string; total: number; open: number };
   freeze?: { verdict: string; targets: { name: string; bytes: number; verdict: string }[] };
   neighbours?: { kind: string; name: string }[];
+  // measured through the tunnel, only when the VPN was up during the check
+  speed?: { verdict: string; down_mbps: number; up_mbps: number; first_mbps: number; last_mbps: number; server: string };
 };
 type State = { state: 'idle' | 'running' | 'done' | 'failed'; step: number; pct: number; error: string; result: Result | null };
 type LogEntry = { t_unix_ms: number; level: string; src?: string; msg: string };
@@ -79,10 +81,14 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         udp_no_answer: I.srvRows[0].paths[2].m, no_answer: I.srvRows[3].paths[0].m, not_found: I.srvRows[3].paths[0].m,
         auth_rejected: I.srvRows[4].paths[0].m, bad_config: I.srvRows[4].paths[0].m, engine_error: I.srvRows[1].paths[2].m,
       };
+      // "Mbps" as the design's samples write it in this language ("31 ms · 48.2 Mbps")
+      const unit = String(G.srvRows[0].paths[0].m).split(' · ')[1]?.replace(/[d.,s]+/, '') ?? 'Mbps';
+      const sp = r.speed && r.speed.verdict !== 'skipped' && r.speed.verdict !== 'failed' ? r.speed : null;
       const servers = r.servers.map((n) => {
         const { flag, text } = flagOf(n.name);
-        const m = n.verdict === 'ok' ? `${n.rtt_ms} ms` : why[n.reason] ?? '';
-        const meta = n.verdict === 'ok' ? `${way(n.protocol).split(' · ')[0]} · ${n.rtt_ms} ms` : n.verdict === 'down' ? I.srvRows[3].meta : n.verdict === 'config' ? I.srvRows[4].meta : m;
+        const fast = sp && (sp.server === n.id || sp.server === n.name) ? ` · ${sp.down_mbps.toFixed(1)} ${unit}` : ''; // the server the VPN is on
+        const m = n.verdict === 'ok' ? `${n.rtt_ms} ms${fast}` : why[n.reason] ?? '';
+        const meta = n.verdict === 'ok' ? `${way(n.protocol).split(' · ')[0]} · ${n.rtt_ms} ms${fast}` : n.verdict === 'down' ? I.srvRows[3].meta : n.verdict === 'config' ? I.srvRows[4].meta : m;
         return { kind: 'srv', flag, name: text, v: n.verdict, alt: '', meta, paths: [{ n: way(n.protocol), v: n.verdict, m }], lines: [] as string[], hops: [] as any[], g: '', tone: '', term: '', act: [] as string[], hasFlag: true };
       });
       const net: any[] = [];
@@ -101,7 +107,9 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       else if (r.foreign.verdict === 'cut') row(I.netRows[6], { v: 'blocked', alt: '', meta: w.foreignCut, lines: [nums(I.netRows[6].lines[0], r.foreign.open, r.foreign.total)] });
       // a download that stalls: the design words it for a server ("stops after 64 KB"); here it is the network's row
       const fz = r.freeze;
-      if (fz?.verdict === 'ok') row(I.netRows[5], { meta: '', lines: [] });
+      const speedLine = sp ? [`↓ ${sp.down_mbps.toFixed(1)} · ↑ ${sp.up_mbps.toFixed(1)} ${unit}`] : [];
+      if (sp?.verdict === 'throttled' && fz?.verdict !== 'freeze') row(I.netRows[5], { v: 'slow', alt: '', meta: w.throttled, lines: [`${sp.first_mbps.toFixed(1)} → ${sp.last_mbps.toFixed(1)} ${unit}`, ...speedLine] });
+      else if (fz?.verdict === 'ok' || sp && fz?.verdict !== 'freeze') row(I.netRows[5], { meta: sp ? G.netRows[5].meta : '', lines: speedLine });
       else if (fz?.verdict === 'freeze') {
         const kb = String(Math.max(1, Math.round(Math.max(...fz.targets.filter((t) => t.verdict === 'freeze').map((t) => t.bytes)) / 1024)));
         row(I.netRows[5], { v: 'freeze', alt: '', meta: I.srvRows[2].meta.replace('64', kb), lines: [I.srvRows[2].paths[0].m.replace('64', kb)] });

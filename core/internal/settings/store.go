@@ -172,7 +172,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 		}
 	case "on_server_down":
 		var v string
-		if json.Unmarshal(raw, &v) != nil || v != "reconnect" && v != "next" {
+		if json.Unmarshal(raw, &v) != nil || v != "reconnect" && v != "next" && v != "fastest" {
 			return false
 		}
 		value.OnServerDown = v

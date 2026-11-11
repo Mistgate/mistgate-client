@@ -40,6 +40,8 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "route rules and list refresh do not reconnect", run: testRouteChangesDoNotReconnect},
 		{name: "only AmneziaWG path transition reconnects", run: testOnlyAWGPathTransitionReconnects},
 		{name: "next server after two failures, wrapping around", run: testNextServerAfterTwoFailures},
+		{name: "fastest: the third attempt goes to the quickest server", run: testFastestServerAfterTwoFailures},
+		{name: "fastest with no answer falls back to the ring order", run: testFastestWithoutAnswerUsesRing},
 		{name: "reconnect keeps the same server", run: testReconnectKeepsTheServer},
 		{name: "next needs another server", run: testNextNeedsAnotherServer},
 		{name: "first connect failure does not move on", run: testFirstConnectFailureStays},
@@ -906,6 +908,55 @@ func testNextServerAfterTwoFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	// connect, then two attempts on each server of the ring, wrapping back to the chosen one
+	if got := attemptedServers(fake); len(got) < 10 || got[:10] != "aaabbccaab" {
+		t.Fatalf("attempted servers = %q, want prefix aaabbccaab", got)
+	}
+}
+
+func testFastestServerAfterTwoFailures(t *testing.T) {
+	store := testSettings(t, "off")
+	if _, err := store.Set(map[string]json.RawMessage{"on_server_down": json.RawMessage(`"fastest"`)}); err != nil {
+		t.Fatal(err)
+	}
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetServers("a", "b", "c")
+	fake.SetFastest("c")
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 2 * time.Millisecond
+	timing.probeFailureWindow = time.Millisecond
+	manager := newManagerWithTimings(fake, store.Get, timing, []time.Duration{2 * time.Millisecond})
+	t.Cleanup(manager.Close)
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(subscription.Close)
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	fake.SetFailStartCode("offline")
+	fake.SetProbeErr(errors.New("tunnel is dead"))
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Server == "c" })
+	waitForStarts(t, fake, 8)
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// connect and two attempts on a, then the pick c (two attempts); the next pick may not be c, nothing else answers,
+	// so the ring goes on from a (two attempts), and the pick after that is c again
+	if got := attemptedServers(fake); len(got) < 8 || got[:8] != "aaaccaac" {
+		t.Fatalf("attempted servers = %q, want prefix aaaccaac", got)
+	}
+}
+
+func testFastestWithoutAnswerUsesRing(t *testing.T) {
+	manager, fake, _ := downedManager(t, "fastest", "a", "b", "c")
+	waitForStarts(t, fake, 10)
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// nothing answers: the same order as "next"
 	if got := attemptedServers(fake); len(got) < 10 || got[:10] != "aaabbccaab" {
 		t.Fatalf("attempted servers = %q, want prefix aaabbccaab", got)
 	}

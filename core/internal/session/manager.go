@@ -76,6 +76,7 @@ type attemptResult struct {
 	generation uint64
 	info       engine.Info
 	err        error
+	server     string // the server the attempt picked for itself ("fastest"), "" if it did not
 }
 type probeResult struct {
 	generation uint64
@@ -105,7 +106,11 @@ type actorState struct {
 	userServer string
 	// failures counts failed reconnect attempts in a row on state.target.Server.
 	failures int
+	// fastest: the next attempt picks the quickest server itself (on_server_down "fastest" after two failures).
+	fastest bool
 }
+
+func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
 
 type managerTiming struct {
 	probeInterval      time.Duration
@@ -355,6 +360,12 @@ func (m *Manager) run() {
 					continue
 				}
 				state.status.Step = ""
+				state.fastest = false
+				if request.server != "" {
+					// the attempt moved itself to another server; the retries and a later reconnect stay there
+					state.target.Server, state.status.Server = request.server, request.server
+					state.failures = 0
+				}
 				if request.err != nil {
 					if state.runCancel != nil {
 						state.runCancel()
@@ -518,7 +529,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 			m.hub.Publish("status", state.status)
 		}
 		state.retryIndex = 0
-		state.failures = 0
+		state.noFailures()
 		state.userServer = target.Server
 		state.target = target
 		m.startAttempt(state, target)
@@ -544,7 +555,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	resetProbeStreak(state)
 	state.probePending = false
 	state.retryIndex = 0
-	state.failures = 0
+	state.noFailures()
 	state.status = Status{
 		State:     "connecting",
 		Step:      string(engine.StepResolve),
@@ -572,10 +583,19 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	}
 	done := make(chan struct{})
 	state.workerDone = done
+	pick, home := state.fastest, target
+	home.Server = state.userServer
 	go func() {
 		defer close(done)
 		if previousDone != nil {
 			<-previousDone
+		}
+		// the pick takes up to a few seconds of handshakes, which the actor must not wait for
+		var picked string
+		if pick {
+			if picked = m.fastest(ctx, home, target.Server); picked != "" {
+				target.Server = picked
+			}
 		}
 		if err := ctx.Err(); err != nil {
 			return
@@ -588,7 +608,7 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 			}
 		})
 		select {
-		case m.commands <- attemptResult{generation: generation, info: info, err: err}:
+		case m.commands <- attemptResult{generation: generation, info: info, err: err, server: picked}:
 		case <-m.done:
 		}
 	}()
@@ -671,7 +691,7 @@ func (m *Manager) beginReconnect(state *actorState, hold bool) {
 	state.status.Error = ""
 	state.status.SinceUnix = time.Now().Unix()
 	state.retryIndex = 0
-	state.failures = 0
+	state.noFailures()
 	m.hub.Publish("status", state.status)
 	m.startAttempt(state, target)
 }
@@ -727,7 +747,7 @@ func (m *Manager) stop(state *actorState) {
 	resetProbeStreak(state)
 	state.probePending = false
 	state.retryIndex = 0
-	state.failures = 0
+	state.noFailures()
 	state.holdReconnect = false
 	m.hub.Publish("status", state.status)
 }
@@ -828,15 +848,21 @@ func (m *Manager) reconnectRoute(state *actorState, configured settings.Settings
 		m.hub.Publish("status", state.status)
 	}
 	state.retryIndex = 0
-	state.failures = 0
+	state.noFailures()
 	m.startAttempt(state, target)
 }
 
 // serverDown counts a failed reconnect attempt. With on_server_down "next" the second one in a row moves the
-// retry to the next server of the subscription; the backoff goes on as it was.
+// retry to the next server of the subscription; with "fastest", to the one that answers soonest (the next attempt
+// finds it, see startAttempt). The backoff goes on as it was.
 func (m *Manager) serverDown(state *actorState) {
 	state.failures++
-	if state.failures < 2 || m.currentSettings().OnServerDown != "next" {
+	mode := m.currentSettings().OnServerDown
+	if state.failures < 2 || mode != "next" && mode != "fastest" {
+		return
+	}
+	if mode == "fastest" {
+		state.fastest = true
 		return
 	}
 	chosen := state.target
@@ -846,6 +872,15 @@ func (m *Manager) serverDown(state *actorState) {
 		state.status.Server = next
 		state.failures = 0
 	}
+}
+
+// fastest is the quickest other server of the round, or Next's pick when none answers; "" when there is neither.
+func (m *Manager) fastest(ctx context.Context, home engine.Target, except string) string {
+	if server, ok := m.engine.Fastest(ctx, home, except); ok {
+		return server
+	}
+	server, _ := m.engine.Next(home, except)
+	return server
 }
 
 func (m *Manager) publishRoutes(state *actorState) {

@@ -29,6 +29,7 @@ type Fake struct {
 	changed       chan struct{}
 	targets       []Target
 	servers       []string
+	fastest       string
 	starts        atomic.Uint64
 	probes        atomic.Uint64
 	received      atomic.Uint64
@@ -139,6 +140,19 @@ func (f *Fake) Next(_ Target, after string) (string, bool) {
 		}
 	}
 	return f.servers[1], true // "auto" or unknown: the first server is the pick
+}
+
+// SetFastest is the server Fastest answers with; "" means none answers. It is skipped when it is `except`.
+func (f *Fake) SetFastest(server string) {
+	f.mu.Lock()
+	f.fastest = server
+	f.mu.Unlock()
+}
+
+func (f *Fake) Fastest(_ context.Context, _ Target, except string) (string, bool) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.fastest, f.fastest != "" && f.fastest != except
 }
 
 // SetServers is the server list of the one fake subscription, in order.

@@ -162,6 +162,12 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	diagnostics := diag.NewRunner(diag.Config{Profiles: store.Profiles, Tunnel: func() bool {
 		status, err := manager.Status(ctx)
 		return err == nil && status.State == "connected"
+	}, Connected: func() string {
+		// the status carries the profile's name (its id when it has no name), not the id
+		if status, err := manager.Status(ctx); err == nil && status.State == "connected" {
+			return status.Server
+		}
+		return ""
 	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
 		manager.Events().Publish("diag", state)
 	})

@@ -245,6 +245,34 @@ func TestNext(t *testing.T) {
 	}
 }
 
+func TestOthers(t *testing.T) {
+	profiles := []Profile{
+		{ID: "a", Sub: "one", Protocol: "hysteria2"}, {ID: "b", Sub: "one", Protocol: "awg"},
+		{ID: "x", Sub: "two", Protocol: "hysteria2"}, {ID: "c", Sub: "one", Protocol: "hysteria2"},
+	}
+	ids := func(list []Profile) (out string) {
+		for _, p := range list {
+			out += p.ID
+		}
+		return out
+	}
+	for _, test := range []struct {
+		name                                  string
+		server, sub, except, configured, want string
+	}{
+		{"every other server of the subscription", "a", "", "a", "auto", "bc"},
+		{"auto stands for the picked server", "auto", "one", "auto", "auto", "bc"},
+		{"moved away: the chosen one is in the round", "a", "", "c", "auto", "ab"},
+		{"protocol skips the others, not the chosen", "b", "", "b", "hysteria2", "ac"},
+		{"a single server has no other", "x", "", "x", "auto", ""},
+		{"unknown server", "nope", "", "nope", "auto", ""},
+	} {
+		if got := ids(Others(profiles, test.server, "auto", test.sub, test.configured, false, test.except)); got != test.want {
+			t.Errorf("%s: Others = %q; want %q", test.name, got, test.want)
+		}
+	}
+}
+
 func TestParseUintRange(t *testing.T) {
 	for input, expected := range map[string]string{"5": "5", "20-63": "20-63", "0003-0004": "3-4"} {
 		got, err := parseUintRange(input, 16)

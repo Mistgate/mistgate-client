@@ -85,8 +85,11 @@ func TestStoreConnectionSettings(t *testing.T) {
 	if got, err = store.Set(map[string]json.RawMessage{"mtu": json.RawMessage(`0`)}); err != nil || got.MTU != 0 {
 		t.Fatalf("mtu 0 = %#v, %v", got, err)
 	}
+	if got, err = store.Set(map[string]json.RawMessage{"on_server_down": json.RawMessage(`"fastest"`)}); err != nil || got.OnServerDown != "fastest" {
+		t.Fatalf("on_server_down fastest = %#v, %v", got, err)
+	}
 	for _, patch := range []map[string]json.RawMessage{
-		{"on_server_down": json.RawMessage(`"fastest"`)},
+		{"on_server_down": json.RawMessage(`"slowest"`)},
 		{"restore": json.RawMessage(`null`)},
 		{"mtu": json.RawMessage(`1279`)},
 		{"mtu": json.RawMessage(`1501`)},

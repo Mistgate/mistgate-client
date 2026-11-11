@@ -59,6 +59,8 @@ type Result struct {
 		Verdict string         `json:"verdict"`
 		Targets []FreezeTarget `json:"targets"`
 	} `json:"freeze"`
+	// Speed: a download and an upload through the tunnel; "skipped" when the VPN is down.
+	Speed Speed `json:"speed"`
 	// Neighbours: other VPNs, DPI-bypass tools and packet-interception drivers on this machine.
 	Neighbours []Neighbour `json:"neighbours"`
 }
@@ -74,7 +76,9 @@ type State struct {
 type Config struct {
 	Profiles func() ([]profile.Profile, error)
 	// Tunnel reports whether the VPN is up: then names can be resolved through it, which the network cannot touch.
-	Tunnel         func() bool
+	Tunnel func() bool
+	// Connected names the server the VPN is connected to, as the session status does ("" when it does not know).
+	Connected      func() string
 	Logger         *slog.Logger
 	STUNServers    []string
 	DNSNames       []string
@@ -298,6 +302,18 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 		return nil, err
 	}
 	r.log("freeze", fmt.Sprintf("verdict=%s bytes/idle (control, targets):%s", result.Freeze.Verdict, facts))
+	// after the freeze downloads: they use the same link, and would eat into the measurement
+	result.Speed.Verdict = "skipped"
+	if r.config.Tunnel != nil && r.config.Tunnel() {
+		result.Speed = checkSpeed(ctx, speedClient())
+		if r.config.Connected != nil {
+			result.Speed.Server = r.config.Connected()
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	r.log("speed", fmt.Sprintf("verdict=%s down=%.1f up=%.1f first=%.1f last=%.1f", result.Speed.Verdict, result.Speed.DownMbps, result.Speed.UpMbps, result.Speed.FirstMbps, result.Speed.LastMbps))
 	result.Foreign.Verdict = foreignVerdict(result.Foreign.Total, result.Foreign.Open)
 	result.UDP.Verdict = udpVerdict(len(stunPorts) > 0, anyServerOK, result.Foreign.Open > 0, anyHostAlive)
 	if result.Foreign.Open == 0 {
@@ -452,6 +468,26 @@ func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo
 	}
 	server.Verdict, server.Reason = "down", "no_answer"
 	return server, false
+}
+
+// Handshake is one handshake attempt to p's server outside the tunnel, on the physical interface, resolve included,
+// in timeout at most. It returns the round trip. The engine uses it to find the quickest server.
+func Handshake(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error) {
+	host, port, err := profileEndpoint(p)
+	if err != nil {
+		return 0, err
+	}
+	physical, err := physicalNetwork()
+	if err != nil {
+		return 0, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ip, err := resolveHost(ctx, host, physical, Config{})
+	if err != nil {
+		return 0, err
+	}
+	return attemptProfile(ctx, p, netip.AddrPortFrom(ip, port), interfaceFor(ip, physical), Config{AWGTimeout: timeout})
 }
 
 func serverForProfile(p profile.Profile) Server {
