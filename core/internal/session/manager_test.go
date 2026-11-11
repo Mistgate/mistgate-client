@@ -25,6 +25,11 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "dead tunnel reconnects with event order", run: testDeadTunnelReconnectsWithEventOrder},
 		{name: "fatal retry blocks and connect retries", run: testFatalRetryBlocksAndConnectRetries},
 		{name: "route change makes probe failure immediate", run: testRouteChangeMakesProbeFailureImmediate},
+		{name: "one failed probe recovers without status change", run: testOneProbeFailureRecoversWithoutStatusChange},
+		{name: "probe failures beyond the window reconnect", run: testProbeFailuresBeyondWindowReconnect},
+		{name: "received tunnel bytes prevent reconnect", run: testReceivedTunnelBytesPreventReconnect},
+		{name: "short sleep probes immediately with short patience", run: testShortSleepProbesImmediately},
+		{name: "long sleep reconnects at once", run: testLongSleepReconnects},
 		{name: "disconnect cancels retry wait", run: testDisconnectCancelsRetryWait},
 		{name: "always holds at start and through disconnect", run: testAlwaysHoldsAtStartAndDisconnect},
 		{name: "always failed connect blocks without retries", run: testAlwaysFailedConnectBlocks},
@@ -37,6 +42,25 @@ func TestSessionScenarios(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)
+	}
+}
+
+func TestProbeIsDead(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if probeIsDead(now.Add(19*time.Second), now, 0, 0, time.Time{}, 5, 20*time.Second, 30*time.Second) {
+		t.Fatal("probe streak was dead before 20 seconds")
+	}
+	if !probeIsDead(now.Add(20*time.Second), now, 0, 0, time.Time{}, 5, 20*time.Second, 30*time.Second) {
+		t.Fatal("probe streak was not dead after 20 seconds")
+	}
+	if !probeIsDead(now.Add(5*time.Second), now, 0, 0, now, 2, 20*time.Second, 30*time.Second) {
+		t.Fatal("two failures after a recent network event were not dead")
+	}
+	if probeIsDead(now.Add(5*time.Second), now, 0, 1024, now, 5, 20*time.Second, 30*time.Second) {
+		t.Fatal("received tunnel bytes did not suppress the dead decision")
+	}
+	if probeIsDead(now.Add(31*time.Second), now.Add(15*time.Second), 0, 0, now, 1, 20*time.Second, 30*time.Second) {
+		t.Fatal("old network event incorrectly used short patience")
 	}
 }
 
@@ -285,7 +309,12 @@ func testOffReconnectDoesNotHold(t *testing.T) {
 	store := testSettings(t, "off")
 	changed := make(chan struct{}, 1)
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, Changed: changed})
-	manager := newManager(fake, store.Get, time.Hour, []time.Duration{time.Second})
+	timing := defaultManagerTiming()
+	timing.probeInterval = time.Hour
+	timing.probeRetryInterval = 5 * time.Millisecond
+	timing.probeFailureWindow = time.Hour
+	timing.networkEventGrace = time.Second
+	manager := newManagerWithTimings(fake, store.Get, timing, []time.Duration{time.Second})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -367,6 +396,18 @@ func waitForManagerStatus(t *testing.T, manager *Manager, match func(Status) boo
 	}
 	t.Fatal("timed out waiting for manager status")
 	return Status{}
+}
+
+func waitForProbeCount(t *testing.T, fake *engine.Fake, want uint64) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fake.ProbeCount() >= want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("Probe() calls = %d, want at least %d", fake.ProbeCount(), want)
 }
 
 func testConnectDisconnectEventOrder(t *testing.T) {
@@ -483,7 +524,11 @@ func testMissingEngineReturnsNoSubscription(t *testing.T) {
 
 func testDeadTunnelReconnectsWithEventOrder(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: 5 * time.Millisecond})
-	manager := newManager(fake, settings.Defaults, 5*time.Millisecond, []time.Duration{10 * time.Millisecond})
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 5 * time.Millisecond
+	timing.probeFailureWindow = 25 * time.Millisecond
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{10 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -534,7 +579,11 @@ func testDeadTunnelReconnectsWithEventOrder(t *testing.T) {
 
 func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
-	manager := newManager(fake, settings.Defaults, 5*time.Millisecond, []time.Duration{10 * time.Millisecond})
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 2 * time.Millisecond
+	timing.probeFailureWindow = time.Millisecond
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{10 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -575,7 +624,12 @@ func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 func testRouteChangeMakesProbeFailureImmediate(t *testing.T) {
 	changed := make(chan struct{}, 1)
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, Changed: changed})
-	manager := newManager(fake, settings.Defaults, time.Hour, []time.Duration{time.Second})
+	timing := defaultManagerTiming()
+	timing.probeInterval = time.Hour
+	timing.probeRetryInterval = 5 * time.Millisecond
+	timing.probeFailureWindow = time.Hour
+	timing.networkEventGrace = time.Second
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{time.Second})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
@@ -590,8 +644,8 @@ func testRouteChangeMakesProbeFailureImmediate(t *testing.T) {
 	changed <- struct{}{}
 	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" })
 	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
-	if got := fake.ProbeCount(); got != 1 {
-		t.Fatalf("Probe() calls = %d, want exactly one route-triggered failure", got)
+	if got := fake.ProbeCount(); got != 2 {
+		t.Fatalf("Probe() calls = %d, want two route-triggered failures", got)
 	}
 	targets := fake.Targets()
 	if len(targets) != 2 || !targets[1].Hold {
@@ -599,9 +653,178 @@ func testRouteChangeMakesProbeFailureImmediate(t *testing.T) {
 	}
 }
 
+func testOneProbeFailureRecoversWithoutStatusChange(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{
+		StepDelay: time.Millisecond,
+		ProbeErrs: []error{errors.New("transient probe loss"), nil},
+	})
+	timing := defaultManagerTiming()
+	timing.probeInterval = 10 * time.Millisecond
+	timing.probeRetryInterval = 5 * time.Millisecond
+	timing.probeFailureWindow = 100 * time.Millisecond
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{time.Second})
+	defer manager.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "connected" })
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	waitForProbeCount(t, fake, 2)
+	select {
+	case event := <-subscription.C:
+		t.Fatalf("unexpected status change after a failed probe and recovery: %#v", event.Data)
+	case <-time.After(20 * time.Millisecond):
+	}
+	status, err := manager.Status(context.Background())
+	if err != nil || status.State != "connected" {
+		t.Fatalf("status after recovery = %#v, %v; want connected", status, err)
+	}
+}
+
+func testProbeFailuresBeyondWindowReconnect(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, ProbeErr: errors.New("dead tunnel")})
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 5 * time.Millisecond
+	timing.probeFailureWindow = 25 * time.Millisecond
+	timing.networkEventGrace = time.Second
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{time.Second})
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" })
+	fake.SetProbeErr(nil)
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	targets := fake.Targets()
+	if len(targets) != 2 || !targets[1].Hold {
+		t.Fatalf("Start targets = %#v, want held reconnect after sustained probe failures", targets)
+	}
+}
+
+func testReceivedTunnelBytesPreventReconnect(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, ProbeErr: errors.New("probe unavailable")})
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 5 * time.Millisecond
+	timing.probeFailureWindow = 25 * time.Millisecond
+	timing.networkEventGrace = time.Second
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{time.Second})
+	defer manager.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "connected" })
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(2 * time.Millisecond)
+		defer ticker.Stop()
+		var received uint64
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				received += receivedAliveThreshold
+				fake.SetReceived(received)
+			}
+		}
+	}()
+	time.Sleep(100 * time.Millisecond)
+	status, err := manager.Status(context.Background())
+	close(stop)
+	<-done
+	if err != nil || status.State != "connected" {
+		t.Fatalf("status while tunnel bytes arrived = %#v, %v; want connected", status, err)
+	}
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testShortSleepProbesImmediately(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, ProbeErr: errors.New("dead tunnel")})
+	timing := defaultManagerTiming()
+	timing.probeInterval = time.Hour
+	timing.probeRetryInterval = 15 * time.Millisecond
+	timing.probeFailureWindow = time.Hour
+	timing.networkEventGrace = time.Second
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{time.Second})
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	manager.NetworkChanged("resume", 119*time.Second)
+	waitForProbeCount(t, fake, 1)
+	status, err := manager.Status(context.Background())
+	if err != nil || status.State != "connected" {
+		t.Fatalf("status after first wake probe = %#v, %v; want connected", status, err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" })
+	if got := fake.ProbeCount(); got != 2 {
+		t.Fatalf("Probe() calls after short wake = %d, want two failures", got)
+	}
+}
+
+func testLongSleepReconnects(t *testing.T) {
+	for _, killSwitch := range []string{"off", "while"} {
+		longSleepReconnects(t, killSwitch)
+	}
+}
+
+func longSleepReconnects(t *testing.T, killSwitch string) {
+	store := testSettings(t, killSwitch)
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: 3 * time.Millisecond})
+	timing := defaultManagerTiming()
+	timing.probeInterval = time.Hour
+	manager := newManagerWithTimings(fake, store.Get, timing, []time.Duration{time.Second})
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	manager.NetworkChanged("resume", 120*time.Second)
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" })
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	targets := fake.Targets()
+	if len(targets) != 2 || targets[1].Hold != (killSwitch != "off") {
+		t.Fatalf("kill switch %s: Start targets = %#v, want an immediate reconnect, held only with the kill switch", killSwitch, targets)
+	}
+	if got := fake.ProbeCount(); got != 0 {
+		t.Fatalf("Probe() calls after long sleep = %d, want immediate reconnect without probing", got)
+	}
+}
+
 func testDisconnectCancelsRetryWait(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
-	manager := newManager(fake, settings.Defaults, 5*time.Millisecond, []time.Duration{40 * time.Millisecond})
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 2 * time.Millisecond
+	timing.probeFailureWindow = time.Millisecond
+	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{40 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {

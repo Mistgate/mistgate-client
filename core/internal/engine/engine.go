@@ -40,6 +40,7 @@ type Engine interface {
 	Hold() bool
 	Reapply()
 	Stats() Traffic
+	Received() uint64
 	Probe(ctx context.Context) error
 	Changed() <-chan struct{}
 }

@@ -16,21 +16,32 @@ import (
 const serviceName = "MistgateClient"
 
 // runAsService reports false when the process was started from a console; then the caller runs in the foreground.
-func runAsService(run func(context.Context) error) (bool, error) {
+func runAsService(run func(context.Context, <-chan time.Duration) error) (bool, error) {
 	if is, err := svc.IsWindowsService(); err != nil || !is {
 		return false, err
 	}
 	return true, svc.Run(serviceName, handler(run))
 }
 
-type handler func(context.Context) error
+type handler func(context.Context, <-chan time.Duration) error
 
 func (run handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- run(ctx) }()
-	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	powerEvents := make(chan time.Duration, 1)
+	go func() { done <- run(ctx, powerEvents) }()
+	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPowerEvent}
+	var suspendedAt time.Time
+	var pendingSleep time.Duration
+	var resumeTimer *time.Timer
+	var resumeC <-chan time.Time
+	defer func() {
+		if resumeTimer != nil {
+			resumeTimer.Stop()
+		}
+		close(powerEvents)
+	}()
 	for {
 		select {
 		case err := <-done:
@@ -42,12 +53,52 @@ func (run handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status
 			switch request.Cmd {
 			case svc.Interrogate:
 				status <- request.CurrentStatus
+			case svc.PowerEvent:
+				switch request.EventType {
+				case 4:
+					suspendedAt = time.Now()
+					if resumeTimer != nil && !resumeTimer.Stop() {
+						select {
+						case <-resumeTimer.C:
+						default:
+						}
+					}
+					resumeC = nil
+				case 7, 18:
+					pendingSleep = sleptDuration(suspendedAt, time.Now())
+					suspendedAt = time.Time{}
+					if resumeTimer == nil {
+						resumeTimer = time.NewTimer(5 * time.Second)
+					} else {
+						if !resumeTimer.Stop() {
+							select {
+							case <-resumeTimer.C:
+							default:
+							}
+						}
+						resumeTimer.Reset(5 * time.Second)
+					}
+					resumeC = resumeTimer.C
+				}
 			case svc.Stop, svc.Shutdown:
 				status <- svc.Status{State: svc.StopPending}
 				cancel()
 			}
+		case <-resumeC:
+			resumeC = nil
+			select {
+			case powerEvents <- pendingSleep:
+			default:
+			}
 		}
 	}
+}
+
+func sleptDuration(suspendedAt, resumedAt time.Time) time.Duration {
+	if suspendedAt.IsZero() || resumedAt.Before(suspendedAt) {
+		return 120 * time.Second
+	}
+	return resumedAt.Sub(suspendedAt)
 }
 
 // install registers this binary as the LocalSystem service and starts it. The service SID (unrestricted) is what the

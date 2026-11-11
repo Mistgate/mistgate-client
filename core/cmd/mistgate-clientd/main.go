@@ -55,7 +55,9 @@ func main() {
 		os.Exit(2)
 	}
 
-	start := func(ctx context.Context) error { return run(ctx, *fake, *dataDir, *verify) }
+	start := func(ctx context.Context, powerEvents <-chan time.Duration) error {
+		return run(ctx, *fake, *dataDir, *verify, powerEvents)
+	}
 	if asService, err := runAsService(start); asService {
 		if err != nil {
 			os.Exit(1)
@@ -64,7 +66,7 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := start(ctx); err != nil {
+	if err := start(ctx, nil); err != nil {
 		os.Exit(1)
 	}
 }
@@ -81,7 +83,7 @@ func defaultDataDir() string {
 }
 
 // run owns the lifecycle; the context ends it (Ctrl+C in a console, a stop request as a Windows service).
-func run(ctx context.Context, useFake bool, dataDir, verify string) error {
+func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents <-chan time.Duration) error {
 	var eventMu sync.RWMutex
 	var eventHub *session.Hub
 	logs := ipc.NewLogStore()
@@ -132,6 +134,21 @@ func run(ctx context.Context, useFake bool, dataDir, verify string) error {
 	routeState.Snapshot = func() geo.Routes { return routes() }
 	manager := session.NewManager(eng, settingsStore.Get, routeState)
 	defer manager.Close()
+	if powerEvents != nil {
+		go func() {
+			for {
+				select {
+				case asleep, ok := <-powerEvents:
+					if !ok {
+						return
+					}
+					manager.NetworkChanged("resume", asleep)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 	eventMu.Lock()
 	eventHub = manager.Events()
 	eventMu.Unlock()

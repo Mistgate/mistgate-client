@@ -187,6 +187,24 @@ same shape returned by `log.get`. `log.get` returns `{"entries": [...]}` with en
 `{"t_unix_ms": 0, "level": "info", "msg": "...", "src": "ipc"}`.
 The log ring is in memory only and holds at most 500 entries. `src` is `ipc`, `session`, `engine`, `diag`, or `subs`.
 
+## Link guard, sleep, and adapter DNS
+
+While connected, the service probes the tunnel every 15 seconds. After a failed probe it tries again 5 seconds after
+that probe ends, continuing at that interval until a probe succeeds or the link is declared dead. A failed streak
+starts with its first failed probe; the service reconnects after 20 seconds only if fewer than 1 KiB arrived through
+the tunnel since that failure. Receiving at least 1 KiB means the server is alive and restarts the failure streak.
+A successful probe also ends the streak.
+
+A default-route or IPv4-gateway interface change triggers a probe immediately. Interface notifications are collapsed
+into one change after 1 second without another notification. For 30 seconds after a network change or wake-up, two
+consecutive failed probes are enough to reconnect. On resume, the service waits 5 seconds for Windows networking.
+If sleep lasted at least 120 seconds, or its duration is unknown, the service reconnects immediately (the network is
+held as the kill switch setting says); a shorter sleep uses the network-change probe behavior.
+
+The tunnel adapter's DNS suffix search list is set to `.`. Windows DNS registration, adapter-name registration,
+LLMNR, and adapter-name queries are disabled on that adapter. A failure to apply these DNS behaviors is logged once
+and does not fail the connection; each new tunnel session reapplies them.
+
 ## Network check
 
 `diag.run {"sub": "<id>"}` checks every profile in that subscription; omit `sub` or pass an empty string to use the

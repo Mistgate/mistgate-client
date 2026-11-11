@@ -25,6 +25,7 @@ func (*Real) Stop()                                   {}
 func (*Real) Hold() bool                              { return false }
 func (*Real) Reapply()                                {}
 func (*Real) Stats() Traffic                          { return Traffic{} }
+func (*Real) Received() uint64                        { return 0 }
 func (*Real) Probe(context.Context) error             { return errors.New("real engine requires Windows") }
 func (*Real) Changed() <-chan struct{}                { return nil }
 func (*Real) EffectiveRoute(settings.Settings) string { return "all" }

@@ -5,6 +5,7 @@ package netcfg
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"sync"
@@ -23,6 +24,8 @@ var adapterGUID = windows.GUID{
 	Data3: 0x7465,
 	Data4: [8]byte{0x9a, 0x71, 0x42, 0x6f, 0x8c, 0x19, 0x53, 0x2d},
 }
+
+var dnsBehaviorWarning sync.Once
 
 type Config struct {
 	MTU       int
@@ -131,16 +134,39 @@ func (a *Adapter) Configure(cfg Config) error {
 		}
 	}
 	dns4, dns6 := splitDNS(cfg.DNS)
-	if err := a.luid.SetDNS(windows.AF_INET, dns4, nil); err != nil {
+	if err := a.luid.SetDNS(windows.AF_INET, dns4, []string{"."}); err != nil {
 		return fmt.Errorf("configure Wintun IPv4 DNS: %w", err)
 	}
 	if len(dns6) > 0 {
-		if err := a.luid.SetDNS(windows.AF_INET6, dns6, nil); err != nil {
+		if err := a.luid.SetDNS(windows.AF_INET6, dns6, []string{"."}); err != nil {
 			return fmt.Errorf("configure Wintun IPv6 DNS: %w", err)
 		}
 	}
+	if err := quietDNS(a.luid); err != nil {
+		dnsBehaviorWarning.Do(func() {
+			slog.Warn("could not disable DNS registration behaviors on Wintun", "error", err)
+		})
+	}
 	a.configured = true
 	return nil
+}
+
+func quietDNS(luid winipcfg.LUID) error {
+	guid, err := luid.GUID()
+	if err != nil {
+		return err
+	}
+	return winipcfg.SetInterfaceDnsSettings(*guid, &winipcfg.DnsInterfaceSettings{
+		Version: winipcfg.DnsInterfaceSettingsVersion1,
+		Flags: winipcfg.DnsInterfaceSettingsFlagRegistrationEnabled |
+			winipcfg.DnsInterfaceSettingsFlagRegisterAdapterName |
+			winipcfg.DnsInterfaceSettingsFlagEnableLLMNR |
+			winipcfg.DnsInterfaceSettingsFlagQueryAdapterName,
+		RegistrationEnabled: 0,
+		RegisterAdapterName: 0,
+		EnableLLMNR:         0,
+		QueryAdapterName:    0,
+	})
 }
 
 func setInterface(luid winipcfg.LUID, family winipcfg.AddressFamily, mtu int) error {

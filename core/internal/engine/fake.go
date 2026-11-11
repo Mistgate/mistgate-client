@@ -16,6 +16,7 @@ type FakeConfig struct {
 	FailStartCode string
 	HoldResult    *bool
 	ProbeErr      error
+	ProbeErrs     []error
 	Changed       chan struct{}
 }
 
@@ -23,11 +24,13 @@ type Fake struct {
 	mu            sync.RWMutex
 	config        FakeConfig
 	probeErr      error
+	probeErrs     []error
 	failStartCode string
 	changed       chan struct{}
 	targets       []Target
 	starts        atomic.Uint64
 	probes        atomic.Uint64
+	received      atomic.Uint64
 	holds         atomic.Uint64
 	reapplies     atomic.Uint64
 }
@@ -37,11 +40,18 @@ func NewFake(config FakeConfig) *Fake {
 	if changed == nil {
 		changed = make(chan struct{}, 1)
 	}
-	return &Fake{config: config, probeErr: config.ProbeErr, failStartCode: config.FailStartCode, changed: changed}
+	return &Fake{
+		config:        config,
+		probeErr:      config.ProbeErr,
+		probeErrs:     append([]error(nil), config.ProbeErrs...),
+		failStartCode: config.FailStartCode,
+		changed:       changed,
+	}
 }
 
 func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Info, error) {
 	f.starts.Add(1)
+	f.received.Store(0)
 	f.mu.Lock()
 	f.targets = append(f.targets, target)
 	config, failStartCode := f.config, f.failStartCode
@@ -97,14 +107,20 @@ func (f *Fake) Reapply() { f.reapplies.Add(1) }
 
 func (*Fake) Stats() Traffic { return Traffic{} }
 
+func (f *Fake) Received() uint64 { return f.received.Load() }
+
 func (f *Fake) Probe(ctx context.Context) error {
 	f.probes.Add(1)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f.mu.RLock()
+	f.mu.Lock()
 	err := f.probeErr
-	f.mu.RUnlock()
+	if len(f.probeErrs) != 0 {
+		err = f.probeErrs[0]
+		f.probeErrs = f.probeErrs[1:]
+	}
+	f.mu.Unlock()
 	return err
 }
 
@@ -125,6 +141,8 @@ func (f *Fake) SetFailStartCode(code string) {
 func (f *Fake) StartCount() uint64 { return f.starts.Load() }
 
 func (f *Fake) ProbeCount() uint64 { return f.probes.Load() }
+
+func (f *Fake) SetReceived(received uint64) { f.received.Store(received) }
 
 func (f *Fake) HoldCount() uint64 { return f.holds.Load() }
 

@@ -46,6 +46,7 @@ type Real struct {
 
 	lifecycle            sync.Mutex
 	mu                   sync.Mutex
+	gatewayMu            sync.Mutex
 	current              *realRun
 	resolved             map[string]netip.Addr
 	autoRegion           string
@@ -53,7 +54,10 @@ type Real struct {
 	autoRefreshAgain     bool
 	autoRefreshCallbacks []func()
 	changed              chan struct{}
+	interfaceChanges     chan struct{}
 	routeCB              *winipcfg.RouteChangeCallback
+	interfaceCB          *winipcfg.InterfaceChangeCallback
+	gatewayInterfaces    map[winipcfg.LUID]struct{}
 }
 
 type realRun struct {
@@ -85,24 +89,25 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 	if len(verifyOverride) != 0 {
 		verify = verifyOverride[0]
 	}
-	r := &Real{load: load, getSettings: getSettings, geo: geoStore, verify: verify, resolved: make(map[string]netip.Addr), changed: make(chan struct{}, 1)}
+	r := &Real{
+		load:              load,
+		getSettings:       getSettings,
+		geo:               geoStore,
+		verify:            verify,
+		resolved:          make(map[string]netip.Addr),
+		changed:           make(chan struct{}, 1),
+		interfaceChanges:  make(chan struct{}, 1),
+		gatewayInterfaces: make(map[winipcfg.LUID]struct{}),
+	}
+	if gateways, err := ipv4GatewayInterfaces(); err == nil {
+		r.gatewayInterfaces = gateways
+	}
 	callback, err := winipcfg.RegisterRouteChangeCallback(func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
 		if route == nil || route.DestinationPrefix.Prefix().Bits() != 0 {
 			return
 		}
-		r.mu.Lock()
-		isTunnel := false
-		if r.current != nil {
-			if adapter := r.current.tunnel.adapterSnapshot(); adapter != nil {
-				isTunnel = adapter.LUID() == uint64(route.InterfaceLUID)
-			}
-		}
-		r.mu.Unlock()
-		if !isTunnel {
-			select {
-			case r.changed <- struct{}{}:
-			default:
-			}
+		if !r.isTunnelInterface(route.InterfaceLUID) {
+			r.signalChange()
 		}
 	})
 	if err != nil {
@@ -110,10 +115,124 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 	} else {
 		r.routeCB = callback
 	}
+	interfaceCallback, err := winipcfg.RegisterInterfaceChangeCallback(func(_ winipcfg.MibNotificationType, iface *winipcfg.MibIPInterfaceRow) {
+		if iface == nil || iface.Family != windows.AF_INET {
+			return
+		}
+		r.gatewayMu.Lock()
+		defer r.gatewayMu.Unlock()
+		gateways, err := ipv4GatewayInterfaces()
+		if err != nil {
+			return
+		}
+		r.mu.Lock()
+		changedGateway := false
+		tunnelLUID := uint64(0)
+		if r.current != nil {
+			if adapter := r.current.tunnel.adapterSnapshot(); adapter != nil {
+				tunnelLUID = adapter.LUID()
+			}
+		}
+		for luid := range r.gatewayInterfaces {
+			if luid != winipcfg.LUID(tunnelLUID) {
+				if _, exists := gateways[luid]; !exists {
+					changedGateway = true
+				}
+			}
+		}
+		for luid := range gateways {
+			if luid != winipcfg.LUID(tunnelLUID) {
+				if _, exists := r.gatewayInterfaces[luid]; !exists {
+					changedGateway = true
+				}
+			}
+		}
+		_, hadGateway := r.gatewayInterfaces[iface.InterfaceLUID]
+		_, hasGateway := gateways[iface.InterfaceLUID]
+		r.gatewayInterfaces = gateways
+		isTunnel := tunnelLUID != 0 && tunnelLUID == uint64(iface.InterfaceLUID)
+		r.mu.Unlock()
+		if changedGateway || !isTunnel && (hadGateway || hasGateway) {
+			select {
+			case r.interfaceChanges <- struct{}{}:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		slog.Warn("interface change monitor unavailable")
+	} else {
+		r.interfaceCB = interfaceCallback
+		go r.debounceInterfaceChanges(time.Second)
+	}
 	return r
 }
 
 func (r *Real) Changed() <-chan struct{} { return r.changed }
+
+func (r *Real) isTunnelInterface(luid winipcfg.LUID) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.current == nil {
+		return false
+	}
+	adapter := r.current.tunnel.adapterSnapshot()
+	return adapter != nil && adapter.LUID() == uint64(luid)
+}
+
+func (r *Real) signalChange() {
+	select {
+	case r.changed <- struct{}{}:
+	default:
+	}
+}
+
+func (r *Real) debounceInterfaceChanges(quiet time.Duration) {
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	var last time.Time
+	for {
+		select {
+		case <-r.interfaceChanges:
+			last = time.Now()
+			if timer == nil {
+				timer = time.NewTimer(quiet)
+			} else {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(quiet)
+			}
+			timerC = timer.C
+		case <-timerC:
+			timerC = nil
+			if delay := debounceDelay(last, time.Now(), quiet); delay > 0 {
+				timer.Reset(delay)
+				timerC = timer.C
+				continue
+			}
+			last = time.Time{}
+			r.signalChange()
+		}
+	}
+}
+
+func ipv4GatewayInterfaces() (map[winipcfg.LUID]struct{}, error) {
+	routes, err := winipcfg.GetIPForwardTable2(windows.AF_INET)
+	if err != nil {
+		return nil, err
+	}
+	gateways := make(map[winipcfg.LUID]struct{})
+	for _, route := range routes {
+		if route.DestinationPrefix.Prefix().Bits() == 0 && !route.NextHop.Addr().IsUnspecified() {
+			gateways[route.InterfaceLUID] = struct{}{}
+		}
+	}
+	return gateways, nil
+}
 
 func (r *Real) EffectiveRoute(configured settings.Settings) string {
 	switch configured.RouteMode {
@@ -760,6 +879,20 @@ func (r *Real) Stats() Traffic {
 	}
 	run.lastRX, run.lastTX, run.lastStatsAt = rx, tx, now
 	return Traffic{RXBPS: rxBPS, TXBPS: txBPS, RTTMS: run.rtt.Milliseconds()}
+}
+
+func (r *Real) Received() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.current == nil || r.current.tunnel == nil {
+		return 0
+	}
+	adapter := r.current.tunnel.adapterSnapshot()
+	if adapter == nil {
+		return 0
+	}
+	rx, _ := adapter.Counters()
+	return rx
 }
 
 func (r *Real) Probe(ctx context.Context) error {
