@@ -296,7 +296,9 @@ A completed `result` has this shape:
   "udp": {"verdict":"ok"},
   "nat": {"verdict":"open"},
   "dns": {"verdict":"ok","checked":8,"replaced":0},
-  "foreign": {"verdict":"ok","total":10,"open":10}
+  "foreign": {"verdict":"ok","total":10,"open":10},
+  "freeze": {"verdict":"ok","targets":[{"name":"cloudflare","bytes":131072,"verdict":"ok"}]},
+  "neighbours": [{"kind":"process","name":"zapret"},{"kind":"driver","name":"WinDivert"},{"kind":"adapter","name":"WireGuard"}]
 }
 ```
 
@@ -315,13 +317,30 @@ single address as another name. Ordinary address differences such as CDN answers
 fail and one opens, and `unknown` when none opens. If none of the foreign TLS checks opens, `udp` and `dns` are also
 reported as `unknown`.
 
+`freeze` is a download test: the first 131072 bytes of a file from each foreign host in `targets` (`name` is a short
+label, never an address; `bytes` is how many arrived), next to the same download from a control host that no network
+is expected to throttle. Per-target verdicts: `ok` (the whole download arrived), `freeze` (it stalled for 6 s after
+1 to 65535 bytes: a device on the way lets the connection start and then stops delivering it, which a reachability
+check does not see), `blocked` (nothing arrived and the host never replied: connect, handshake or request refused or
+timed out), `unknown` (anything else). The top-level `verdict` is `freeze` if any target froze, else `blocked` if any
+was blocked, else `ok` if any completed, else `unknown`. If the control download does not complete, every verdict is
+`unknown`: a slow or broken network is not a freeze. The test runs in step 4 beside the foreign check and takes at
+most 15 s.
+
+`neighbours` lists other software on this machine that competes with a VPN client for the same traffic: `kind`
+`process` (a known DPI-bypass tool, VPN or proxy core is running), `driver` (the WinDivert packet-interception driver
+is running) or `adapter` (another VPN's tunnel adapter, such as WireGuard, Wintun or TAP, is up). `name` is the
+product's name as a user knows it; a product appears once, at most 10 entries, the list is empty when nothing is
+found and on non-Windows builds. It carries no paths, process ids or command lines. It is read when the run starts.
+
 “Outside the tunnel” means each diagnostic socket selects the physical IPv4 default-route interface, even while a
 VPN tunnel is active. AmneziaWG handshake sockets use the same interface. The check does not add tunnel routes; the
 service's existing kill-switch allowance for its own sockets lets these probes leave beside the tunnel.
 
 Diagnostic results and logs contain verdicts, counters, and timings only. They do not include authentication values,
 keys, subscription links, profile configs, or the machine's public address; the STUN address is discarded after its
-mapped port is read. Checks in this slice do not measure route hops, speed, throttling, or Wi-Fi quality.
+mapped port is read. The freeze test counts bytes only; checks in this slice do not measure speed or Wi-Fi quality. The neighbour list holds
+product names only.
 
 ## Running it by hand
 

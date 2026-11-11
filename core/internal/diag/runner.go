@@ -54,6 +54,13 @@ type Result struct {
 		Total   int    `json:"total"`
 		Open    int    `json:"open"`
 	} `json:"foreign"`
+	// Freeze: a download from a foreign host that stalls after the first kilobytes.
+	Freeze struct {
+		Verdict string         `json:"verdict"`
+		Targets []FreezeTarget `json:"targets"`
+	} `json:"freeze"`
+	// Neighbours: other VPNs, DPI-bypass tools and packet-interception drivers on this machine.
+	Neighbours []Neighbour `json:"neighbours"`
 }
 
 type State struct {
@@ -233,6 +240,8 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 	}
 	result := &Result{Sub: sub, Servers: make([]Server, len(selected))}
 	result.Network.Kind = physical.Kind
+	result.Neighbours = neighbours(scanLocal())
+	r.log("neighbours", fmt.Sprintf("found=%d", len(result.Neighbours)))
 	anyServerOK, anyHostAlive := checkProfiles(ctx, selected, physical, r.config, result.Servers)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -275,10 +284,20 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// the download runs beside the foreign check (it is the slower one), so the steps stay the same
+	var facts string
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		result.Freeze.Verdict, result.Freeze.Targets, facts = checkFreeze(ctx, freezeClient(physical))
+	}()
 	result.Foreign.Total, result.Foreign.Open = checkForeign(ctx, physical, r.config)
+	wait.Wait()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	r.log("freeze", fmt.Sprintf("verdict=%s bytes/idle (control, targets):%s", result.Freeze.Verdict, facts))
 	result.Foreign.Verdict = foreignVerdict(result.Foreign.Total, result.Foreign.Open)
 	result.UDP.Verdict = udpVerdict(len(stunPorts) > 0, anyServerOK, result.Foreign.Open > 0, anyHostAlive)
 	if result.Foreign.Open == 0 {
