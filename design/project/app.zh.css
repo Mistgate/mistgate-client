@@ -2583,6 +2583,36 @@ a.det{text-decoration:none}
 .bx-notes p{display:flex;align-items:flex-start;gap:10px;margin:0;padding:14px;border-radius:16px;background:color-mix(in oklab,var(--text) 3.5%,transparent);font-size:12.5px;line-height:1.5;color:color-mix(in oklab,var(--text) 76%,transparent)}
 .bx-notes .gl{width:17px;height:17px;flex:none;margin-top:1px;color:var(--accent-text)}
 .bx-notes b{font-weight:700;color:var(--text)}
+/* карточка сервера по наведению */
+.stip{position:fixed;z-index:30;width:272px;display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:18px;background:var(--raise);box-shadow:0 0 0 1px var(--border),0 24px 56px -16px rgba(0,0,0,.6);opacity:0;visibility:hidden;pointer-events:none;transform:translateX(6px) scale(.98);transform-origin:100% 30%;transition:opacity .16s ease,transform .22s cubic-bezier(.2,.8,.2,1),visibility 0s .16s,top .22s cubic-bezier(.2,.8,.2,1)}
+.t-dark .stip{background:#1c1c22}
+.stip.show{opacity:1;visibility:visible;transform:none;transition:opacity .18s ease .28s,transform .26s cubic-bezier(.2,.8,.2,1) .28s,visibility 0s .28s,top .22s cubic-bezier(.2,.8,.2,1)}
+.stip-h{display:flex;align-items:center;gap:11px}
+.stip-h .fl{flex:none}
+.stip-h .tx{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.stip-h .tx b{font-size:15px;font-weight:750;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stip-h .tx span{font-size:12.5px;color:var(--muted)}
+.stip-ms{flex:none;display:inline-flex;align-items:baseline;gap:3px;height:26px;padding:0 9px;border-radius:9px;background:color-mix(in oklab,var(--mint) 14%,transparent);color:var(--ok-text);font:650 12.5px/26px var(--mono)}
+.stip-ms small{font:500 11px/1 var(--sans);opacity:.8}
+.stip-ms.nov{background:color-mix(in oklab,var(--text) 7%,transparent);color:var(--muted)}
+.stip-kv{display:flex;flex-direction:column;border-radius:12px;background:color-mix(in oklab,var(--text) 4%,transparent);padding:3px 11px}
+.stip-kv>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;font-size:12.5px}
+.stip-kv>div+div{box-shadow:inset 0 1px 0 color-mix(in oklab,var(--text) 6%,transparent)}
+.stip-kv span{color:var(--muted);flex:none}
+.stip-kv b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stip-kv b.m{font:600 12px/1 var(--mono);direction:ltr}
+.stip-p{display:flex;flex-wrap:wrap;gap:6px}
+.stip-c{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:8px;font-size:12px;font-weight:650}
+.stip-c.h2{background:var(--tone-mint-bg);color:var(--tone-mint)}
+.stip-c.vless{background:var(--tone-sky-bg);color:var(--tone-sky)}
+.stip-c.awg{background:var(--tone-lav-bg);color:var(--tone-lav)}
+.stip-l{display:flex;align-items:center;gap:10px;font-size:12.5px}
+.stip-l>span:first-child{color:var(--muted)}
+.stip-l .bar{flex:1;height:6px;border-radius:3px;background:color-mix(in oklab,var(--text) 8%,transparent);overflow:hidden}
+.stip-l .bar i{display:block;height:100%;border-radius:3px;background:var(--mint)}
+.stip-l .bar i.hi{background:var(--warning)}
+.stip-l b{font:650 12px/1 var(--mono);min-width:34px;text-align:end}
+@media (prefers-reduced-motion:reduce){.stip,.stip.show{transition:none;transform:none}}
 /* end add */
 /* «Установщик» */
 .g-hard-drive{--m:url("data:image/svg+xml,%3Csvg stroke-width='1.8' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E %3Cpath d='M10 17.01L10.01 16.9989' stroke='black' stroke-linecap='round' stroke-linejoin='round'/%3E %3Cpath d='M6 17.01L6.01 16.9989' stroke='black' stroke-linecap='round' stroke-linejoin='round'/%3E %3Cpath d='M2 13V20.4C2 20.7314 2.26863 21 2.6 21H21.4C21.7314 21 22 20.7314 22 20.4V13M2 13H22M2 13L4.87172 3.42759C4.94786 3.1738 5.18145 3 5.44642 3H18.5536C18.8185 3 19.0521 3.1738 19.1283 3.42759L22 13' stroke='black' stroke-width='1.8'/%3E %3C/svg%3E")}

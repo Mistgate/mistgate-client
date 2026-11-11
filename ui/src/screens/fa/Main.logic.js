@@ -110,6 +110,7 @@ class Component extends DCLogic {
     const NODES_ALL = [["de", "de", "آلمان", ["h2", "h2w", "vt", "vx", "awg"], 39, ""], ["de2", "de", "آلمان", ["h2", "h2w", "vt", "vx"], 44, ""], ["mass", "de", "آلمان", ["h2"], 61, ""], ["be", "by", "بلاروس", ["h2", "vt", "vx"], 58, "RU"], ["nl", "nl", "هلند", ["h2", "h2w", "vt", "vx", "awg"], 48, ""], ["ru", "ru", "روسیه", ["h2", "vt", "vx"], 12, ""], ["ru2", "ru", "روسیه", ["h2", "vt", "vx"], 15, ""], ["ro", "ro", "رومانی", ["h2", "h2w", "vt", "vx"], 63, ""], ["fi", "fi", "فنلاند", ["h2", "vt", "vx", "awg"], 41, ""], ["nl2", "nl", "هلند", ["h2", "vt"], 51, ""], ["lv", "lv", "لتونی", ["h2", "vt", "vx"], 36, ""], ["pl", "pl", "لهستان", ["h2", "vt", "vx"], 45, ""], ["ee", "ee", "استونی", ["h2", "vt"], 38, ""], ["se", "se", "سوئد", ["h2", "vt", "vx", "awg"], 55, ""], ["fr", "fr", "فرانسه", ["h2", "h2w", "vt", "vx"], 62, ""], ["de3", "de", "آلمان", ["vt", "vx"], 47, ""], ["fi2", "fi", "فنلاند", ["awg"], 43, ""], ["pl2", "pl", "لهستان", ["vt"], 49, ""], ["nl3", "nl", "هلند", ["h2", "awg"], 53, ""], ["se2", "se", "سوئد", ["vt", "vx"], 58, ""], ["fr2", "fr", "فرانسه", ["h2"], 66, ""], ["ro2", "ro", "رومانی", ["vt", "vx"], 70, ""], ["lv2", "lv", "لتونی", ["h2", "vt"], 40, ""], ["ee2", "ee", "استونی", ["awg"], 42, ""]];
     const svN = this.st().svN !== undefined ? this.st().svN : (this.props.srv !== undefined ? Number(this.props.srv) : 8);
     const siPre = this.st().si !== undefined ? this.st().si : ({ mine: 0, work: 1, family: 2, test: 3, expired: 4, none: 5 }[this.props.sub] || 0);
+    const TCITY = { de: 'فرانکفورت', by: 'مینسک', nl: 'آمستردام', ru: 'مسکو', ro: 'بخارست', fi: 'هلسینکی', lv: 'ریگا', pl: 'ورشو', ee: 'تالین', se: 'استکهلم', fr: 'پاریس' };
     const CITY = { nl: 'آمستردام', fi: 'هلسینکی', ro: 'Bucharest, Pipera Business District' }, V6 = { ru2: true, nl2: true }, NAMEOF = {}, CNT = {};
     NODES_ALL.forEach((n) => { CNT[n[2]] = (CNT[n[2]] || 0) + 1; NAMEOF[n[0]] = CITY[n[0]] ? ' · ' + CITY[n[0]] : (CNT[n[2]] > 1 ? ' ' + CNT[n[2]] : ''); });
     const NODES = siPre === 5 ? [] : (svN === 2 ? [NODES_ALL[0], NODES_ALL[4]] : NODES_ALL.slice(0, svN));
@@ -143,13 +144,23 @@ class Component extends DCLogic {
     const rows = NODES.map((n) => {
       const fams = []; n[3].forEach((k) => { if (fams.indexOf(FAM[k]) < 0) fams.push(FAM[k]); });
       const mark = NEWV[n[0]] ? 'نیاز به به‌روزرسانی' : (n[5] ? 'از طریق ' + n[5] : (V6[n[0]] ? 'IPv6' : ''));
-      return { id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0],
+      const hh = n[0].split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7), load = 12 + hh % 71;
+      const tipD = { flag: FLAGS[n[1]], title: n[2] + NAMEOF[n[0]], city: TCITY[n[1]] || '', host: n[0] + '.vpn.example.com', ip: [45 + hh % 140, 10 + hh % 229, 3 + (hh >> 3) % 250, 2 + (hh >> 5) % 252].join('.'),
+        route: n[5] ? 'از طریق رله در روسیه' : 'مستقیم به سرور', pl: fams.map((x) => ({ c: x, t: NAMES[x] })), load: load, loadC: load > 70 ? 'hi' : '',
+        ms: NEWV[n[0]] || VERD[n[0]] === 'down' ? '—' : msTxt[n[0]], msC: NEWV[n[0]] || VERD[n[0]] === 'down' ? 'nov' : '' };
+      return { tipD: tipD, hin: (e) => { const el = e.currentTarget || e.target.closest('.r'), r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
+          this.setState({ tipId: n[0], tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - ((document.querySelector('.stip') || {}).offsetHeight || 250)))) }); },
+        hout: () => this.setState({ tipId: '' }),
+        id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0],
         h2: fams.indexOf('h2') >= 0, vless: fams.indexOf('vless') >= 0, awg: fams.indexOf('awg') >= 0, label: fams.map((x) => NAMES[x]).join(', '),
         rcls: sel === n[0] ? 'on' : '', on: sel === n[0] ? 'true' : 'false', pick: () => pickSrv(n[0]),
         vd: VERD[n[0]] || '', vt: VERD[n[0]] ? VDX[VERD[n[0]]][0] : '', vi: VERD[n[0]] ? VDX[VERD[n[0]]][1] : 'check', vc: VERD[n[0]] ? VDX[VERD[n[0]]][2] : 'hide', vo: VERD[n[0]] ? VDX[VERD[n[0]]][3] : 0,
         vrow: NEWV[n[0]] || VERD[n[0]] === 'down' || VERD[n[0]] === 'config' ? 'dead' : '', pisC: VERD[n[0]] || NEWV[n[0]] ? 'hide' : '', sigX: NEWV[n[0]] || VERD[n[0]] === 'down' ? 'nov' : '',
         sig: NEWV[n[0]] || VERD[n[0]] === 'down' ? '' : sigCls[n[0]], ping: ping[n[0]], ms: NEWV[n[0]] || VERD[n[0]] === 'down' ? '—' : msTxt[n[0]] };
     });
+    const tipRow = rows.filter((x) => x.id === this.st().tipId)[0];
+    if (tipRow) this.lastTip = tipRow.tipD;
+    const tip = this.lastTip || (rows[0] ? rows[0].tipD : { pl: [] });
     const rcls = {}, rOn = {}, pickN = {}, nowN = {};
     NODES.forEach((n) => {
       rcls[n[0]] = sel === n[0] ? 'on' : '';
@@ -249,6 +260,7 @@ class Component extends DCLogic {
       fixCls: this.st().fix ? 'busy' : '', fixTxt: this.st().fix ? 'در حال رفع…' : 'رفع مشکل', csFix: () => { this.setState({ fix: true }); setTimeout(() => this.setState({ fix: false, cs: '', phase: 'off' }), 1400); },
       blk: !!blk, notBlk: !blk, blkCls: blk ? 's-blk' : '', blkT: blk ? BLK[blk][0] : '', blkS: blk ? BLK[blk][1] : '', blkTone: blk ? BLK[blk][2] : '',
       isExpired: blk === 'expired', isNone: blk === 'none', notNone: blk !== 'none', tgN: tgCount, noTg: tgCount === 0, hasTg: tgCount > 0, tgeT: blk === 'none' ? 'هنوز پروکسی‌ای نیست' : 'این اشتراک پروکسی تلگرام ندارد', tgeS: blk === 'none' ? 'به‌محض افزودن اشتراک اینجا نمایش داده می‌شوند' : 'ارائه‌دهنده هنوز آن‌ها را اضافه نکرده', isNoSrv: blk === 'nosrv', isRemoved: blk === 'removed', hasPlan: blk !== 'none',
+      tip: tip, tipC: this.st().tipId ? 'show' : '', tipX: this.st().tipX || 0, tipY: this.st().tipY || 0,
       rows: rows.filter((r) => !r.vd), rowsBad: rows.filter((r) => r.vd).sort((x, y) => x.vo - y.vo), badLbl: rows.some((r) => r.vd) ? '' : 'hide', badN: '‏%s مورد مشکل‌دار'.replace('%s', rows.filter((r) => r.vd).length), srvN: NODES.length, hasSrv: NODES.length > 0, noSrvList: NODES.length === 0,
       seT: blk === 'none' ? 'هنوز سروری نیست' : 'این اشتراک سروری ندارد', seS: blk === 'none' ? 'به‌محض افزودن اشتراک اینجا نمایش داده می‌شوند' : 'شاید ارائه‌دهنده در حال به‌روزرسانی آن باشد. چند دقیقه دیگر دوباره تلاش کنید',
       svCls: blk === 'expired' ? 'dim' : '',

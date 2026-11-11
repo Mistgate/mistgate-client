@@ -21,3 +21,5 @@ html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: 
 .shell .dr.open .dr-b:hover { background: none; }
 /* Settings: sections that are not in this build yet. */
 .shell .sx-ni.soon { opacity: .45; pointer-events: none; }
+/* The server card: no load line when the panel did not say how busy the server is. */
+.shell .stip-l:has(.bar i[style*="width: 0%"]), .shell .stip-l:has(.bar i[style*="width:0%"]) { display: none; }

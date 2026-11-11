@@ -75,7 +75,7 @@ function styleOf(css: string): React.CSSProperties {
 
 // The HTML parser lower-cases attribute names; React wants its own spelling for these.
 const NAMES: Record<string, string> = {
-  class: 'className', for: 'htmlFor', onclick: 'onClick', tabindex: 'tabIndex', maxlength: 'maxLength',
+  class: 'className', for: 'htmlFor', onclick: 'onClick', onmouseenter: 'onMouseEnter', onmouseleave: 'onMouseLeave', tabindex: 'tabIndex', maxlength: 'maxLength',
   spellcheck: 'spellCheck', readonly: 'readOnly', autocomplete: 'autoComplete',
 };
 const propName = (attr: string) =>

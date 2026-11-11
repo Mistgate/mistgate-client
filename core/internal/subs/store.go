@@ -57,6 +57,7 @@ type Server struct {
 	City    string `json:"city,omitempty"`
 	Via     string `json:"via,omitempty"`
 	IPv6    bool   `json:"ipv6,omitempty"`
+	Load    string `json:"load,omitempty"` // low, medium or high; empty when the panel does not know
 }
 
 type Error struct {

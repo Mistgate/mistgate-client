@@ -200,6 +200,8 @@ type hy2BoundFactory struct {
 	conn     net.PacketConn
 	stop     func() bool
 	err      error
+	sent     time.Time // the first packet out
+	answered time.Time // the first packet in
 }
 
 func (f *hy2BoundFactory) New(net.Addr) (net.PacketConn, error) {
@@ -214,6 +216,7 @@ func (f *hy2BoundFactory) New(net.Addr) (net.PacketConn, error) {
 	f.conn = conn
 	f.stop = context.AfterFunc(f.ctx, func() { _ = conn.Close() })
 	f.mu.Unlock()
+	conn = &timedConn{PacketConn: conn, factory: f}
 	if f.kind == "none" {
 		return conn, nil
 	}
@@ -231,6 +234,44 @@ func (f *hy2BoundFactory) New(net.Addr) (net.PacketConn, error) {
 		return nil, err
 	}
 	return wrapped, nil
+}
+
+// timedConn notes when the first packet left and when the first one came back: one round trip to the server, without
+// the rest of the handshake (the second flight, the certificate check, the authentication request).
+type timedConn struct {
+	net.PacketConn
+	factory *hy2BoundFactory
+}
+
+func (c *timedConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	c.factory.mu.Lock()
+	if c.factory.sent.IsZero() {
+		c.factory.sent = time.Now()
+	}
+	c.factory.mu.Unlock()
+	return c.PacketConn.WriteTo(b, addr)
+}
+
+func (c *timedConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	n, addr, err := c.PacketConn.ReadFrom(b)
+	if err == nil {
+		c.factory.mu.Lock()
+		if c.factory.answered.IsZero() {
+			c.factory.answered = time.Now()
+		}
+		c.factory.mu.Unlock()
+	}
+	return n, addr, err
+}
+
+// roundTrip is the time from the first packet out to the first packet in; zero when there was no answer.
+func (f *hy2BoundFactory) roundTrip() time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sent.IsZero() || f.answered.IsZero() {
+		return 0
+	}
+	return f.answered.Sub(f.sent)
 }
 
 func (f *hy2BoundFactory) failure() error {
@@ -292,6 +333,10 @@ func attemptHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort, ph
 	select {
 	case outcome := <-done:
 		if outcome.err == nil {
+			// the whole handshake proves the server works; the number is one round trip, like a ping
+			if rtt := factory.roundTrip(); rtt > 0 {
+				return rtt, nil
+			}
 			return time.Since(started), nil
 		}
 		if err := factory.failure(); err != nil {
@@ -370,7 +415,7 @@ func attemptAWG(ctx context.Context, p *profile.AWG, endpoint netip.AddrPort, ph
 }
 
 func waitHandshake(ctx context.Context, awgDevice *device.Device, serverKey string, timeout time.Duration) error {
-	ticker := time.NewTicker(25 * time.Millisecond)
+	ticker := time.NewTicker(5 * time.Millisecond) // the answer is one round trip away: a coarse tick would show in the number
 	defer ticker.Stop()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()

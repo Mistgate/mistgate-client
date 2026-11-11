@@ -182,6 +182,16 @@
       </sc-if>
       </div>
 
+    <div class="stip {{tipC}}" style="left:{{tipX}}px;top:{{tipY}}px" role="tooltip">
+      <div class="stip-h"><span class="fl"><img src="{{tip.flag}}" alt=""></span><span class="tx"><b>{{tip.title}}</b><span>{{tip.city}}</span></span><span class="stip-ms {{tip.msC}}">{{tip.ms}}<small>毫秒</small></span></div>
+      <div class="stip-kv">
+        <div><span>主机</span><b class="m">{{tip.host}}</b></div>
+        <div><span>IP</span><b class="m">{{tip.ip}}</b></div>
+        <div><span>路由</span><b>{{tip.route}}</b></div>
+      </div>
+      <div class="stip-p"><sc-for list="{{tip.pl}}" as="q" hint-placeholder-count="2"><span class="stip-c {{q.c}}">{{q.t}}</span></sc-for></div>
+      <div class="stip-l"><span>负载</span><span class="bar" aria-hidden="true"><i class="{{tip.loadC}}" style="width:{{tip.load}}%"></i></span><b>{{tip.load}}%</b></div>
+    </div>
     <section class="servers {{svCls}}" aria-label="服务器">
       <div class="sv-h">
         <div class="subwrap">
@@ -257,7 +267,7 @@
         </button>
         <p class="lbl lblw"><span>所有服务器</span><a class="lbl-t {{badLbl}}" href="#srv-trouble"><i aria-hidden="true"></i>{{badN}}</a></p>
         <sc-for list="{{rows}}" as="n" hint-placeholder-count="8">
-        <div class="r {{n.rcls}} {{n.vrow}}">
+        <div class="r {{n.rcls}} {{n.vrow}}" onMouseEnter="{{n.hin}}" onMouseLeave="{{n.hout}}">
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">当前</span></sc-if></b></span>
@@ -268,7 +278,7 @@
         </sc-for>
         <p class="lbl lblw {{badLbl}}" id="srv-trouble"><span>在此网络中有问题</span><a href="ZhDiag.dc.html">为什么？</a></p>
         <sc-for list="{{rowsBad}}" as="n" hint-placeholder-count="2">
-        <div class="r {{n.rcls}} {{n.vrow}}">
+        <div class="r {{n.rcls}} {{n.vrow}}" onMouseEnter="{{n.hin}}" onMouseLeave="{{n.hout}}">
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">当前</span></sc-if></b></span>
@@ -480,6 +490,7 @@ class Component extends DCLogic {
     const NODES_ALL = [["de", "de", "德国", ["h2", "h2w", "vt", "vx", "awg"], 39, ""], ["de2", "de", "德国", ["h2", "h2w", "vt", "vx"], 44, ""], ["mass", "de", "德国", ["h2"], 61, ""], ["be", "by", "白俄罗斯", ["h2", "vt", "vx"], 58, "RU"], ["nl", "nl", "荷兰", ["h2", "h2w", "vt", "vx", "awg"], 48, ""], ["ru", "ru", "俄罗斯", ["h2", "vt", "vx"], 12, ""], ["ru2", "ru", "俄罗斯", ["h2", "vt", "vx"], 15, ""], ["ro", "ro", "罗马尼亚", ["h2", "h2w", "vt", "vx"], 63, ""], ["fi", "fi", "芬兰", ["h2", "vt", "vx", "awg"], 41, ""], ["nl2", "nl", "荷兰", ["h2", "vt"], 51, ""], ["lv", "lv", "拉脱维亚", ["h2", "vt", "vx"], 36, ""], ["pl", "pl", "波兰", ["h2", "vt", "vx"], 45, ""], ["ee", "ee", "爱沙尼亚", ["h2", "vt"], 38, ""], ["se", "se", "瑞典", ["h2", "vt", "vx", "awg"], 55, ""], ["fr", "fr", "法国", ["h2", "h2w", "vt", "vx"], 62, ""], ["de3", "de", "德国", ["vt", "vx"], 47, ""], ["fi2", "fi", "芬兰", ["awg"], 43, ""], ["pl2", "pl", "波兰", ["vt"], 49, ""], ["nl3", "nl", "荷兰", ["h2", "awg"], 53, ""], ["se2", "se", "瑞典", ["vt", "vx"], 58, ""], ["fr2", "fr", "法国", ["h2"], 66, ""], ["ro2", "ro", "罗马尼亚", ["vt", "vx"], 70, ""], ["lv2", "lv", "拉脱维亚", ["h2", "vt"], 40, ""], ["ee2", "ee", "爱沙尼亚", ["awg"], 42, ""]];
     const svN = this.st().svN !== undefined ? this.st().svN : (this.props.srv !== undefined ? Number(this.props.srv) : 8);
     const siPre = this.st().si !== undefined ? this.st().si : ({ mine: 0, work: 1, family: 2, test: 3, expired: 4, none: 5 }[this.props.sub] || 0);
+    const TCITY = { de: '法兰克福', by: '明斯克', nl: '阿姆斯特丹', ru: '莫斯科', ro: '布加勒斯特', fi: '赫尔辛基', lv: '里加', pl: '华沙', ee: '塔林', se: '斯德哥尔摩', fr: '巴黎' };
     const CITY = { nl: '阿姆斯特丹', fi: '赫尔辛基', ro: 'Bucharest, Pipera Business District' }, V6 = { ru2: true, nl2: true }, NAMEOF = {}, CNT = {};
     NODES_ALL.forEach((n) => { CNT[n[2]] = (CNT[n[2]] || 0) + 1; NAMEOF[n[0]] = CITY[n[0]] ? ' · ' + CITY[n[0]] : (CNT[n[2]] > 1 ? ' ' + CNT[n[2]] : ''); });
     const NODES = siPre === 5 ? [] : (svN === 2 ? [NODES_ALL[0], NODES_ALL[4]] : NODES_ALL.slice(0, svN));
@@ -513,13 +524,23 @@ class Component extends DCLogic {
     const rows = NODES.map((n) => {
       const fams = []; n[3].forEach((k) => { if (fams.indexOf(FAM[k]) < 0) fams.push(FAM[k]); });
       const mark = NEWV[n[0]] ? '需要更新' : (n[5] ? '经由 ' + n[5] : (V6[n[0]] ? 'IPv6' : ''));
-      return { id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0],
+      const hh = n[0].split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7), load = 12 + hh % 71;
+      const tipD = { flag: FLAGS[n[1]], title: n[2] + NAMEOF[n[0]], city: TCITY[n[1]] || '', host: n[0] + '.vpn.example.com', ip: [45 + hh % 140, 10 + hh % 229, 3 + (hh >> 3) % 250, 2 + (hh >> 5) % 252].join('.'),
+        route: n[5] ? '经俄罗斯中转' : '直达服务器', pl: fams.map((x) => ({ c: x, t: NAMES[x] })), load: load, loadC: load > 70 ? 'hi' : '',
+        ms: NEWV[n[0]] || VERD[n[0]] === 'down' ? '—' : msTxt[n[0]], msC: NEWV[n[0]] || VERD[n[0]] === 'down' ? 'nov' : '' };
+      return { tipD: tipD, hin: (e) => { const el = e.currentTarget || e.target.closest('.r'), r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
+          this.setState({ tipId: n[0], tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - ((document.querySelector('.stip') || {}).offsetHeight || 250)))) }); },
+        hout: () => this.setState({ tipId: '' }),
+        id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0],
         h2: fams.indexOf('h2') >= 0, vless: fams.indexOf('vless') >= 0, awg: fams.indexOf('awg') >= 0, label: fams.map((x) => NAMES[x]).join(', '),
         rcls: sel === n[0] ? 'on' : '', on: sel === n[0] ? 'true' : 'false', pick: () => pickSrv(n[0]),
         vd: VERD[n[0]] || '', vt: VERD[n[0]] ? VDX[VERD[n[0]]][0] : '', vi: VERD[n[0]] ? VDX[VERD[n[0]]][1] : 'check', vc: VERD[n[0]] ? VDX[VERD[n[0]]][2] : 'hide', vo: VERD[n[0]] ? VDX[VERD[n[0]]][3] : 0,
         vrow: NEWV[n[0]] || VERD[n[0]] === 'down' || VERD[n[0]] === 'config' ? 'dead' : '', pisC: VERD[n[0]] || NEWV[n[0]] ? 'hide' : '', sigX: NEWV[n[0]] || VERD[n[0]] === 'down' ? 'nov' : '',
         sig: NEWV[n[0]] || VERD[n[0]] === 'down' ? '' : sigCls[n[0]], ping: ping[n[0]], ms: NEWV[n[0]] || VERD[n[0]] === 'down' ? '—' : msTxt[n[0]] };
     });
+    const tipRow = rows.filter((x) => x.id === this.st().tipId)[0];
+    if (tipRow) this.lastTip = tipRow.tipD;
+    const tip = this.lastTip || (rows[0] ? rows[0].tipD : { pl: [] });
     const rcls = {}, rOn = {}, pickN = {}, nowN = {};
     NODES.forEach((n) => {
       rcls[n[0]] = sel === n[0] ? 'on' : '';
@@ -619,6 +640,7 @@ class Component extends DCLogic {
       fixCls: this.st().fix ? 'busy' : '', fixTxt: this.st().fix ? '正在修复…' : '修复', csFix: () => { this.setState({ fix: true }); setTimeout(() => this.setState({ fix: false, cs: '', phase: 'off' }), 1400); },
       blk: !!blk, notBlk: !blk, blkCls: blk ? 's-blk' : '', blkT: blk ? BLK[blk][0] : '', blkS: blk ? BLK[blk][1] : '', blkTone: blk ? BLK[blk][2] : '',
       isExpired: blk === 'expired', isNone: blk === 'none', notNone: blk !== 'none', tgN: tgCount, noTg: tgCount === 0, hasTg: tgCount > 0, tgeT: blk === 'none' ? '暂无代理' : '此订阅不含 Telegram 代理', tgeS: blk === 'none' ? '添加订阅后，服务器会显示在这里' : '服务商尚未添加', isNoSrv: blk === 'nosrv', isRemoved: blk === 'removed', hasPlan: blk !== 'none',
+      tip: tip, tipC: this.st().tipId ? 'show' : '', tipX: this.st().tipX || 0, tipY: this.st().tipY || 0,
       rows: rows.filter((r) => !r.vd), rowsBad: rows.filter((r) => r.vd).sort((x, y) => x.vo - y.vo), badLbl: rows.some((r) => r.vd) ? '' : 'hide', badN: '%s 个有问题'.replace('%s', rows.filter((r) => r.vd).length), srvN: NODES.length, hasSrv: NODES.length > 0, noSrvList: NODES.length === 0,
       seT: blk === 'none' ? '暂无服务器' : '此订阅没有服务器', seS: blk === 'none' ? '添加订阅后，服务器会显示在这里' : '服务商可能正在更新。请几分钟后重试',
       svCls: blk === 'expired' ? 'dim' : '',

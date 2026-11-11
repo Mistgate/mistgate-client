@@ -168,6 +168,16 @@
       </sc-if>
       </div>
 
+    <div class="stip {{tipC}}" style="left:{{tipX}}px;top:{{tipY}}px" role="tooltip">
+      <div class="stip-h"><span class="fl"><img src="{{tip.flag}}" alt=""></span><span class="tx"><b>{{tip.title}}</b><span>{{tip.city}}</span></span><span class="stip-ms {{tip.msC}}">{{tip.ms}}<small>мс</small></span></div>
+      <div class="stip-kv">
+        <div><span>Адрес</span><b class="m">{{tip.host}}</b></div>
+        <div><span>IP</span><b class="m">{{tip.ip}}</b></div>
+        <div><span>Маршрут</span><b>{{tip.route}}</b></div>
+      </div>
+      <div class="stip-p"><sc-for list="{{tip.pl}}" as="q" hint-placeholder-count="2"><span class="stip-c {{q.c}}">{{q.t}}</span></sc-for></div>
+      <div class="stip-l"><span>Нагрузка</span><span class="bar" aria-hidden="true"><i class="{{tip.loadC}}" style="width:{{tip.load}}%"></i></span><b>{{tip.load}}%</b></div>
+    </div>
     <section class="servers {{svCls}}" aria-label="Серверы">
       <div class="sv-h">
         <div class="subwrap">
@@ -243,7 +253,7 @@
         </button>
         <p class="lbl lblw"><span>Все серверы</span><a class="lbl-t {{badLbl}}" href="#srv-trouble"><i aria-hidden="true"></i>{{badN}}</a></p>
         <sc-for list="{{rows}}" as="n" hint-placeholder-count="8">
-        <div class="r {{n.rcls}} {{n.vrow}}">
+        <div class="r {{n.rcls}} {{n.vrow}}" onMouseEnter="{{n.hin}}" onMouseLeave="{{n.hout}}">
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">сейчас</span></sc-if></b></span>
@@ -254,7 +264,7 @@
         </sc-for>
         <p class="lbl lblw {{badLbl}}" id="srv-trouble"><span>Проблемы в этой сети</span><a href="Diag.dc.html">Почему?</a></p>
         <sc-for list="{{rowsBad}}" as="n" hint-placeholder-count="2">
-        <div class="r {{n.rcls}} {{n.vrow}}">
+        <div class="r {{n.rcls}} {{n.vrow}}" onMouseEnter="{{n.hin}}" onMouseLeave="{{n.hout}}">
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">сейчас</span></sc-if></b></span>

@@ -12,7 +12,7 @@ import { pref } from './live-settings';
 type Status = { state: string; step: string; since_unix: number; server: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
-type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean };
+type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string };
 type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
@@ -121,12 +121,23 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       if (e.key === 'Enter' && (e.target as Element | null)?.closest?.('.onb-in')) this.addFromField();
     };
     // Esc, or a click outside it, closes the subscription switcher
-    onKeyDown = (e: KeyboardEvent) => { this.onEnter(e); if (e.key === 'Escape') this.closeSubs(); };
+    onKeyDown = (e: KeyboardEvent) => {
+      this.onEnter(e);
+      if (e.key === 'Escape') this.closeSubs();
+      // the design's hint on the search field
+      if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); document.querySelector<HTMLInputElement>('.servers input[type=search]')?.focus(); }
+    };
+    // the search field is plain markup in the design: what is typed narrows the list
+    onSearch = (e: Event) => {
+      const t = e.target as HTMLInputElement | null;
+      if (t?.matches?.('.servers input[type=search]')) this.setState({ q: t.value });
+    };
     onClickAway = (e: MouseEvent) => {
       const t = e.target as Element;
       if (!t.closest('.subsel') && !document.querySelector('.pop-h')?.parentElement?.contains(t)) this.closeSubs();
     };
     closeSubs() { if (this.st().subsPop) this.setState({ subsPop: false, mFor: undefined }); }
+    tipLast: unknown = null; // the card keeps its last content while it fades out
     route: { mode: string; effective: string } | null = null; // the route mode, for the chip beside the state
     rmId = '';
 
@@ -141,6 +152,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       ];
       document.addEventListener('paste', this.onPaste, true);
       document.addEventListener('keydown', this.onKeyDown, true);
+      document.addEventListener('input', this.onSearch, true);
       document.addEventListener('click', this.onClickAway);
       // the choice made before the window went to another screen, or was closed
       this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined, pings: { ...PINGS } }, () => this.sync());
@@ -149,6 +161,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       super.componentWillUnmount();
       document.removeEventListener('paste', this.onPaste, true);
       document.removeEventListener('keydown', this.onKeyDown, true);
+      document.removeEventListener('input', this.onSearch, true);
       document.removeEventListener('click', this.onClickAway);
       this.off.forEach((p) => void p.then((un) => un()));
     }
@@ -170,10 +183,6 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
-      // the hint on a server row: the address of each of its paths
-      const where = (n: Node) => [...new Set(n.entries.map((e) => HOSTS[e.s.id]).filter(Boolean).map((h) => (h.ips.length ? `${h.host} · ${h.ips.join(', ')}` : h.host)))].join('\n');
-      const nodes = nodesOf(this.sub()?.servers ?? []);
-      document.querySelectorAll<HTMLElement>('.r > .rsel').forEach((row, i) => { const t = nodes[i] ? where(nodes[i]) : ''; if (row.title !== t) row.title = t; });
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
@@ -223,7 +232,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const ids = sub ? sub.id + ':' + sub.servers.map((n) => n.id).join(',') : '';
       if (sub && ids !== hostsFor) {
         hostsFor = ids;
-        rpc<{ hosts: typeof HOSTS }>('servers.hosts', { sub: sub.id }).then((r) => { Object.assign(HOSTS, r.hosts); this.paint(); }, () => {});
+        rpc<{ hosts: typeof HOSTS }>('servers.hosts', { sub: sub.id }).then((r) => { Object.assign(HOSTS, r.hosts); this.forceUpdate(); }, () => {});
       }
       if (sub?.servers.length && !pingedAtStart) {
         pingedAtStart = true;
@@ -391,13 +400,38 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const nodes = nodesOf(servers);
       const has = (n: Node, id: string) => n.entries.some((e) => e.s.id === id);
       const pings: Record<string, number> = this.st().pings ?? {}, checking: Record<string, boolean> = this.st().checking ?? {}, flash: Record<string, boolean> = this.st().flash ?? {};
+      // the card beside a row under the pointer: where the server is and what it offers (the design's own card;
+      // its "straight to server" wording comes from the design's sample row)
+      const direct: string = (v.rows as any[] | undefined)?.find((r) => !r.via)?.tipD?.route ?? '';
+      const LOAD: Record<string, number> = { low: 25, medium: 55, high: 85 };
+      const tipOf = (n: Node, ms: string) => {
+        const at = n.entries.map((e) => HOSTS[e.s.id]).find(Boolean);
+        const kinds = [...new Set(n.entries.map((e) => e.s.via).filter((k) => k && k !== 'direct'))] as string[];
+        const plain = n.entries.some((e) => !e.s.via || e.s.via === 'direct');
+        const load = LOAD[n.entries[0].s.load ?? ''] ?? 0; // 0: the panel did not say, the line is hidden
+        return {
+          flag: n.flag, title: n.name + sufOf(n), city: n.entries[0].s.node ? n.entries[0].s.city ?? '' : '',
+          host: at?.host ?? '—', ip: at ? (at.ips[0] ?? (/^[\d.:a-f]+$/i.test(at.host) ? at.host : '—')) + (at.ips.length > 1 ? ` +${at.ips.length - 1}` : '') : '—',
+          route: n.via || (plain || !kinds.length ? direct : kinds.map((k) => (k === 'warp' ? 'WARP' : k)).join(' · ')),
+          pl: [...new Map(n.entries.map((e) => [e.fam, { c: e.fam, t: PROTO[e.s.protocol]?.[2] ?? e.s.protocol }])).values()],
+          load, loadC: load > 70 ? 'hi' : '', ms, msC: ms === '—' ? 'nov' : '',
+        };
+      };
       const row = (n: Node) => {
         const ids = n.entries.map((e) => e.s.id);
         const best = Math.min(...ids.map((id) => pings[id] || Infinity));
         const busy = ids.some((id) => checking[id]);
         const fams = new Set(n.entries.map((e) => e.fam));
+        const ms = best === Infinity ? '—' : String(best);
         return {
-          id: n.name, country: n.name, suf: sufOf(n), mark: n.via, mkc: n.via ? '' : 'hide', flag: n.flag, via: n.via, hasVia: !!n.via,
+          tipD: tipOf(n, ms), hout: () => this.setState({ tipId: '' }),
+          // placed as the design places it: left of the list, level with the row, kept inside the list
+          hin: (e: any) => {
+            const el: HTMLElement = e.currentTarget, r = el.getBoundingClientRect(), sv = el.closest('.servers')!.getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
+            const tall = (document.querySelector('.stip') as HTMLElement | null)?.offsetHeight || 250;
+            this.setState({ tipId: n.key, tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - tall))) });
+          },
+          key: n.key, id: n.name, country: n.name, suf: sufOf(n), mark: n.via, mkc: n.via ? '' : 'hide', flag: n.flag, via: n.via, hasVia: !!n.via,
           now: !!on && n.entries.some((e) => e.s.name === on.server),
           h2: fams.has('h2'), vless: false, awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
@@ -405,13 +439,19 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           sigX: best === Infinity ? 'nov' : '', sig: (best === Infinity ? '' : quality(best)) + (busy ? ' busy' : '') + (ids.some((id) => flash[id]) ? ' flash' : ''), ping: () => this.ping(ids), ms: best === Infinity ? '—' : String(best),
         };
       };
+      // the search: a country, a city, the panel's own wording, or a piece of the address
+      const q = String(this.st().q ?? '').trim().toLowerCase();
+      const found = (n: Node) => !q || [n.name, n.extra, n.via, ...n.entries.flatMap((e) => [e.s.name, e.s.city, e.s.country, HOSTS[e.s.id]?.host])].some((x) => x?.toLowerCase().includes(q));
       const allIds = servers.map((n) => n.id);
       const bestAll = Math.min(Infinity, ...allIds.map((id) => pings[id] || Infinity));
       Object.assign(v, {
-        rows: nodes.map(row), rowsBad: [], badLbl: 'hide', srvN: nodes.length, hasSrv: nodes.length > 0, noSrvList: nodes.length === 0,
+        rows: nodes.filter(found).map(row), rowsBad: [], badLbl: 'hide', srvN: nodes.length, hasSrv: nodes.length > 0, noSrvList: nodes.length === 0,
         isAuto: sel === 'auto', autoCls: sel === 'auto' ? 'on' : '', pickAuto: () => this.choose('auto'),
         pingAll: () => this.pingNodes(servers), allBusy: allIds.some((id) => checking[id]) ? 'busy' : '',
       });
+      const tipRow = (v.rows as any[]).find((x) => x.key === this.st().tipId);
+      if (tipRow) this.tipLast = tipRow.tipD;
+      v.tip = this.tipLast ?? v.rows[0]?.tipD ?? { pl: [] };
       // the Auto row carries the best number of the list (the design keys it to its sample node "de")
       v.sigCls.de = bestAll === Infinity ? 'nov' : quality(bestAll);
       v.msTxt.de = bestAll === Infinity ? '—' : String(bestAll);

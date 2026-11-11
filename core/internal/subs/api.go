@@ -70,6 +70,7 @@ type syncBody struct {
 		ID      string     `json:"id"`
 		Country string     `json:"country"`
 		City    string     `json:"city"`
+		Load    string     `json:"load"`
 		Paths   []syncPath `json:"paths"`
 	} `json:"servers"`
 }
@@ -405,7 +406,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 			if node == "" {
 				node = "n" + strconv.Itoa(number+1)
 			}
-			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6}
+			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6, Load: server.Load}
 			st.Servers = append(st.Servers, entry)
 			st.Entries = append(st.Entries, storedEntry{Server: entry, Raw: string(raw)})
 		}
