@@ -403,6 +403,18 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       // the card beside a row under the pointer: where the server is and what it offers (the design's own card;
       // its "straight to server" wording comes from the design's sample row)
       const direct: string = (v.rows as any[] | undefined)?.find((r) => !r.via)?.tipD?.route ?? '';
+      // A relay is another server's address: when a path enters at the address of a server in this list, it goes
+      // "via" that server's country, in the design's own wording of the mark ("via RU").
+      const sample = (v.rows as any[] | undefined)?.find((r) => r.via && r.mark);
+      const viaWord: string = sample ? String(sample.mark).replace(sample.via, '').trim() : 'via';
+      const entryAt = new Map<string, string>(); // a directly reached address -> its country code
+      for (const x of servers) {
+        const h = HOSTS[x.id]?.host;
+        if (h && x.country && (!x.via || x.via === 'direct')) entryAt.set(h, x.country.toUpperCase());
+      }
+      const through = (x: Server) => { const cc = x.via === 'relay' ? entryAt.get(HOSTS[x.id]?.host ?? '') : ''; return cc ? `${viaWord} ${cc}` : ''; };
+      // a node reached only through relays says so on its row
+      const viaOf = (n: Node) => n.via || (n.entries.every((e) => e.s.via === 'relay') ? through(n.entries[0].s) : '');
       const LOAD: Record<string, number> = { low: 25, medium: 55, high: 85 };
       const tipOf = (n: Node, ms: string) => {
         const at = n.entries.map((e) => HOSTS[e.s.id]).find(Boolean);
@@ -412,7 +424,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         return {
           flag: n.flag, title: n.name + sufOf(n), city: n.entries[0].s.node ? n.entries[0].s.city ?? '' : '',
           host: at?.host ?? '—', ip: at ? (at.ips[0] ?? (/^[\d.:a-f]+$/i.test(at.host) ? at.host : '—')) + (at.ips.length > 1 ? ` +${at.ips.length - 1}` : '') : '—',
-          route: n.via || (plain || !kinds.length ? direct : kinds.map((k) => (k === 'warp' ? 'WARP' : k)).join(' · ')),
+          route: viaOf(n) || (plain || !kinds.length ? direct : kinds.map((k) => (k === 'warp' ? 'WARP' : k)).join(' · ')),
           pl: [...new Map(n.entries.map((e) => [e.fam, { c: e.fam, t: PROTO[e.s.protocol]?.[2] ?? e.s.protocol }])).values()],
           load, loadC: load > 70 ? 'hi' : '', ms, msC: ms === '—' ? 'nov' : '',
         };
@@ -431,7 +443,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
             const tall = (document.querySelector('.stip') as HTMLElement | null)?.offsetHeight || 250;
             this.setState({ tipId: n.key, tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - tall))) });
           },
-          key: n.key, id: n.name, country: n.name, suf: sufOf(n), mark: n.via, mkc: n.via ? '' : 'hide', flag: n.flag, via: n.via, hasVia: !!n.via,
+          key: n.key, id: n.name, country: n.name, suf: sufOf(n), mark: viaOf(n), mkc: viaOf(n) ? '' : 'hide', flag: n.flag, via: viaOf(n), hasVia: !!viaOf(n),
           now: !!on && n.entries.some((e) => e.s.name === on.server),
           h2: fams.has('h2'), vless: false, awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
@@ -464,12 +476,12 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           country: node.name, suf: sufOf(node), title: node.name, flag: node.flag, fam: entry.fam, label: entry.label,
           isH2: entry.fam === 'h2', isAwg: entry.fam === 'awg', isVless: false,
           // the design says "direct" after the dot; a node reached through another says so in the subscription's words
-          srvSub: node.via ? String(v.cur.srvSub).split(' · ')[0] + ' · ' + node.via : v.cur.srvSub,
+          srvSub: viaOf(node) ? String(v.cur.srvSub).split(' · ')[0] + ' · ' + viaOf(node) : v.cur.srvSub,
         });
         if (!on || !this.traffic) v.msTxt.cur = v.cur.ms = '—';
         Object.assign(v, {
           profs: node.entries.map((e) => ({
-            fam: e.fam, label: e.label, full: e.full, isH2: e.fam === 'h2', isVless: false, isAwg: e.fam === 'awg',
+            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: through(e.s) ? e.full.replace('relay', through(e.s)) : e.full, isH2: e.fam === 'h2', isVless: false, isAwg: e.fam === 'awg',
             cls: picked && e.s.id === sel ? 'on' : '', on: picked && e.s.id === sel ? 'true' : 'false', pick: () => this.choose(e.s.id, true),
           })),
           profAuto: !picked, poAutoCls: picked ? '' : 'on',
