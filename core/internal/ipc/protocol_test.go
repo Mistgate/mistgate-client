@@ -119,7 +119,7 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 		t.Fatal(parseErr)
 	}
 	result, _, rpcErr = server.dispatch(context.Background(), request, true)
-	want := settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "all", RouteRegion: "auto"}
+	want := settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "all", RouteRegion: "auto", OnServerDown: "reconnect", DNS: "auto"}
 	if rpcErr != nil || result != want {
 		t.Fatalf("settings.set = %#v, %#v; want %#v", result, rpcErr, want)
 	}
@@ -142,14 +142,14 @@ func TestSettingsMethodsAndEvent(t *testing.T) {
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
-	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "smart", RouteRegion: "ru"}) {
+	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "smart", RouteRegion: "ru", OnServerDown: "reconnect", DNS: "auto"}) {
 		t.Fatalf("route settings.set = %#v, %#v", result, rpcErr)
 	}
 	request, parseErr = ParseRequest([]byte(`{"id":11,"method":"settings.set","params":{"route_mode":"selected"}}`))
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
-	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "selected", RouteRegion: "ru"}) {
+	if result, _, rpcErr = server.dispatch(context.Background(), request, true); rpcErr != nil || result != (settings.Settings{KillSwitch: "off", LAN: false, Protocol: "auto", RouteMode: "selected", RouteRegion: "ru", OnServerDown: "reconnect", DNS: "auto"}) {
 		t.Fatalf("selected route settings.set = %#v, %#v", result, rpcErr)
 	}
 	request, parseErr = ParseRequest([]byte(`{"id":10,"method":"routes.get","params":{}}`))

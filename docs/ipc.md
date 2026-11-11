@@ -79,6 +79,17 @@ held and reports `blocked` with `kill_switch`, otherwise it opens the network. A
 user-initiated `connect` failure ends in `error` with the network open, except in `always`, where it ends in `blocked`
 with the attempt's error code.
 
+With `on_server_down: "reconnect"` (default) every retry targets the same server. With `"next"`, a `reconnecting`
+session that fails two attempts in a row on one server sends its next attempt to the next server of the same
+subscription (the order of the subscription's list, wrapping around), and again after every two failures; `status.server`
+shows the server being tried. Servers the `protocol` setting rules out are skipped; the server the user chose is always in
+the round, so after every server has had its two attempts the round starts again from it. The backoff keeps growing
+across switches. `auto` stands for the server automatic selection picks (the first match of the subscription and
+protocol), so it moves on from there too. A single server has no next one and is retried. This applies only to retries
+of a session that was connected or is reconnecting, never to the first `connect`, and it does not change the user's choice:
+`last_server` stays, and a `connect` call goes to the server it names (an omitted or `auto` server in `reconnecting`
+means the user's original choice, not the one the retries moved to).
+
 Settings are saved as plain JSON in `<data directory>\settings.json`; a missing or broken file starts with defaults.
 `kill_switch` is `off`, `while`, or `always` (default `while`); `lan` allows private and link-local addresses through
 the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, or `awg` (default `auto`); `game` prefers AWG
@@ -88,6 +99,28 @@ provided, and returns `bad_params` for an unknown key or invalid value. Changes 
 firewall policy and are pushed to subscribers of `settings` as a Settings object. When `connect.protocol` is omitted
 or `auto`, automatic selection uses the configured `protocol`; when that is also `auto`, `game: true` prefers AWG if
 the selected subscription has one. A concrete server id always uses that server's protocol.
+
+Connection settings added after the first ones (all keys of `settings.get` / `settings.set`):
+
+| Key | Values | Default | Meaning |
+|---|---|---|---|
+| `on_server_down` | `reconnect`, `next` | `reconnect` | What the retries do when the server stays down: keep trying the same server, or move to the next server of the subscription (see the reconnect text above) |
+| `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
+| `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` keeps the profile's (AmneziaWG) or `1.1.1.1`, `1.0.0.1` (Hysteria2) |
+| `mtu` | `0`, or `1280` to `1500` | `0` | The tunnel adapter's MTU. `0` is automatic |
+
+`dns` takes one or two valid IPv4 or IPv6 addresses (no port, not unspecified, not loopback); a value is stored
+normalised (`netip.Addr` text, joined with `,`), and anything else is `bad_params`. The servers are reached through the
+tunnel like any other destination, in both protocols and every route mode; they are the adapter's DNS and the only DNS
+the kill switch lets out. `mtu` replaces the adapter's value in both protocols (Hysteria2 otherwise uses 1500). For
+AmneziaWG the adapter gets the smaller of `mtu` and the profile's own MTU (1280 when the profile has none), because
+a size above the one the server expects only breaks packets. Changing `dns` or `mtu` while connecting, connected or
+reconnecting restarts the attempt with the network held, like a change of the AmneziaWG path (the status goes
+`reconnecting`); with no tunnel it applies to the next connect.
+
+`last_server`, `last_sub` and `last_on` are kept by the service for Auto-connect and `restore`: `connect` sets
+`last_on: true` and `disconnect` sets it `false`. They are ordinary keys of `settings.set` too, but the window has no reason
+to write them.
 
 | `kill_switch` | connected | tunnel died / retrying | off or first connect failed | service start |
 |---|---|---|---|---|
@@ -334,3 +367,8 @@ interface.
 `settings.set {"autoconnect": true}`: when the service starts it connects to the target of the last `connect` call
 (the service keeps it as `last_server` / `last_sub` in the settings). The window's half of "connect when Windows
 starts" is its own: it puts itself into the user's Run key.
+
+`settings.set {"restore": true}`: when the service starts it connects to the same target if the VPN was on when it
+stopped, that is, the last call to `connect` was not followed by `disconnect` (`last_on`). A service stop, a crash
+or a shutdown does not clear `last_on`. At start the service connects when `autoconnect`, or `restore` with `last_on`,
+and there is a `last_server`.

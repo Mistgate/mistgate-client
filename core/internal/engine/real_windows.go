@@ -532,11 +532,21 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	var awgNet *netstack.Net
 	var hy2Client client.Client
 	var awgDNS []netip.Addr
+	// The settings read here are the ones this attempt uses; a change makes the manager start a new attempt.
+	customDNS, customMTU := configured.DNSAddrs(), configured.MTU
+	var awgMTU int
 	if selected.Protocol == "awg" {
+		awgMTU = selected.AWG.MTU
 		awgDNS = selected.AWG.DNS
 		if len(awgDNS) == 0 {
 			// ponytail: fixed resolvers until settings and the subscription carry them.
 			awgDNS = []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
+		}
+		if len(customDNS) != 0 {
+			awgDNS = customDNS
+		}
+		if customMTU != 0 && customMTU < awgMTU {
+			awgMTU = customMTU // a size above the server's own only breaks packets
 		}
 	}
 
@@ -557,7 +567,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return Info{}, context.Canceled
 		}
 	} else {
-		adapter, err := netcfg.Create(selected.AWG.MTU)
+		adapter, err := netcfg.Create(awgMTU)
 		if err != nil {
 			return Info{}, failure("no_server_answers", "AmneziaWG handshake: create adapter")
 		}
@@ -572,7 +582,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				addresses = append(addresses, address.Addr())
 			}
 			var err error
-			awgTun, awgNet, err = netstack.CreateNetTUN(addresses, awgDNS, selected.AWG.MTU)
+			awgTun, awgNet, err = netstack.CreateNetTUN(addresses, awgDNS, awgMTU)
 			if err != nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG tunnel: create userspace stack")
 			}
@@ -592,7 +602,11 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	}
 	adapter := run.tunnel.adapterSnapshot()
 	if selected.Protocol == "hysteria2" {
-		adapter, err = netcfg.Create(1500)
+		mtu := 1500
+		if customMTU != 0 {
+			mtu = customMTU
+		}
+		adapter, err = netcfg.Create(mtu)
 		if err != nil {
 			return Info{}, failure("tunnel_failed", "Hysteria2 tunnel: create adapter")
 		}
@@ -600,6 +614,9 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return Info{}, context.Canceled
 		}
 		dns := []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
+		if len(customDNS) != 0 {
+			dns = customDNS
+		}
 		configured = r.settings()
 		if err := r.setFirewall(run, configured.KillSwitch == "off", adapter.LUID(), dns, configured.LAN); err != nil {
 			if runCtx.Err() != nil {
@@ -610,7 +627,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			}
 		}
 		if err := adapter.Configure(netcfg.Config{
-			MTU:       1500,
+			MTU:       mtu,
 			Addresses: []netip.Prefix{netip.MustParsePrefix("198.18.0.1/30")},
 			// ponytail: fixed resolvers until settings and the subscription carry them.
 			DNS:    dns,
@@ -627,7 +644,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), 1500, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -648,7 +665,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			}
 		}
 		if err := adapter.Configure(netcfg.Config{
-			MTU:       selected.AWG.MTU,
+			MTU:       awgMTU,
 			Addresses: selected.AWG.Addresses,
 			DNS:       dns,
 			Bypass:    serverIP,
@@ -665,7 +682,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
-			if err := run.tunnel.createBridge(runCtx, adapter.Device(), selected.AWG.MTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
 				if runCtx.Err() != nil {
 					return Info{}, runCtx.Err()
 				}
@@ -706,6 +723,18 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	run.probeIP = localIP
 	r.mu.Unlock()
 	return info, nil
+}
+
+func (r *Real) Next(target Target, after string) (string, bool) {
+	if r.load == nil {
+		return "", false
+	}
+	profiles, err := r.load()
+	if err != nil {
+		return "", false
+	}
+	configured := r.settings()
+	return profile.Next(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, after)
 }
 
 func (r *Real) startRun(ctx context.Context, hold bool) (context.Context, *realRun, error) {

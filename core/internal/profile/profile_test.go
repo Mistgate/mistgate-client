@@ -216,6 +216,35 @@ func TestPickForSettingsGameModePrefersAWG(t *testing.T) {
 	}
 }
 
+func TestNext(t *testing.T) {
+	profiles := []Profile{
+		{ID: "a", Sub: "one", Protocol: "hysteria2"}, {ID: "b", Sub: "one", Protocol: "awg"},
+		{ID: "x", Sub: "two", Protocol: "hysteria2"}, {ID: "c", Sub: "one", Protocol: "hysteria2"},
+	}
+	for _, test := range []struct {
+		name                         string
+		server, protocol, sub, after string
+		configured, want             string
+		ok                           bool
+	}{
+		{"explicit, stays in its subscription", "a", "auto", "", "a", "auto", "b", true},
+		{"wraps around", "a", "auto", "", "c", "auto", "a", true},
+		{"auto stands for the first server", "auto", "auto", "one", "auto", "auto", "b", true},
+		{"auto with an empty after", "auto", "auto", "one", "", "auto", "b", true},
+		{"configured protocol skips the others", "auto", "auto", "one", "a", "hysteria2", "c", true},
+		{"the chosen server stays in the round", "b", "auto", "", "b", "hysteria2", "c", true},
+		{"round back to the chosen server", "b", "auto", "", "c", "hysteria2", "a", true},
+		{"after left the subscription", "a", "auto", "", "gone", "auto", "a", true},
+		{"a single server has no next", "x", "auto", "", "x", "auto", "", false},
+		{"unknown server", "nope", "auto", "", "nope", "auto", "", false},
+	} {
+		got, ok := Next(profiles, test.server, test.protocol, test.sub, test.configured, false, test.after)
+		if got != test.want || ok != test.ok {
+			t.Errorf("%s: Next = %q, %v; want %q, %v", test.name, got, ok, test.want, test.ok)
+		}
+	}
+}
+
 func TestParseUintRange(t *testing.T) {
 	for input, expected := range map[string]string{"5": "5", "20-63": "20-63", "0003-0004": "3-4"} {
 		got, err := parseUintRange(input, 16)

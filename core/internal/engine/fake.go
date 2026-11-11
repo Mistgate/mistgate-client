@@ -28,6 +28,7 @@ type Fake struct {
 	failStartCode string
 	changed       chan struct{}
 	targets       []Target
+	servers       []string
 	starts        atomic.Uint64
 	probes        atomic.Uint64
 	received      atomic.Uint64
@@ -125,6 +126,27 @@ func (f *Fake) Probe(ctx context.Context) error {
 }
 
 func (f *Fake) Changed() <-chan struct{} { return f.changed }
+
+func (f *Fake) Next(_ Target, after string) (string, bool) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if len(f.servers) < 2 {
+		return "", false
+	}
+	for i, server := range f.servers {
+		if server == after {
+			return f.servers[(i+1)%len(f.servers)], true
+		}
+	}
+	return f.servers[1], true // "auto" or unknown: the first server is the pick
+}
+
+// SetServers is the server list of the one fake subscription, in order.
+func (f *Fake) SetServers(servers ...string) {
+	f.mu.Lock()
+	f.servers = append([]string(nil), servers...)
+	f.mu.Unlock()
+}
 
 func (f *Fake) SetProbeErr(err error) {
 	f.mu.Lock()

@@ -43,6 +43,9 @@ type Engine interface {
 	Received() uint64
 	Probe(ctx context.Context) error
 	Changed() <-chan struct{}
+	// Next names the server after `after` in the subscription of target's server, wrapping around.
+	// `after` "" or "auto" stands for the server target itself picks. ok is false when there is no other server.
+	Next(target Target, after string) (server string, ok bool)
 }
 
 type Failure struct {

@@ -24,7 +24,7 @@ func TestStoreRoundTripAndChanges(t *testing.T) {
 		"route_mode":   json.RawMessage(`"smart"`),
 		"route_region": json.RawMessage(`"ru"`),
 	}
-	if got, err := store.Set(patch); err != nil || got != (Settings{KillSwitch: "always", LAN: false, Protocol: "awg", Game: true, RouteMode: "smart", RouteRegion: "ru"}) {
+	if got, err := store.Set(patch); err != nil || got != (Settings{KillSwitch: "always", LAN: false, Protocol: "awg", Game: true, RouteMode: "smart", RouteRegion: "ru", OnServerDown: "reconnect", DNS: "auto"}) {
 		t.Fatalf("Set() = %#v, %v", got, err)
 	}
 	select {
@@ -55,6 +55,65 @@ func TestStoreDefaultsOnBrokenFile(t *testing.T) {
 	}
 	if got := store.Get(); got != Defaults() {
 		t.Fatalf("settings = %#v, want defaults", got)
+	}
+}
+
+func TestStoreConnectionSettings(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := []struct{ key, in, want string }{
+		{"dns", `"1.1.1.1"`, "1.1.1.1"},
+		{"dns", `" 9.9.9.9 , 2001:4860:4860:0:0:0:0:8888 "`, "9.9.9.9,2001:4860:4860::8888"},
+		{"dns", `"::ffff:8.8.8.8"`, "8.8.8.8"},
+		{"dns", `"auto"`, "auto"},
+	}
+	for _, c := range good {
+		got, err := store.Set(map[string]json.RawMessage{c.key: json.RawMessage(c.in)})
+		if err != nil || got.DNS != c.want {
+			t.Fatalf("dns %s = %q, %v; want %q", c.in, got.DNS, err, c.want)
+		}
+	}
+	got, err := store.Set(map[string]json.RawMessage{
+		"on_server_down": json.RawMessage(`"next"`), "restore": json.RawMessage(`true`),
+		"last_on": json.RawMessage(`true`), "mtu": json.RawMessage(`1400`),
+	})
+	if err != nil || got.OnServerDown != "next" || !got.Restore || !got.LastOn || got.MTU != 1400 {
+		t.Fatalf("Set() = %#v, %v", got, err)
+	}
+	if got, err = store.Set(map[string]json.RawMessage{"mtu": json.RawMessage(`0`)}); err != nil || got.MTU != 0 {
+		t.Fatalf("mtu 0 = %#v, %v", got, err)
+	}
+	for _, patch := range []map[string]json.RawMessage{
+		{"on_server_down": json.RawMessage(`"fastest"`)},
+		{"restore": json.RawMessage(`null`)},
+		{"mtu": json.RawMessage(`1279`)},
+		{"mtu": json.RawMessage(`1501`)},
+		{"mtu": json.RawMessage(`null`)},
+		{"mtu": json.RawMessage(`1400.5`)},
+		{"mtu": json.RawMessage(`"1400"`)},
+		{"dns": json.RawMessage(`""`)},
+		{"dns": json.RawMessage(`null`)},
+		{"dns": json.RawMessage(`"1.1.1.1,"`)},
+		{"dns": json.RawMessage(`"1.1.1.1,8.8.8.8,9.9.9.9"`)},
+		{"dns": json.RawMessage(`"1.1.1.1:53"`)},
+		{"dns": json.RawMessage(`"dns.example"`)},
+		{"dns": json.RawMessage(`"0.0.0.0"`)},
+		{"dns": json.RawMessage(`"::"`)},
+		{"dns": json.RawMessage(`"127.0.0.1"`)},
+		{"dns": json.RawMessage(`"::1"`)},
+		{"dns": json.RawMessage(`"fe80::1%eth0"`)},
+	} {
+		if _, err := store.Set(patch); err != ErrBadParams {
+			t.Fatalf("Set(%s) error = %v, want ErrBadParams", patch, err)
+		}
+	}
+	if addrs := (Settings{DNS: "9.9.9.9,2001:db8::1"}).DNSAddrs(); len(addrs) != 2 || addrs[1].String() != "2001:db8::1" {
+		t.Fatalf("DNSAddrs = %v", addrs)
+	}
+	if addrs := Defaults().DNSAddrs(); addrs != nil {
+		t.Fatalf("auto DNSAddrs = %v, want nil", addrs)
 	}
 }
 

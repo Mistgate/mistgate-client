@@ -3,6 +3,7 @@ package settings
 import (
 	"encoding/json"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,15 @@ type Settings struct {
 	Autoconnect bool   `json:"autoconnect"`
 	LastServer  string `json:"last_server"`
 	LastSub     string `json:"last_sub"`
+	// "next": a dead link moves to the next server of the subscription after two failed attempts.
+	OnServerDown string `json:"on_server_down"`
+	// Bring the VPN back at service start if the user left it on (LastOn).
+	Restore bool `json:"restore"`
+	LastOn  bool `json:"last_on"`
+	// "auto" or one or two IP addresses joined with a comma, normalised.
+	DNS string `json:"dns"`
+	// 0 is automatic.
+	MTU int `json:"mtu"`
 }
 
 type Store struct {
@@ -34,7 +44,18 @@ type Store struct {
 var ErrBadParams = errors.New("bad settings parameters")
 
 func Defaults() Settings {
-	return Settings{KillSwitch: "while", LAN: true, Protocol: "auto", RouteMode: "all", RouteRegion: "auto"}
+	return Settings{KillSwitch: "while", LAN: true, Protocol: "auto", RouteMode: "all", RouteRegion: "auto", OnServerDown: "reconnect", DNS: "auto"}
+}
+
+// DNSAddrs is nil for "auto".
+func (s Settings) DNSAddrs() []netip.Addr {
+	var out []netip.Addr
+	for _, part := range strings.Split(s.DNS, ",") {
+		if address, err := netip.ParseAddr(part); err == nil {
+			out = append(out, address)
+		}
+	}
+	return out
 }
 
 func Open(dir string) (*Store, error) {
@@ -136,12 +157,41 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.RouteRegion = v
-	case "autoconnect":
+	case "autoconnect", "restore", "last_on":
 		var v bool
 		if !strictBool(raw, &v) {
 			return false
 		}
-		value.Autoconnect = v
+		switch key {
+		case "autoconnect":
+			value.Autoconnect = v
+		case "restore":
+			value.Restore = v
+		default:
+			value.LastOn = v
+		}
+	case "on_server_down":
+		var v string
+		if json.Unmarshal(raw, &v) != nil || v != "reconnect" && v != "next" {
+			return false
+		}
+		value.OnServerDown = v
+	case "dns":
+		var v string
+		if json.Unmarshal(raw, &v) != nil {
+			return false
+		}
+		normal, ok := normalizeDNS(v)
+		if !ok {
+			return false
+		}
+		value.DNS = normal
+	case "mtu":
+		var v int
+		if json.Unmarshal(raw, &v) != nil || string(raw) == "null" || v != 0 && (v < 1280 || v > 1500) {
+			return false
+		}
+		value.MTU = v
 	case "last_server", "last_sub":
 		var v string
 		if json.Unmarshal(raw, &v) != nil || len(v) > 128 {
@@ -156,6 +206,24 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 		return false
 	}
 	return true
+}
+
+func normalizeDNS(value string) (string, bool) {
+	if value == "auto" {
+		return value, true
+	}
+	parts := strings.Split(value, ",")
+	if len(parts) > 2 {
+		return "", false
+	}
+	for i, part := range parts {
+		address, err := netip.ParseAddr(strings.TrimSpace(part))
+		if err != nil || address.Zone() != "" || address.IsUnspecified() || address.IsLoopback() {
+			return "", false
+		}
+		parts[i] = address.Unmap().String()
+	}
+	return strings.Join(parts, ","), true
 }
 
 func validCountry(value string) bool {

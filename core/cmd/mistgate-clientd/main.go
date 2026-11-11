@@ -71,6 +71,10 @@ func main() {
 	}
 }
 
+func shouldConnectAtStart(configured settings.Settings) bool {
+	return configured.LastServer != "" && (configured.Autoconnect || configured.Restore && configured.LastOn)
+}
+
 func defaultDataDir() string {
 	base := os.Getenv("ProgramData")
 	if base == "" {
@@ -152,7 +156,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	eventMu.Lock()
 	eventHub = manager.Events()
 	eventMu.Unlock()
-	if configured := settingsStore.Get(); configured.Autoconnect && configured.LastServer != "" {
+	if configured := settingsStore.Get(); shouldConnectAtStart(configured) {
 		_, _ = manager.Connect(ctx, engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub})
 	}
 	diagnostics := diag.NewRunner(diag.Config{Profiles: store.Profiles, Tunnel: func() bool {

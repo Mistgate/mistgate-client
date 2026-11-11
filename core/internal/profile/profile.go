@@ -517,6 +517,38 @@ func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 	return Profile{}, false
 }
 
+// Next is the server after `after` in the subscription that PickForSettings(server, ...) belongs to, wrapping
+// around. `after` "" or "auto" stands for the picked server itself. Servers the protocol rules out are skipped,
+// except the picked one, so a full round always comes back to it. It is false when no other server exists.
+func Next(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool, after string) (string, bool) {
+	home, ok := PickForSettings(profiles, server, requestedProtocol, sub, configuredProtocol, game)
+	if !ok {
+		return "", false
+	}
+	if after == "" || after == "auto" {
+		after = home.ID
+	}
+	protocol := requestedProtocol
+	if protocol == "" || protocol == "auto" {
+		protocol = configuredProtocol
+	}
+	var ring []string
+	for _, p := range profiles {
+		if p.Sub == home.Sub && (p.ID == home.ID || protocol == "" || protocol == "auto" || p.Protocol == protocol) {
+			ring = append(ring, p.ID)
+		}
+	}
+	for i, id := range ring {
+		if id == after {
+			if len(ring) == 1 {
+				return "", false
+			}
+			return ring[(i+1)%len(ring)], true
+		}
+	}
+	return home.ID, true // `after` left the subscription
+}
+
 func PickForSettings(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool) (Profile, bool) {
 	if server != "" && server != "auto" {
 		return Pick(profiles, server, "auto", sub)

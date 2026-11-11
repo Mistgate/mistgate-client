@@ -39,6 +39,12 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "connected settings reapply firewall", run: testConnectedSettingsReapplyFirewall},
 		{name: "route rules and list refresh do not reconnect", run: testRouteChangesDoNotReconnect},
 		{name: "only AmneziaWG path transition reconnects", run: testOnlyAWGPathTransitionReconnects},
+		{name: "next server after two failures, wrapping around", run: testNextServerAfterTwoFailures},
+		{name: "reconnect keeps the same server", run: testReconnectKeepsTheServer},
+		{name: "next needs another server", run: testNextNeedsAnotherServer},
+		{name: "first connect failure does not move on", run: testFirstConnectFailureStays},
+		{name: "user connect after a switch goes to the chosen server", run: testConnectAfterSwitchGoesToChosen},
+		{name: "dns and mtu changes restart the attempt", run: testDNSAndMTUChangesReconnect},
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)
@@ -851,6 +857,158 @@ func testDisconnectCancelsRetryWait(t *testing.T) {
 	<-timer.C
 	if got := fake.StartCount(); got != starts {
 		t.Fatalf("Start() calls after disconnect = %d, want %d", got, starts)
+	}
+}
+
+// downedManager connects to server "a" with a dead link and failing attempts; servers are a, b, c in the fake.
+func downedManager(t *testing.T, onServerDown string, servers ...string) (*Manager, *engine.Fake, *Subscription) {
+	t.Helper()
+	store := testSettings(t, "off")
+	if _, err := store.Set(map[string]json.RawMessage{"on_server_down": json.RawMessage(`"` + onServerDown + `"`)}); err != nil {
+		t.Fatal(err)
+	}
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetServers(servers...)
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 2 * time.Millisecond
+	timing.probeFailureWindow = time.Millisecond
+	manager := newManagerWithTimings(fake, store.Get, timing, []time.Duration{2 * time.Millisecond})
+	t.Cleanup(manager.Close)
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(subscription.Close)
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	fake.SetFailStartCode("offline")
+	fake.SetProbeErr(errors.New("tunnel is dead"))
+	return manager, fake, subscription
+}
+
+func attemptedServers(fake *engine.Fake) string {
+	var out string
+	for _, target := range fake.Targets() {
+		out += target.Server
+	}
+	return out
+}
+
+func testNextServerAfterTwoFailures(t *testing.T) {
+	manager, fake, subscription := downedManager(t, "next", "a", "b", "c")
+	// the status names the server being tried
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Server == "b" })
+	waitForStarts(t, fake, 10)
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// connect, then two attempts on each server of the ring, wrapping back to the chosen one
+	if got := attemptedServers(fake); len(got) < 10 || got[:10] != "aaabbccaab" {
+		t.Fatalf("attempted servers = %q, want prefix aaabbccaab", got)
+	}
+}
+
+func testReconnectKeepsTheServer(t *testing.T) {
+	manager, fake, _ := downedManager(t, "reconnect", "a", "b", "c")
+	waitForStarts(t, fake, 8)
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for i, target := range fake.Targets() {
+		if target.Server != "a" {
+			t.Fatalf("attempt %d went to %q, want a", i, target.Server)
+		}
+	}
+}
+
+func testNextNeedsAnotherServer(t *testing.T) {
+	manager, fake, _ := downedManager(t, "next", "a")
+	waitForStarts(t, fake, 8)
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for i, target := range fake.Targets() {
+		if target.Server != "a" {
+			t.Fatalf("attempt %d went to %q, want a", i, target.Server)
+		}
+	}
+}
+
+func testFirstConnectFailureStays(t *testing.T) {
+	store := testSettings(t, "off")
+	if _, err := store.Set(map[string]json.RawMessage{"on_server_down": json.RawMessage(`"next"`)}); err != nil {
+		t.Fatal(err)
+	}
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
+	fake.SetServers("a", "b")
+	manager := newManagerWithTimings(fake, store.Get, defaultManagerTiming(), []time.Duration{2 * time.Millisecond})
+	defer manager.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerStatus(t, manager, func(status Status) bool { return status.State == "error" && status.Error == "offline" })
+	time.Sleep(30 * time.Millisecond)
+	if got := attemptedServers(fake); got != "a" {
+		t.Fatalf("attempted servers = %q, want a single attempt on a", got)
+	}
+}
+
+func testConnectAfterSwitchGoesToChosen(t *testing.T) {
+	manager, fake, subscription := downedManager(t, "next", "a", "b", "c")
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Server == "b" })
+	fake.SetFailStartCode("")
+	fake.SetProbeErr(nil)
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	connected := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if connected.Server != "a" {
+		t.Fatalf("connected to %q after the user's connect, want the chosen server a", connected.Server)
+	}
+	targets := fake.Targets()
+	if last := targets[len(targets)-1]; last.Server != "a" {
+		t.Fatalf("last attempt went to %q, want a", last.Server)
+	}
+}
+
+func testDNSAndMTUChangesReconnect(t *testing.T) {
+	store := testSettings(t, "off")
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	manager := NewManager(fake, store.Get)
+	defer manager.Close()
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	set := func(key, value string) {
+		t.Helper()
+		if _, err := store.Set(map[string]json.RawMessage{key: json.RawMessage(value)}); err != nil {
+			t.Fatal(err)
+		}
+		manager.SettingsChanged()
+	}
+	set("last_on", "true") // not a connection setting
+	set("restore", "true")
+	set("on_server_down", `"next"`)
+	time.Sleep(25 * time.Millisecond)
+	if got := fake.StartCount(); got != 1 {
+		t.Fatalf("unrelated settings caused a reconnect: starts=%d", got)
+	}
+	for i, change := range []struct{ key, value string }{{"dns", `"9.9.9.9"`}, {"mtu", `1400`}} {
+		set(change.key, change.value)
+		waitForStarts(t, fake, uint64(i+2))
+		waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	}
+	if targets := fake.Targets(); !targets[1].Hold || !targets[2].Hold {
+		t.Fatalf("Start targets = %#v, want held restarts", targets)
 	}
 }
 

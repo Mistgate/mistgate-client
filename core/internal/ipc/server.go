@@ -165,10 +165,10 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			}
 		}
 		if s.Settings != nil {
-			// what "connect when Windows starts" will connect to
+			// what "connect when Windows starts" will connect to, and that the user left the VPN on
 			server, _ := json.Marshal(target.Server)
 			sub, _ := json.Marshal(target.Sub)
-			_, _ = s.Settings.Set(map[string]json.RawMessage{"last_server": server, "last_sub": sub})
+			_, _ = s.Settings.Set(map[string]json.RawMessage{"last_server": server, "last_sub": sub, "last_on": json.RawMessage(`true`)})
 		}
 		status, err := s.Manager.Connect(ctx, target)
 		if err != nil {
@@ -187,6 +187,9 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 		status, err := s.Manager.Disconnect(ctx)
 		if err != nil {
 			return nil, nil, &RPCError{Code: "service_error", Message: "connection could not be stopped"}
+		}
+		if s.Settings != nil {
+			_, _ = s.Settings.Set(map[string]json.RawMessage{"last_on": json.RawMessage(`false`)})
 		}
 		return status, nil, nil
 	case "settings.get":

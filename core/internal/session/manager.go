@@ -101,6 +101,10 @@ type actorState struct {
 	lastNetworkEvent   time.Time
 	probePending       bool
 	retryIndex         int
+	// userServer is what the user asked for; state.target.Server moves off it when on_server_down is "next".
+	userServer string
+	// failures counts failed reconnect attempts in a row on state.target.Server.
+	failures int
 }
 
 type managerTiming struct {
@@ -371,6 +375,7 @@ func (m *Manager) run() {
 							state.status.State = "blocked"
 							clearTimer(&retryTimer, &retryC)
 						} else {
+							m.serverDown(&state)
 							delay := m.backoffAt(state.retryIndex)
 							if state.retryIndex < len(m.backoff)-1 {
 								state.retryIndex++
@@ -395,6 +400,7 @@ func (m *Manager) run() {
 					state.status.SinceUnix = time.Now().Unix()
 					resetProbeStreak(&state)
 					state.retryIndex = 0
+					state.failures = 0
 					state.holdReconnect = false
 					m.hub.Publish("status", state.status)
 					resetTimer(&healthTimer, &healthC, m.probeInterval)
@@ -476,7 +482,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	reconnecting := state.status.State == "reconnecting" || state.status.State == "blocked" && state.status.Error != "kill_switch"
 	if reconnecting || state.status.State == "blocked" {
 		if target.Server == "" || target.Server == "auto" {
-			target.Server = state.target.Server
+			target.Server = state.userServer // not state.target.Server: that may be a server "next" moved to
 		}
 		if target.Protocol == "" || target.Protocol == "auto" {
 			target.Protocol = state.target.Protocol
@@ -512,6 +518,8 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 			m.hub.Publish("status", state.status)
 		}
 		state.retryIndex = 0
+		state.failures = 0
+		state.userServer = target.Server
 		state.target = target
 		m.startAttempt(state, target)
 		return state.status, nil
@@ -530,11 +538,13 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 		state.probeCancel()
 		state.probeCancel = nil
 	}
+	state.userServer = target.Server
 	state.target = target
 	state.holdReconnect = false
 	resetProbeStreak(state)
 	state.probePending = false
 	state.retryIndex = 0
+	state.failures = 0
 	state.status = Status{
 		State:     "connecting",
 		Step:      string(engine.StepResolve),
@@ -661,6 +671,7 @@ func (m *Manager) beginReconnect(state *actorState, hold bool) {
 	state.status.Error = ""
 	state.status.SinceUnix = time.Now().Unix()
 	state.retryIndex = 0
+	state.failures = 0
 	m.hub.Publish("status", state.status)
 	m.startAttempt(state, target)
 }
@@ -716,6 +727,7 @@ func (m *Manager) stop(state *actorState) {
 	resetProbeStreak(state)
 	state.probePending = false
 	state.retryIndex = 0
+	state.failures = 0
 	state.holdReconnect = false
 	m.hub.Publish("status", state.status)
 }
@@ -723,10 +735,12 @@ func (m *Manager) stop(state *actorState) {
 func (m *Manager) settingsChanged(state *actorState) {
 	configured := m.currentSettings()
 	routeSettingsChanged := state.routeSettings.RouteMode != configured.RouteMode || state.routeSettings.RouteRegion != configured.RouteRegion
+	// The adapter takes its DNS and MTU when it is configured, so a new value needs a new attempt, held like a path change.
+	adapterChanged := state.routeSettings.DNS != configured.DNS || state.routeSettings.MTU != configured.MTU
 	switch state.status.State {
 	case "connected":
 		path := m.routePath(configured, state.target, state.status.Protocol)
-		if state.attemptPath != "" && path != state.attemptPath {
+		if state.attemptPath != "" && path != state.attemptPath || adapterChanged {
 			m.reconnectRoute(state, configured)
 		} else {
 			state.routeSettings = configured
@@ -743,7 +757,7 @@ func (m *Manager) settingsChanged(state *actorState) {
 		}
 	case "connecting", "reconnecting":
 		path := m.routePath(configured, state.target, "")
-		if state.attemptPath != "" && path != state.attemptPath {
+		if state.attemptPath != "" && path != state.attemptPath || adapterChanged {
 			m.reconnectRoute(state, configured)
 		} else {
 			state.routeSettings = configured
@@ -814,7 +828,24 @@ func (m *Manager) reconnectRoute(state *actorState, configured settings.Settings
 		m.hub.Publish("status", state.status)
 	}
 	state.retryIndex = 0
+	state.failures = 0
 	m.startAttempt(state, target)
+}
+
+// serverDown counts a failed reconnect attempt. With on_server_down "next" the second one in a row moves the
+// retry to the next server of the subscription; the backoff goes on as it was.
+func (m *Manager) serverDown(state *actorState) {
+	state.failures++
+	if state.failures < 2 || m.currentSettings().OnServerDown != "next" {
+		return
+	}
+	chosen := state.target
+	chosen.Server = state.userServer
+	if next, ok := m.engine.Next(chosen, state.target.Server); ok {
+		state.target.Server = next
+		state.status.Server = next
+		state.failures = 0
+	}
 }
 
 func (m *Manager) publishRoutes(state *actorState) {
