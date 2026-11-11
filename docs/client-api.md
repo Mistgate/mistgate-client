@@ -61,7 +61,8 @@ Body: strict JSON, at most 4 KiB, unknown fields rejected (caps stay a header):
 ```json
 { "hwid": "…", "platform": "windows", "model": "", "os_version": "11 24H2", "device_key": "<base64url, 32 bytes>" }
 ```
-- `hwid`: `[A-Za-z0-9=-]{10,64}`, random per install and per operator's panel, not derived from hardware; the same
+- `hwid`: `[A-Za-z0-9=-]{10,64}`, random per install and per operator's panel (the client keys it by the origin of
+  the subscription link: scheme, host and port, so it survives a rotated link), not derived from hardware; the same
   value basic mode sends as `X-HWID`. The client keeps it, with the device key, where a reinstall does not erase it.
 - `platform`: `ios | android | windows | macos | linux | other`. `model`: at most 40 characters, no control
   characters.
@@ -181,7 +182,8 @@ The body (stable key order; the client ignores fields it does not know):
   "password": "…" } }`. `ports` is absent without port hopping (`hop_interval_s` comes with it); `pin_sha256` only
   with `tls: "pin"`, and then the pin ALONE is the check; `sni` is absent for nodes known by address only; `obfs` is
   absent without obfuscation, and `gecko` is given only to caps with `gecko=1`. A relay path has the forwarded port
-  and no `ports`.
+  and no `ports`. `tls: "ca"` without `sni`: the certificate must verify for `server` as dialled (a host name:
+  that name, also as SNI; an address: its IP SAN, no SNI). Verification is never skipped.
 - `awg`: `{ "version": "2.0|3.1", "endpoint": { "host": "…", "port": 0 }, "public_key": "…", "private_key": "…",
   "preshared_key": "…", "address_v4": "a.b.c.d/32", "address_v6": "…/128", "allowed_ips": ["0.0.0.0/0", "::/0"],
   "dns": ["ip", "ip"], "mtu": 1280, "keepalive_s": 25, "params": { } }`. `address_v6` is absent without IPv6;
