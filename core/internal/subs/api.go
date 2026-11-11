@@ -292,7 +292,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 		return st, nil
 	}
 	seen := make(map[string]bool)
-	for _, server := range b.Servers {
+	for number, server := range b.Servers {
 		for _, path := range server.Paths {
 			raw, err := json.Marshal(path)
 			if _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" {
@@ -306,6 +306,9 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 			name := server.City
 			if name == "" {
 				name = server.Country
+			}
+			if name == "" { // a node the operator gave no place
+				name = "Server " + strconv.Itoa(number+1)
 			}
 			if path.Via != "" && path.Via != "direct" {
 				name += " · " + path.Via
