@@ -78,7 +78,9 @@ answer is the same `device_id` and nothing changes. So after a lost answer the c
 with or without `Authorization`.
 
 - Without `Authorization`: makes the device, or takes over the keyless basic-mode device of the same `hwid` (its
-  old credentials are revoked, no extra slot). Budget: 5 such enrols per link per hour.
+  old credentials are revoked, no extra slot). Budget: 5 such enrols per link per hour; a
+  refused one (`device_exists`, `device_limit`, `device_blocked`, `app_disabled`) does not spend it, refusals are
+  bounded by the link's write budget (20 an hour).
 - With the old key and a new `device_key`: the same device, the new key, credentials kept; the device follows a
   rotated link. Not counted in the budget. A key that is not a live device of this user with this `hwid` counts as
   no key.
@@ -162,7 +164,10 @@ The body (stable key order; the client ignores fields it does not know):
 - `brand.parts` is one or two strings (the name, split for two-tone drawing); `logo_svg` may be empty and is drawn
   only as an image.
 - **Absent when empty**: `support_url`, `notice`, a server's `load` (unknown), `asn`, `dns`.
-- `plan`: `expires_unix` 0 = never, `quota_bytes` 0 = unlimited, `next_reset_unix` 0 = none.
+- `plan`: `expires_unix` 0 = never; `quota_bytes` 0 = unlimited; `next_reset_unix` 0 = no reset period (only with
+  `quota_reset: "none"`). The two are independent: a person without a quota still has a reset day, when
+  `used_bytes` goes back to zero.
+- A server's `country` and `city` are empty when the operator set none for the node; the client then shows a number.
 - `asn` comes only with `X-Mistgate-Direct: 1`, on the VPS edition, when known. It is not stored by the panel, is not
   part of the ETag and is not on a `304`.
 - `dns` is one object for the whole subscription. Server addresses: plain `ip` or `ip:port`, DoT `host[:port]`, DoH a
