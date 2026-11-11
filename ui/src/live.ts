@@ -24,6 +24,9 @@ const STEP: Record<string, number> = { resolve: 0, handshake: 2, tunnel: 3, veri
 export const PROTO: Record<string, [fam: string, label: string, full: string]> = {
   hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'],
 };
+// the design's flags, and Turkey's, which the canvas does not have yet (drawn for the region list)
+// ponytail: a country outside this table has no picture; the canvas needs the rest of the flags
+const FLAG: Record<string, string> = { ...(FLAGS as Record<string, string>), tr: '/blob/bc9caa2c3d3cb9a41eee59f9fe3669ed.svg' };
 const mbps = (bps: number) => (bps / 1e6).toFixed(1);
 const DAY = 86400;
 
@@ -33,7 +36,7 @@ export function flagOf(name: string) {
   const m = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
   if (!m) return { flag: '', text: name };
   const cc = [...m[0]].map((c) => String.fromCharCode(c.codePointAt(0)! - 0x1f1e6 + 97)).join('');
-  return { flag: (FLAGS as Record<string, string>)[cc] ?? '', text: name.replace(m[0], '').trim() || name };
+  return { flag: FLAG[cc] ?? '', text: name.replace(m[0], '').trim() || name };
 }
 
 // One row per node, with its protocols in the menu. A plain subscription names its entries for people
@@ -53,7 +56,7 @@ export function nodesOf(servers: Server[]): Node[] {
       const cc = (s.country ?? '').toLowerCase();
       const tail = (s.via === 'warp' ? ' · WARP' : s.via && s.via !== 'direct' ? ' · ' + s.via : '') + (s.ipv6 ? ' · IPv6' : '');
       let node = out.get(s.node);
-      if (!node) out.set(s.node, (node = { key: s.node, name: countryName(cc) || s.city || s.name, flag: (FLAGS as Record<string, string>)[cc] ?? '', via: '', extra: countryName(cc) ? s.city ?? '' : '', entries: [] }));
+      if (!node) out.set(s.node, (node = { key: s.node, name: countryName(cc) || s.city || s.name, flag: FLAG[cc] ?? '', via: '', extra: countryName(cc) ? s.city ?? '' : '', entries: [] }));
       const entry = { s, fam, label: label + tail, full: full + tail };
       // the plain path first: it is what a press on the row connects to
       if (tail) node.entries.push(entry); else node.entries.splice(node.entries.findIndex((e) => e.label !== PROTO[e.s.protocol]?.[1]) >>> 0, 0, entry);
@@ -96,6 +99,9 @@ const quality = (ms: number) => (ms <= 50 ? 'q3' : ms <= 90 ? 'q2' : 'q1'); // t
 
 // Latency numbers outlive the screen: Home is built again on every visit, the numbers stay until the window closes.
 const PINGS: Record<string, number> = {};
+// where each server is (its name and addresses), for the hint on a row: two nodes of one country look the same
+const HOSTS: Record<string, { host: string; ips: string[] }> = {};
+let hostsFor = '';
 let pingedAtStart = false; // the first list of the session is measured without being asked
 
 export function liveHome(Base: typeof DCLogic): typeof DCLogic {
@@ -164,6 +170,10 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
+      // the hint on a server row: the address of each of its paths
+      const where = (n: Node) => [...new Set(n.entries.map((e) => HOSTS[e.s.id]).filter(Boolean).map((h) => (h.ips.length ? `${h.host} · ${h.ips.join(', ')}` : h.host)))].join('\n');
+      const nodes = nodesOf(this.sub()?.servers ?? []);
+      document.querySelectorAll<HTMLElement>('.r > .rsel').forEach((row, i) => { const t = nodes[i] ? where(nodes[i]) : ''; if (row.title !== t) row.title = t; });
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
@@ -210,6 +220,11 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       pref.set('sub', sub?.id ?? '');
       pref.set('server', sel);
       this.setState({ si: !sub ? 5 : expired ? 4 : 0, svN: sub?.servers.length ? 8 : 0, subst: 'ok', liveSub: sub?.id, sel });
+      const ids = sub ? sub.id + ':' + sub.servers.map((n) => n.id).join(',') : '';
+      if (sub && ids !== hostsFor) {
+        hostsFor = ids;
+        rpc<{ hosts: typeof HOSTS }>('servers.hosts', { sub: sub.id }).then((r) => { Object.assign(HOSTS, r.hosts); this.paint(); }, () => {});
+      }
       if (sub?.servers.length && !pingedAtStart) {
         pingedAtStart = true;
         this.pingNodes(sub.servers);

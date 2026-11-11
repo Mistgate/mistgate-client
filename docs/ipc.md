@@ -55,6 +55,7 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `subs.remove` | `{"id": "<subscription id>"}` | `{}` |
 | `subs.link` | `{"id": "<subscription id>"}` | `{"url": "<link the user pasted>"}`; `no_link` for a subscription that is not a `url` one |
 | `servers.ping` | `{"sub": "<subscription id>", "servers": ["<server id>", …]}` (both optional; empty `sub` selects the first subscription, empty `servers` means all of its servers) | `{"rtt": {"<server id>": <ms>, …}}` |
+| `servers.hosts` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | `{"hosts": {"<server id>": {"host": "<name or address>", "ips": ["<address>", ...]}}}`; `ips` are the addresses the name has now (empty for an address or a name that did not resolve in 2 s). For the hint on a server row; never logged |
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
 | `routes.get` | none | Route state, rules, and named collection status |

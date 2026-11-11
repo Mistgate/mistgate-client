@@ -420,6 +420,21 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			s.Logger.Debug("servers pinged", "answered", len(rtt))
 		}
 		return map[string]any{"rtt": rtt}, nil, nil
+	case "servers.hosts":
+		var params struct {
+			Sub string `json:"sub"`
+		}
+		if !decodeParams(request.Params, &params) {
+			return nil, nil, badParams()
+		}
+		if s.Subs == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "subscription store is unavailable"}
+		}
+		hosts, err := s.serverHosts(ctx, params.Sub)
+		if err != nil {
+			return nil, nil, subscriptionRPCError(err)
+		}
+		return map[string]any{"hosts": hosts}, nil, nil
 	case "subs.link":
 		var params struct {
 			ID string `json:"id"`
@@ -438,6 +453,74 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 	default:
 		return nil, nil, &RPCError{Code: "unknown_method", Message: "method is not supported"}
 	}
+}
+
+// ServerHost is where a server is: the name or address its profile connects to, and the addresses that name has now.
+type ServerHost struct {
+	Host string   `json:"host"`
+	IPs  []string `json:"ips"`
+}
+
+// serverHosts tells the window where each server of a subscription is, so that two servers of one country can be told
+// apart. The addresses are the user's own subscription: they go to the trusted window only and never into the log.
+func (s *Server) serverHosts(ctx context.Context, sub string) (map[string]ServerHost, error) {
+	all := s.Subs.List()
+	if sub == "" && len(all) > 0 {
+		sub = all[0].ID
+	}
+	known := false
+	for _, item := range all {
+		known = known || item.ID == sub
+	}
+	if !known {
+		return nil, &subs.Error{Code: "unknown_subscription"}
+	}
+	profiles, err := s.Subs.Profiles()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	hosts := make(map[string]ServerHost)
+	resolved := make(map[string][]string) // by name: one lookup for the paths of one node
+	var mu sync.Mutex
+	var wait sync.WaitGroup
+	for _, p := range profiles {
+		host := ""
+		switch {
+		case p.Sub != sub:
+			continue
+		case p.Hy2 != nil:
+			host = p.Hy2.Host
+		case p.AWG != nil:
+			host = p.AWG.EndpointHost
+		}
+		if host == "" {
+			continue
+		}
+		hosts[p.ID] = ServerHost{Host: host, IPs: []string{}}
+		if _, seen := resolved[host]; seen || net.ParseIP(host) != nil {
+			continue
+		}
+		resolved[host] = nil
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if ips, err := net.DefaultResolver.LookupHost(ctx, host); err == nil {
+				mu.Lock()
+				resolved[host] = ips
+				mu.Unlock()
+			}
+		}()
+	}
+	wait.Wait()
+	for id, entry := range hosts {
+		if ips := resolved[entry.Host]; len(ips) > 0 {
+			entry.IPs = ips
+			hosts[id] = entry
+		}
+	}
+	return hosts, nil
 }
 
 // pingServers measures the servers of a subscription (all of them when ids is empty; an empty sub is the first
