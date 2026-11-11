@@ -138,6 +138,7 @@ type Routes struct {
 	UpdatedUnix int64            `json:"updated_unix"`
 	Rules       Rules            `json:"rules"`
 	Collections []SiteCollection `json:"collections"`
+	Suggest     Suggest          `json:"suggest"`
 	Version     uint64           `json:"-"`
 }
 
@@ -168,6 +169,7 @@ type Store struct {
 	rules           Rules
 	rulesCompileMu  sync.Mutex
 	siteRules       atomic.Pointer[SiteRules]
+	suggest         *Tracker
 	changes         chan struct{}
 }
 
@@ -211,6 +213,7 @@ func Open(dataDir string, options ...Options) (*Store, error) {
 			store.siteFallbackURL = option.SiteFallbackURLTemplate
 		}
 	}
+	store.suggest = newTracker(store.fixed)
 	store.loadRules()
 	store.rebuildSiteRules()
 	return store, nil
@@ -280,9 +283,12 @@ func (s *Store) Routes(mode, region, autoRegion string) Routes {
 			effective = "none"
 		}
 	}
-	routes := Routes{Mode: mode, Region: region, Effective: effective, Rules: Rules{Direct: emptySelection(), VPN: emptySelection()}, Collections: []SiteCollection{}}
+	routes := Routes{Mode: mode, Region: region, Effective: effective, Rules: Rules{Direct: emptySelection(), VPN: emptySelection()}, Collections: []SiteCollection{}, Suggest: Suggest{VPN: []SuggestSite{}, Direct: []SuggestSite{}}}
 	if s == nil {
 		return routes
+	}
+	if mode != "all" {
+		routes.Suggest = s.suggest.List(time.Now())
 	}
 	routes.Rules = s.GetRules()
 	for _, collection := range ruleCollections(routes.Rules) {

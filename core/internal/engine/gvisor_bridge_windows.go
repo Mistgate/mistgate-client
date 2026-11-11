@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
+	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -34,6 +35,7 @@ type gvisorBridge struct {
 	direct       outbound
 	shouldDirect func(netip.Addr, string) bool
 	hasSiteRules func() bool
+	track        *geo.Tracker // nil: flows are not watched for "doesn't open?"
 	dns          *dnsMemory
 	stack        *stack.Stack
 	link         *channel.Endpoint
@@ -46,7 +48,7 @@ type gvisorBridge struct {
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool) (*gvisorBridge, error) {
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker) (*gvisorBridge, error) {
 	if vpn == nil {
 		return nil, errors.New("VPN outbound is unavailable")
 	}
@@ -84,6 +86,7 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 		direct:       direct,
 		shouldDirect: shouldDirect,
 		hasSiteRules: hasSiteRules,
+		track:        track,
 		dns:          &dnsMemory{entries: make(map[netip.Addr]dnsEntry)},
 		stack:        st,
 		link:         link,
@@ -171,10 +174,13 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		return
 	}
 	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
-	needsName := b.hasSiteRules != nil && b.hasSiteRules()
+	// Watching a TLS flow needs its name, so port 443 is read first even without site rules.
+	watching := b.track != nil && target.Port() == 443
+	needsName := b.hasSiteRules != nil && b.hasSiteRules() || watching
 	var remote net.Conn
 	var local *gonet.TCPConn
 	var sniffed []byte
+	var watch *flowWatch
 	if needsName {
 		var queue waiter.Queue
 		endpoint, endpointErr := req.CreateEndpoint(&queue)
@@ -188,9 +194,15 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		if target.Port() == 443 || target.Port() == 80 {
 			name, sniffed = sniffTCPName(local, target.Port())
 		}
+		watching = watching && name != ""
 		var err error
-		remote, err = b.dialTCPName(b.ctx, target, name)
+		var route geo.Route
+		remote, route, err = b.dialTCPName(b.ctx, target, name)
 		if err != nil {
+			// A cancelled context is the app closing, not the site failing.
+			if watching && b.ctx.Err() == nil {
+				b.track.Fail(route, name, time.Now())
+			}
 			// We cannot send a RST after accepting the local endpoint, so close it.
 			_ = local.Close()
 			return
@@ -201,10 +213,16 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 				sniffed = sniffed[n:]
 			}
 			if writeErr != nil || n == 0 {
+				if watching && b.ctx.Err() == nil {
+					b.track.Fail(route, name, time.Now())
+				}
 				_ = local.Close()
 				_ = remote.Close()
 				return
 			}
+		}
+		if watching {
+			watch = &flowWatch{track: b.track, route: route, name: name}
 		}
 	} else {
 		var err error
@@ -225,23 +243,79 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		req.Complete(false)
 		local = gonet.NewTCPConn(&queue, endpoint)
 	}
-	if !b.startForward(func() { proxyTCP(local, remote) }) {
+	if !b.startForward(func() { proxyTCP(local, remote, watch) }) {
 		_ = local.Close()
 		_ = remote.Close()
 	}
 }
 
-func proxyTCP(local, remote net.Conn) {
+var noAnswerAfter = 10 * time.Second // a variable for the test
+
+// flowWatch reads the answers of one TLS flow for the tracker: the first byte is a success; a close, a reset or
+// 10 s of silence before it is a failure. Read runs on the one goroutine that copies remote -> local.
+type flowWatch struct {
+	track   *geo.Tracker
+	route   geo.Route
+	name    string
+	remote  net.Conn
+	closing atomic.Bool // proxyTCP is ending the flow itself (the app went away), so a read error is not the site's
+	started bool
+	got     bool
+	silent  bool // the 10 s ran out and the failure is counted
+}
+
+func (w *flowWatch) Read(p []byte) (int, error) {
+	if !w.started {
+		w.started = true
+		_ = w.remote.SetReadDeadline(time.Now().Add(noAnswerAfter))
+	}
+	for {
+		n, err := w.remote.Read(p)
+		if w.got || err == nil && n == 0 {
+			return n, err
+		}
+		if n > 0 {
+			w.got = true
+			if !w.silent {
+				_ = w.remote.SetReadDeadline(time.Time{})
+			}
+			w.track.OK(w.route, w.name, time.Now())
+			return n, err
+		}
+		var timeout net.Error
+		if !w.silent && errors.As(err, &timeout) && timeout.Timeout() {
+			w.silent = true
+			w.track.Fail(w.route, w.name, time.Now())
+			_ = w.remote.SetReadDeadline(time.Time{})
+			continue
+		}
+		// ponytail: a reset first noticed by a write (A side) is not counted, TLS clients do not write before the reply.
+		if !w.silent && !w.closing.Load() {
+			w.track.Fail(w.route, w.name, time.Now())
+		}
+		return n, err
+	}
+}
+
+func proxyTCP(local, remote net.Conn, watch *flowWatch) {
+	var answers io.Reader = remote
+	if watch != nil {
+		watch.remote = remote
+		answers = watch
+	}
 	done := make(chan struct{}, 2)
 	go func() {
 		_, _ = io.Copy(remote, local)
 		done <- struct{}{}
 	}()
 	go func() {
-		_, _ = io.Copy(local, remote)
+		_, _ = io.Copy(local, answers)
 		done <- struct{}{}
 	}()
 	<-done
+	if watch != nil {
+		watch.closing.Store(true)
+	}
 	_ = local.Close()
 	_ = remote.Close()
 	<-done
@@ -418,14 +492,18 @@ func (b *gvisorBridge) Close() {
 }
 
 func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
-	return b.dialTCPName(ctx, target, "")
+	conn, _, err := b.dialTCPName(ctx, target, "")
+	return conn, err
 }
 
-func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string) (net.Conn, error) {
+// dialTCPName also says which route the flow was given, even when the dial fails.
+func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string) (net.Conn, geo.Route, error) {
 	if name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
 		name = b.dns.lookup(target.Addr())
 	}
-	return selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct).DialTCP(ctx, target)
+	out, route := selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct)
+	conn, err := out.DialTCP(ctx, target)
+	return conn, route, err
 }
 
 func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort) (packetFlow, error) {
@@ -433,16 +511,17 @@ func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort) (pa
 	if target.Port() != 53 && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
 		name = b.dns.lookup(target.Addr())
 	}
-	return selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct).ListenUDP(ctx)
+	out, _ := selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct)
+	return out.ListenUDP(ctx)
 }
 
-func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, vpn, direct outbound) outbound {
+func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, vpn, direct outbound) (outbound, geo.Route) {
 	address := target.Addr()
 	// Keep the adapter's configured DNS resolver on the VPN.
 	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && shouldDirect != nil && shouldDirect(address, name) {
-		return direct
+		return direct, geo.ViaDirect
 	}
-	return vpn
+	return vpn, geo.ViaVPN
 }
 
 func directAddressAllowed(address netip.Addr) bool {

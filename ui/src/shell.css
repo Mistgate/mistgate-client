@@ -13,7 +13,7 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; animation: none !important; opacity: 1; transform: none; }
 /* Routes: drawn for the finished product, not in this build yet: apps, the Lists sheet and its update button. */
 .shell .lcard .rh-a, .shell .utabs button:nth-child(2), .shell .grid.apps { opacity: .45; pointer-events: none; }
-/* suggestions from traffic: not in this build */
-.shell .sec-h:has(.n.new) { display: none; }
+/* suggestions from traffic: the heading only when the service has some */
+.shell .sec-h:has(.n.new):not(:has(+ .slist .sug)) { display: none; }
 /* A server whose name carries no flag has no picture: keep its place, show nothing. */
 .shell img:not([src]), .shell-tray img:not([src]) { visibility: hidden; }

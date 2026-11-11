@@ -13,6 +13,8 @@ type Selection = { collections: string[]; sites: string[] };
 type Routes = {
   mode: 'all' | 'smart' | 'selected'; region: string; effective: string; available: boolean; entries: number; updated_unix: number;
   rules?: { direct: Selection; vpn: Selection };
+  // sites that keep failing on their route: `vpn` fail direct, `direct` fail through the VPN
+  suggest?: { vpn: { site: string; count: number }[]; direct: { site: string; count: number }[] };
 };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
@@ -72,6 +74,9 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       const names = (input?.value ?? '').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
       if (!names.length) return;
       input!.value = '';
+      this.addNames(names);
+    }
+    addNames(names: string[]) {
       const m = this.state?.mode === 'only' ? 'only' : 'except';
       const cur: string[][] = this.state?.sites?.[m] ?? [];
       const have = new Set(cur.map((x) => x[0]));
@@ -138,7 +143,13 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       v.regUpCls = today ? '' : 'hide';
       if (today) v.regUp = String(v.regUp).replace(/\d{1,2}:\d{2}/, words().time(r!.updated_unix));
       v.sites = v.sites.map((s: any) => ({ ...s, meta: String(s.meta).replace(/^\s*·\s*/, '') }));
-      v.sugs = []; // suggestions from the user's traffic come with the detectors
+      // "Suggested from your traffic": the service's list for this mode, in the design's words (its first sample's line)
+      const m = this.state?.mode === 'only' ? 'only' : 'except';
+      const line = String(v.sugs?.[0]?.meta ?? '');
+      const listed = new Set(((this.state?.sites?.[m] ?? []) as string[][]).map((x) => x[0]));
+      v.sugs = (this.state?.mode === 'all' ? [] : (m === 'only' ? r?.suggest?.vpn : r?.suggest?.direct) ?? [])
+        .filter((x) => !listed.has(x.site))
+        .map((x) => ({ name: x.site, meta: line.replace(/\d+/, String(x.count)), add: () => this.addNames([x.site]) }));
       return v;
     }
   } as unknown as typeof DCLogic;

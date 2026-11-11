@@ -528,6 +528,10 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return false
 		}
 	}
+	var track *geo.Tracker // "all" has no forwarder decision to second-guess
+	if useForwarder {
+		track = r.geo.Failures()
+	}
 
 	var awgNet *netstack.Net
 	var hy2Client client.Client
@@ -644,7 +648,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules, track); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -682,7 +686,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
-			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules); err != nil {
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track); err != nil {
 				if runCtx.Err() != nil {
 					return Info{}, runCtx.Err()
 				}
@@ -1024,13 +1028,13 @@ func (t *realTunnel) setClient(hclient client.Client) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return context.Canceled
 	}
-	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules)
+	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track)
 	if err != nil {
 		return err
 	}

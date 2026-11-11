@@ -51,6 +51,7 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `settings.set` | the settings keys to change | Settings |
 | `routes.get` | none | Route state, rules, and named collection status |
 | `routes.set` | `{"direct": Selection, "vpn": Selection}` (either key may be omitted) | The `routes.get` object |
+| `routes.dismiss` | `{"route": "direct" \| "vpn", "site": "<name>"}`; `route` is the `suggest` list the site was in | The `routes.get` object |
 | `diag.run` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | Diagnostic State |
 | `diag.get` | none | Diagnostic State |
 | `diag.cancel` | none | Diagnostic State |
@@ -156,6 +157,27 @@ selections, each with `collections` and `sites` arrays. `collections` reports ea
 `available` (whether a valid cached list is present), `entries` (the number of valid unique domains), and
 `updated_unix`.
 
+`suggest` is the "Doesn't open?" part of the same object: `{"vpn": [{"site": "example.com", "count": 3}], "direct": [...]}`.
+`vpn` lists sites that failed on the direct path and could go through the VPN; `direct` lists sites that failed
+through the VPN and could go direct. Both are arrays (empty, never `null`), at most 10 sites each, most failures first,
+and always empty in `all`. `site` is the registrable domain (public-suffix list), lower case. A failure is a TCP flow to
+port 443 with a TLS server name that (a) could not be dialed on its exit (not because the app closed), (b) was closed
+or reset by the site before one byte came back, or (c) got nothing back for 10 seconds (the flow is left alone). A flow
+that gets a byte is a success: it clears that site's failures on that exit. A failure counts only if the same exit
+answered another flow within the 60 seconds before it or the 15 seconds after it, so a dead network or a dead VPN
+produces nothing. A site is offered with 3 or more counted failures in 24 hours and no success on that exit since the
+first of them. It is not offered when `rules.direct.sites` or `rules.vpn.sites` already lists it (or a name under or
+above it), or when a list of the side it would move to already matches it; a collection on the other side may be
+overridden. Adding the site with `routes.set` therefore removes it from `suggest`. `routes.dismiss` forgets the site and
+keeps it out of that list until the service stops; an invalid `route` or `site` returns `bad_params`. At most 200 sites
+are tracked (the oldest are dropped). The `routes` event also fires when `suggest` changes, at most once every 5
+seconds.
+
+Privacy: the names of failed sites live only in the service's memory, in one small structure. They are never logged,
+never written to disk and never put into errors or the log; they leave only in `suggest`, to a trusted caller, and are
+gone when the service stops. Successful flows keep one time stamp per exit and no name. To read the TLS name, port 443
+flows are read first (as for port 80) in `smart` and `selected` even without site rules.
+
 In `all`, all public destinations use the VPN. In `smart`, a public destination uses the direct path when its site
 matches `rules.direct` or its address is in the selected region; other destinations use the VPN. In `selected`, a
 public destination uses the VPN only when its site matches `rules.vpn`; all other destinations use the direct path.
@@ -178,7 +200,7 @@ Site list lines may be bare (`example.com`), dot-prefixed (`.example.com`), wild
 subdomains; a bare TLD such as `.ua` matches that TLD and its subdomains. Blank lines, `#` and `//` comments, and
 invalid lines are skipped. A list with no valid domain is refused.
 
-For TCP to ports 80 and 443, the forwarder reads at most 4 KiB for up to 300 ms when site rules are configured. It
+For TCP to ports 80 and 443, the forwarder reads at most 4 KiB for up to 300 ms when site rules are configured (port 443 also in `smart` and `selected` without them, for `suggest`). It
 uses an HTTP `Host` header or TLS ClientHello SNI, then replays the bytes to the chosen exit. Other TCP ports, UDP,
 and QUIC use names learned from A answers to UDP DNS responses passing through the forwarder; names are retained
 for the answer TTL clamped to 60 seconds through 1 hour, in a cache capped at 50,000 addresses. Encrypted DNS is

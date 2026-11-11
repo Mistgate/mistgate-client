@@ -237,6 +237,21 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "route rules could not be saved"}
 		}
 		return s.Routes(), nil, nil
+	case "routes.dismiss":
+		var params struct {
+			Route string `json:"route"`
+			Site  string `json:"site"`
+		}
+		if !decodeParams(request.Params, &params) || params.Route != "direct" && params.Route != "vpn" {
+			return nil, nil, badParams()
+		}
+		if s.Geo == nil || s.Routes == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route rules store is unavailable"}
+		}
+		if !s.Geo.Dismiss(params.Route == "vpn", params.Site) {
+			return nil, nil, badParams()
+		}
+		return s.Routes(), nil, nil
 	case "settings.set":
 		var patch map[string]json.RawMessage
 		if !decodeParams(request.Params, &patch) || patch == nil {
@@ -543,6 +558,7 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 				}
 			}
 		}()
+		go publishSuggestions(runCtx, manager.Events(), geoStore, routes)
 	}
 	return runPipeServer(runCtx, server)
 }
