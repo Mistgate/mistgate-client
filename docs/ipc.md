@@ -69,11 +69,15 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 
 Status:
 
+`connect` with server `auto` makes one handshake to every server the settings allow and takes the one that answers
+soonest (the first of the list when none answers). `server_id` is the id of the server in use while connected: names
+repeat, ids do not.
+
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
 protocol that are actually in use.
 
 ```json
-{"state": "off", "step": "", "since_unix": 0, "server": "", "protocol": "", "route": "", "error": ""}
+{"state": "off", "step": "", "since_unix": 0, "server": "", "server_id": "", "protocol": "", "route": "", "error": ""}
 ```
 
 `state`: `off` · `connecting` · `connected` · `reconnecting` · `error` · `blocked`.

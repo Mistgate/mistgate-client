@@ -17,6 +17,7 @@ type Status struct {
 	Step      string `json:"step"`
 	SinceUnix int64  `json:"since_unix"`
 	Server    string `json:"server"`
+	ServerID  string `json:"server_id"` // while connected: the id of the server in use
 	Protocol  string `json:"protocol"`
 	Route     string `json:"route"`
 	Error     string `json:"error"`
@@ -405,6 +406,7 @@ func (m *Manager) run() {
 					state.status.State = "connected"
 					state.status.Error = ""
 					state.status.Server = request.info.Server
+					state.status.ServerID = request.info.ServerID
 					state.status.Protocol = request.info.Protocol
 					state.status.Route = request.info.Route
 					if state.status.Route == "" && m.routes.Effective != nil {

@@ -9,7 +9,7 @@ import FLAGS from './design/flags.json';
 import { words } from './live-i18n';
 import { pref } from './live-settings';
 
-type Status = { state: string; step: string; since_unix: number; server: string; protocol: string; error: string };
+type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
 type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string };
@@ -429,6 +429,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           load, loadC: load > 70 ? 'hi' : '', ms, msC: ms === '—' ? 'nov' : '',
         };
       };
+      // the server in use, by its id: names repeat (two servers of one country)
+      const inUse = (e: Entry) => !!on && (on.server_id ? e.s.id === on.server_id : e.s.name === on.server);
       const row = (n: Node) => {
         const ids = n.entries.map((e) => e.s.id);
         const best = Math.min(...ids.map((id) => pings[id] || Infinity));
@@ -444,7 +446,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
             this.setState({ tipId: n.key, tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - tall))) });
           },
           key: n.key, id: n.name, country: n.name, suf: sufOf(n), mark: viaOf(n), mkc: viaOf(n) ? '' : 'hide', flag: n.flag, via: viaOf(n), hasVia: !!viaOf(n),
-          now: !!on && n.entries.some((e) => e.s.name === on.server),
+          now: !!on && n.entries.some((e) => inUse(e)),
           h2: fams.has('h2'), vless: false, awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
           vd: '', vt: '', vi: 'check', vc: 'hide', vo: 0, vrow: '', pisC: '',
@@ -468,9 +470,12 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       v.sigCls.de = bestAll === Infinity ? 'nov' : quality(bestAll);
       v.msTxt.de = bestAll === Infinity ? '—' : String(bestAll);
       // the bar under the button: the node and protocol in use, or the ones a press would connect to
-      const node = (on && nodes.find((n) => n.entries.some((e) => e.s.name === on.server))) || nodes.find((n) => has(n, sel)) || nodes[0];
+      // Auto connects to the server that answers quickest: the bar shows the one the numbers point to
+      const quick = (n: Node) => Math.min(...n.entries.map((e) => pings[e.s.id] || Infinity));
+      const quickest = nodes.reduce<Node | undefined>((a, n) => (quick(n) < (a ? quick(a) : Infinity) ? n : a), undefined);
+      const node = (on && nodes.find((n) => n.entries.some((e) => inUse(e)))) || nodes.find((n) => has(n, sel)) || quickest || nodes[0];
       if (node) {
-        const entry = (on && node.entries.find((e) => e.s.name === on.server)) || node.entries.find((e) => e.s.id === sel) || node.entries[0];
+        const entry = (on && node.entries.find((e) => inUse(e))) || node.entries.find((e) => e.s.id === sel) || node.entries.reduce((a, e) => ((pings[e.s.id] || Infinity) < (pings[a.s.id] || Infinity) ? e : a));
         const picked = this.st().prof === 'h2' && sel !== 'auto';
         Object.assign(v.cur, {
           country: node.name, suf: sufOf(node), title: node.name, flag: node.flag, fam: entry.fam, label: entry.label,

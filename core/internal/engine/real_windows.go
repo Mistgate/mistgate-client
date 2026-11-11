@@ -498,6 +498,22 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if !ok {
 		return Info{}, failure("no_subscription", "select profile")
 	}
+	// Auto is the server that answers quickest now, not the first of the list. No answer from any: the first, as before.
+	if target.Server == "" || target.Server == "auto" {
+		_, ring, _ := profile.Ring(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game)
+		candidates := ring[:0:0]
+		for _, p := range ring {
+			if !configured.Game || p.Protocol == selected.Protocol { // Game mode has chosen the protocol
+				candidates = append(candidates, p)
+			}
+		}
+		if best := quickestOf(runCtx, candidates); best >= 0 {
+			selected = candidates[best]
+		}
+		if err := runCtx.Err(); err != nil {
+			return Info{}, err
+		}
+	}
 	if r.verify != "" {
 		selected.Verify = r.verify
 	}
@@ -756,7 +772,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if serverName == "" {
 		serverName = selected.ID
 	}
-	info = Info{Server: serverName, Protocol: selected.Protocol, Route: route}
+	info = Info{Server: serverName, ServerID: selected.ID, Protocol: selected.Protocol, Route: route}
 	r.mu.Lock()
 	if r.current != run || runCtx.Err() != nil {
 		r.mu.Unlock()
@@ -784,19 +800,12 @@ func (r *Real) Next(target Target, after string) (string, bool) {
 // fastestTimeout bounds each server's handshake in Fastest.
 const fastestTimeout = 3 * time.Second
 
-func (r *Real) Fastest(ctx context.Context, target Target, except string) (string, bool) {
-	if r.load == nil {
-		return "", false
-	}
-	profiles, err := r.load()
-	if err != nil {
-		return "", false
-	}
-	configured := r.settings()
-	others := profile.Others(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, except)
-	round := make([]time.Duration, len(others)) // 0: no answer
+// quickestOf makes one handshake to each profile's server at the same time and returns the index of the one that
+// answered soonest, or -1 when none did.
+func quickestOf(ctx context.Context, profiles []profile.Profile) int {
+	round := make([]time.Duration, len(profiles)) // 0: no answer
 	var wait sync.WaitGroup
-	for i, p := range others {
+	for i, p := range profiles {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
@@ -812,6 +821,20 @@ func (r *Real) Fastest(ctx context.Context, target Target, except string) (strin
 			best = i
 		}
 	}
+	return best
+}
+
+func (r *Real) Fastest(ctx context.Context, target Target, except string) (string, bool) {
+	if r.load == nil {
+		return "", false
+	}
+	profiles, err := r.load()
+	if err != nil {
+		return "", false
+	}
+	configured := r.settings()
+	others := profile.Others(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, except)
+	best := quickestOf(ctx, others)
 	if best < 0 {
 		return "", false
 	}

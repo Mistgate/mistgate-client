@@ -23,6 +23,7 @@ type Target struct {
 
 type Info struct {
 	Server   string
+	ServerID string // the profile in use: names repeat (two servers of one country), ids do not
 	Protocol string
 	Route    string
 }
