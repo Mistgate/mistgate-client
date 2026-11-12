@@ -630,6 +630,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	}
 
 	var awgNet *netstack.Net
+	var awgStack bool // AmneziaWG runs its own stack behind the forwarder, not on the adapter itself
 	var hy2Client client.Client
 	var awgDNS []netip.Addr
 	// The settings read here are the ones this attempt uses; a change makes the manager start a new attempt.
@@ -668,7 +669,12 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return Info{}, context.Canceled
 		}
 		awgTun := adapter.Device()
-		if useForwarder {
+		// A profile with an IPv6 address goes through the forwarder in "Everything" too: only the forwarder finds out
+		// that the server routes no IPv6 and turns it away at once (see noVPN6). On the plain adapter Windows would
+		// send IPv6 into a path that carries nothing, and an app without an IPv4 fallback would hang.
+		// ponytail: costs the second stack's throughput; a probe on the plain adapter that drops its IPv6 route if this shows.
+		awgStack = useForwarder || slices.ContainsFunc(selected.AWG.Addresses, func(a netip.Prefix) bool { return a.Addr().Is6() })
+		if awgStack {
 			// ponytail: two stacks in a row cost throughput; a packet-level split would be faster.
 			addresses := make([]netip.Addr, 0, len(selected.AWG.Addresses))
 			for _, address := range selected.AWG.Addresses {
@@ -767,7 +773,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			}
 			return Info{}, failure("tunnel_failed", "AmneziaWG tunnel configuration")
 		}
-		if useForwarder {
+		if awgStack {
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
