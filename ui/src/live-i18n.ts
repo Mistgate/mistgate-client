@@ -33,6 +33,9 @@ type Words = {
   diagFail: Record<string, [title: string, text: string]>; // why a network check did not run, by the service's code
   off: string; // a switch that is off, as a short state (the kill switch on the Routes screen)
   modes: [only: string, all: string, smart: string]; // the route modes on Home's chip, worded as on the Routes screen
+  // the Routes test line, in the design's own words: the three verdicts, then why (%s: the rule's name)
+  chk: [vpn: string, direct: string, blocked: string, all: string, on: string, notSelected: string, goesDirect: string, notException: string];
+  lists: { region: (cc: string) => string; entries: (n: string) => string; updated: (time: string) => string; failed: string; checking: string }; // rows of the Lists sheet
 };
 
 const ruForm = (n: number, one: string, few: string, many: string) =>
@@ -53,6 +56,8 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["Nothing to check yet", "Add a subscription first: the check tests its servers"], offline: ["No internet", "Connect to a network and run the check again"] },
     off: 'off',
     modes: ['Only selected', 'Everything', 'Smart'],
+    chk: ['VPN', 'Direct', 'Blocked', 'Rule: Everything mode', 'Rule: “%s” is on', 'Rule: not in your selection', 'Rule: “%s” goes direct', 'Rule: not an exception'],
+    lists: { region: (cc) => `Addresses of ${cc}`, entries: (n) => `${n} entries`, updated: (t) => `updated ${t}`, failed: 'Couldn’t update', checking: 'Checking the link…' },
   },
   ru: {
     locale: 'ru-RU', days: (n) => `${n} ${ruForm(n, 'день', 'дня', 'дней')}`, left: (d) => `осталось ${d}`, until: (d) => `до ${d}`,
@@ -67,6 +72,8 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["Пока нечего проверять", "Сначала добавьте подписку: проверка тестирует её серверы"], offline: ["Нет интернета", "Подключитесь к сети и запустите проверку снова"] },
     off: 'выключен',
     modes: ['Только выбранное', 'Всё', 'Умный'],
+    chk: ['VPN', 'Напрямую', 'Заблокирован', 'Правило: режим «Всё»', 'Правило: «%s» включено', 'Правило: нет в вашем выборе', 'Правило: «%s» идёт напрямую', 'Правило: не исключение'],
+    lists: { region: (cc) => `Адреса ${cc}`, entries: (n) => `записей: ${n}`, updated: (t) => `обновлён ${t}`, failed: 'Не удалось обновить', checking: 'Проверяем ссылку…' },
   },
   tr: {
     locale: 'tr-TR', days: (n) => `${n} gün`, left: (d) => `${d} kaldı`, until: (d) => `bitiş: ${d}`,
@@ -81,6 +88,8 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["Henüz kontrol edilecek bir şey yok", "Önce bir abonelik ekleyin: kontrol onun sunucularını test eder"], offline: ["İnternet yok", "Bir ağa bağlanın ve kontrolü yeniden başlatın"] },
     off: 'kapalı',
     modes: ['Yalnızca seçilenler', 'Her şey', 'Akıllı'],
+    chk: ['VPN', 'Doğrudan', 'Engelli', 'Kural: “Her şey” modu', 'Kural: “%s” açık', 'Kural: seçiminizde yok', 'Kural: “%s” doğrudan gider', 'Kural: istisna değil'],
+    lists: { region: (cc) => `${cc} adresleri`, entries: (n) => `${n} kayıt`, updated: (t) => `güncellendi: ${t}`, failed: 'Güncellenemedi', checking: 'Bağlantı kontrol ediliyor…' },
   },
   zh: {
     locale: 'zh-CN', days: (n) => `${n} 天`, left: (d) => `剩余 ${d}`, until: (d) => `至 ${d}`,
@@ -95,6 +104,8 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["暂无可检查的内容", "请先添加订阅：检查会测试其中的服务器"], offline: ["无网络连接", "请连接网络后重新检查"] },
     off: '已关闭',
     modes: ['仅所选', '全部', '智能'],
+    chk: ['VPN', '直连', '已拦截', '规则：“全部”模式', '规则：“%s”已开启', '规则：不在您的选择中', '规则：“%s”直连', '规则：不在例外中'],
+    lists: { region: (cc) => `${cc} 地址`, entries: (n) => `${n} 条`, updated: (t) => `更新于 ${t}`, failed: '更新失败', checking: '正在检查链接…' },
   },
   fa: {
     locale: 'fa-IR-u-ca-gregory-nu-latn', days: (n) => `${n} روز`, left: (d) => `${d} مانده`, until: (d) => `تا ${d}`,
@@ -109,6 +120,8 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["هنوز چیزی برای بررسی نیست", "ابتدا یک اشتراک اضافه کنید: بررسی، سرورهای آن را می‌آزماید"], offline: ["اینترنت در دسترس نیست", "به یک شبکه وصل شوید و بررسی را دوباره اجرا کنید"] },
     off: 'خاموش',
     modes: ['فقط انتخابی‌ها', 'همه‌چیز', 'هوشمند'],
+    chk: ['VPN', 'مستقیم', 'مسدود', 'قاعده: حالت «همه‌چیز»', 'قاعده: «%s» روشن است', 'قاعده: در انتخاب شما نیست', 'قاعده: «%s» مستقیم می‌رود', 'قاعده: استثنا نیست'],
+    lists: { region: (cc) => `نشانی‌های ${cc}`, entries: (n) => `${n} مورد`, updated: (t) => `به‌روزرسانی ${t}`, failed: 'به‌روزرسانی نشد', checking: 'در حال بررسی لینک…' },
   },
 };
 

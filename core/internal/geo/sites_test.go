@@ -1,6 +1,7 @@
 package geo
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,7 +63,7 @@ func TestSiteFetchFallbackAndCaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, set, err := store.fetchSites("geosite:youtube"); err != nil || !set.Match("www.youtube.com") {
+	if _, set, err := store.fetchSites(context.Background(), "geosite:youtube"); err != nil || !set.Match("www.youtube.com") {
 		t.Fatalf("GeoSite fallback = %#v, %v", set, err)
 	}
 	mu.Lock()
@@ -71,13 +72,13 @@ func TestSiteFetchFallbackAndCaps(t *testing.T) {
 	if len(gotRequests) != 2 || gotRequests[0] != "/primary/youtube" || gotRequests[1] != "/fallback/youtube" {
 		t.Fatalf("GeoSite request order = %v", gotRequests)
 	}
-	if _, set, err := store.fetchSites("list:" + server.URL + "/custom"); err != nil || !set.Match("www.youtube.com") {
+	if _, set, err := store.fetchSites(context.Background(), "list:"+server.URL+"/custom"); err != nil || !set.Match("www.youtube.com") {
 		t.Fatalf("custom list fetch = %#v, %v", set, err)
 	}
-	if _, _, err := store.fetchSites("geosite:oversize"); err == nil {
+	if _, _, err := store.fetchSites(context.Background(), "geosite:oversize"); err == nil {
 		t.Fatal("accepted an oversized GeoSite from both mirrors")
 	}
-	if _, _, err := store.fetchSites("list:" + server.URL + "/custom-oversize"); err == nil {
+	if _, _, err := store.fetchSites(context.Background(), "list:"+server.URL+"/custom-oversize"); err == nil {
 		t.Fatal("accepted an oversized custom list")
 	}
 }

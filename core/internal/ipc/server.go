@@ -221,6 +221,25 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "route state is unavailable"}
 		}
 		return s.Routes(), nil, nil
+	case "routes.update":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Geo == nil || s.Routes == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route rules store is unavailable"}
+		}
+		// Not awaited: the downloads take up to a minute and this connection's other calls must not wait behind them.
+		// The `routes` event says when they are done.
+		go s.Geo.Update(context.Background(), s.Routes().Effective)
+		return s.Routes(), nil, nil
+	case "routes.lists":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Geo == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "route lists are unavailable"}
+		}
+		return s.Geo.Lists(), nil, nil
 	case "routes.set":
 		var patch map[string]json.RawMessage
 		if !decodeParams(request.Params, &patch) || patch == nil {

@@ -209,29 +209,42 @@ func (s *Store) refreshSites(collection, path string) {
 		s.siteRefreshing[collection] = false
 		s.mu.Unlock()
 	}()
-	data, set, err := s.fetchSites(collection)
-	if err != nil || writeAtomic(path, data) != nil {
-		return
+	if s.pullSites(context.Background(), collection, path) {
+		s.rebuildSiteRules()
+		s.signalChange()
 	}
-	s.mu.Lock()
-	s.siteSets[collection] = set
-	s.siteLoaded[collection] = true
-	s.mu.Unlock()
-	s.rebuildSiteRules()
-	s.signalChange()
 }
 
-func (s *Store) fetchSites(collection string) ([]byte, *SiteSet, error) {
+// pullSites downloads one site collection now and swaps it in; a failure keeps the old copy and is remembered.
+func (s *Store) pullSites(ctx context.Context, collection, path string) bool {
+	data, set, err := s.fetchSites(ctx, collection)
+	if err == nil && s.save(path, data) != nil {
+		err = errWriteFailed
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.errs[collection] = err.Error()
+		return false
+	}
+	delete(s.errs, collection)
+	s.siteSets[collection] = set
+	s.siteLoaded[collection] = true
+	return true
+}
+
+func (s *Store) fetchSites(ctx context.Context, collection string) ([]byte, *SiteSet, error) {
 	_, value, ok := siteCachePath(s.dir, collection)
 	if !ok {
-		return nil, nil, errors.New("invalid site collection")
+		return nil, nil, errFetchFailed
 	}
 	urls := []string{value}
 	if strings.HasPrefix(collection, "geosite:") {
 		urls = []string{fmt.Sprintf(s.sitePrimaryURL, value), fmt.Sprintf(s.siteFallbackURL, value)}
 	}
+	failure := errFetchFailed
 	for _, rawURL := range urls {
-		data, err := s.fetchURL(rawURL)
+		data, err := s.fetchURL(ctx, rawURL)
 		if err != nil {
 			continue
 		}
@@ -239,16 +252,17 @@ func (s *Store) fetchSites(collection string) ([]byte, *SiteSet, error) {
 		if err == nil {
 			return data, set, nil
 		}
+		failure = errBadList
 	}
-	return nil, nil, errors.New("site collection unavailable")
+	return nil, nil, failure
 }
 
-func (s *Store) fetchURL(rawURL string) ([]byte, error) {
+func (s *Store) fetchURL(ctx context.Context, rawURL string) ([]byte, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
 		return nil, errors.New("invalid site URL")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

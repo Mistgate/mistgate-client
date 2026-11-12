@@ -19,10 +19,18 @@ import (
 )
 
 const (
-	maxFileBytes = 8 << 20
-	minPrefixes  = 100
-	maxAge       = 24 * time.Hour
-	fetchTimeout = 20 * time.Second
+	maxFileBytes  = 8 << 20
+	minPrefixes   = 100
+	maxAge        = 24 * time.Hour
+	fetchTimeout  = 20 * time.Second
+	updateTimeout = time.Minute // routes.update: every list together
+)
+
+// Error codes of a failed download, as routes.lists reports them (no URL, no server text).
+var (
+	errFetchFailed = errors.New("fetch_failed")
+	errBadList     = errors.New("bad_list")
+	errWriteFailed = errors.New("write_failed")
 )
 
 type ipRange struct{ first, last uint32 }
@@ -172,6 +180,12 @@ type Store struct {
 	siteRules       atomic.Pointer[SiteRules]
 	suggest         *Tracker
 	changes         chan struct{}
+	errs            map[string]string // list id -> code of its last failed download; absent after a good one
+	effective       string            // region of the last Routes() call: what routes.lists describes
+	writeMu         sync.Mutex        // a lazy refresh and Update may save one file together; Windows refuses overlapping renames
+	updating        chan struct{}     // closed when the running Update ends; nil when none runs
+	uniqueSets      []*SiteSet        // sets the cached unique count was made from
+	uniqueCount     int
 }
 
 func Open(dataDir string, options ...Options) (*Store, error) {
@@ -195,6 +209,7 @@ func Open(dataDir string, options ...Options) (*Store, error) {
 		siteLoaded:      make(map[string]bool),
 		siteRefreshing:  make(map[string]bool),
 		changes:         make(chan struct{}, 1),
+		errs:            make(map[string]string),
 	}
 	if len(options) != 0 {
 		option := options[0]
@@ -291,6 +306,9 @@ func (s *Store) Routes(mode, region, autoRegion string) Routes {
 	if mode != "all" {
 		routes.Suggest = s.suggest.List(time.Now())
 	}
+	s.mu.Lock()
+	s.effective = effective
+	s.mu.Unlock()
 	routes.Rules = s.GetRules()
 	for _, collection := range ruleCollections(routes.Rules) {
 		_, _ = s.Sites(collection)
@@ -330,31 +348,41 @@ func (s *Store) refresh(cc string) {
 		s.refreshing[cc] = false
 		s.mu.Unlock()
 	}()
-	data, set, err := s.fetch(cc)
-	if err != nil || writeAtomic(filepath.Join(s.dir, cc+".list"), data) != nil {
-		return
+	if s.pullRegion(context.Background(), cc) {
+		s.signalChange()
+	}
+}
+
+// pullRegion downloads one region list now and swaps it in; a failure keeps the old copy and is remembered.
+func (s *Store) pullRegion(ctx context.Context, cc string) bool {
+	data, set, err := s.fetch(ctx, cc)
+	if err == nil && s.save(filepath.Join(s.dir, cc+".list"), data) != nil {
+		err = errWriteFailed
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.errs["region:"+cc] = err.Error()
+		return false
+	}
+	delete(s.errs, "region:"+cc)
 	if !s.sets[cc].sameRanges(set) {
 		s.versions[cc]++
 	}
 	s.sets[cc] = set
 	s.loaded[cc] = true
-	s.mu.Unlock()
-	select {
-	case s.changes <- struct{}{}:
-	default:
-	}
+	return true
 }
 
-func (s *Store) fetch(cc string) ([]byte, *Set, error) {
+func (s *Store) fetch(ctx context.Context, cc string) ([]byte, *Set, error) {
+	failure := errFetchFailed
 	for _, template := range []string{s.primaryURL, s.fallbackURL} {
 		url := fmt.Sprintf(template, cc)
 		parsed, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil || parsed.URL.Scheme != "https" {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			cancel()
@@ -389,8 +417,15 @@ func (s *Store) fetch(cc string) ([]byte, *Set, error) {
 		if err == nil {
 			return data, set, nil
 		}
+		failure = errBadList
 	}
-	return nil, nil, errors.New("geo list unavailable")
+	return nil, nil, failure
+}
+
+func (s *Store) save(path string, data []byte) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return writeAtomic(path, data)
 }
 
 func writeAtomic(path string, data []byte) error {

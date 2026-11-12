@@ -59,6 +59,8 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
 | `routes.get` | none | Route state, rules, and named collection status |
+| `routes.update` | none | The `routes.get` object as it is now; the downloads go on in the background and a `routes` event follows when they end |
+| `routes.lists` | none | `{"lists": [{"id": "<list id>", "entries": N, "updated_unix": N, "error": "<code>"}], "unique": N, "duplicates": N}` |
 | `routes.set` | `{"direct": Selection, "vpn": Selection, "block": Selection}` (any key may be omitted; an omitted one keeps what is stored) | The `routes.get` object |
 | `routes.check` | `{"site": "<name>"}`; a host name or an https URL of one, checked like a site entry | `{"route": "direct" \| "vpn" \| "block", "by": "mode" \| "site" \| "collection" \| "region" \| "default", "rule": "<entry or collection id>", "dns": "direct" \| "vpn"}` |
 | `routes.dismiss` | `{"route": "direct" \| "vpn", "site": "<name>"}`; `route` is the `suggest` list the site was in | The `routes.get` object |
@@ -177,6 +179,18 @@ selections, each with `collections` and `sites` arrays. `collections` reports ea
 `available` (whether a valid cached list is present), `entries` (the number of valid unique domains), and
 `updated_unix`, for the collections of all three selections. `block_active` is `true` in `smart` and `selected` and
 `false` in `all`: the block lists work only where the forwarder runs (see "Blocking by name").
+
+`routes.update` downloads again, whatever their age, the region list of the effective region (when it is a country) and
+every collection that `rules.direct`, `rules.vpn` and `rules.block` name, all at once and within 60 seconds in all. A list
+that fails does not stop the others: it keeps its old copy in use and its error (below). A call made while another runs
+waits for it and downloads nothing. The call does not wait for the downloads: the answer is the `routes.get` object as it
+is, and the `routes` event fires when they end, as after any list refresh. `routes.lists` downloads nothing: `lists` has one row per list in use, `region:<cc>` for the region list of the
+last `routes` state (`entries` is its number of IPv4 prefixes) and the collection ids as in the rules (`geosite:<name>`,
+`list:<url>`; `entries` is the number of domains). `updated_unix` is the time of the last good download (the cached file's
+time; `0` when there is none). `error` is the code of the last failed download, empty when the last one worked:
+`fetch_failed` (no answer, or not `200`, or too large), `bad_list` (an answer that is not a valid list) or
+`write_failed`; it never holds a URL or server text. `unique` is the number of distinct domains over all the collections
+together (the region list is not counted) and `duplicates` is the sum of their `entries` minus `unique`.
 
 `suggest` is the "Doesn't open?" part of the same object: `{"vpn": [{"site": "example.com", "count": 3}], "direct": [...]}`.
 `vpn` lists sites that failed on the direct path and could go through the VPN; `direct` lists sites that failed

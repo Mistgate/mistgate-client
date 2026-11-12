@@ -42,6 +42,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.3.0
         version: 6.3.0(vite@8.3.7)
+      simple-icons:
+        specifier: ^16.37.0
+        version: 16.37.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -516,6 +519,10 @@ packages:
   scheduler@0.28.0:
     resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
 
+  simple-icons@16.37.0:
+    resolution: {integrity: sha512-8mCJIhpMYOL9g13GW59EiL3sVXJnTEKGCTZFaekl9UQ3Qo0SwVjnLaJ82QiaH8BKBdouEDzrHMXIWh8cBIy48A==}
+    engines: {node: '>=0.12.18'}
+
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -854,6 +861,8 @@ snapshots:
       '@rolldown/binding-win32-x64-msvc': 1.2.18
 
   scheduler@0.28.0: {}
+
+  simple-icons@16.37.0: {}
 
   source-map-js@1.2.2: {}
 

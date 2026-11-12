@@ -1,0 +1,10 @@
+{
+  "YouTube": "youtube", "Instagram": "instagram", "Facebook": "facebook", "WhatsApp": "whatsapp", "Telegram": "telegram",
+  "Discord": "discord", "X": "x", "TikTok": "tiktok", "Threads": "threads", "Reddit": "reddit", "Signal": "signal",
+  "Pinterest": "pinterest", "Netflix": "netflix", "Spotify": "spotify", "Twitch": "twitch", "HBO": "hbo",
+  "SoundCloud": "soundcloud", "Deezer": "deezer", "Tidal": "tidal", "Vimeo": "vimeo", "Wikipedia": "wikipedia",
+  "Claude": "claude", "Gemini": "googlegemini", "Perplexity": "perplexity", "Copilot": "githubcopilot",
+  "Steam": "steam", "Epic Games": "epicgames", "PlayStation": "playstation", "Blizzard": "battledotnet", "EA": "ea",
+  "Ubisoft": "ubisoft", "Roblox": "roblox", "Meta Quest": "meta", "Bungie": "bungie", "Apple": "apple", "Zoom": "zoom",
+  "Google Play": "googleplay", "Bluesky": "bluesky", "Medium": "medium", "Patreon": "patreon"
+}

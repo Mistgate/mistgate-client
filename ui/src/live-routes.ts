@@ -1,10 +1,12 @@
 // Routes on the real service: the mode, the region, the collections and the user's sites are the service's.
 // The design's logic stays as generated and keeps drawing its catalogue; this subclass keeps its switches in step
 // with the service: what the service says is put into the design's own state, and what the user flips there is
-// sent to the service. What this build does not do yet is drawn but cannot be pressed (shell.css): apps, the
-// "Lists" sheet, suggestions from traffic.
+// sent to the service. What this build does not do yet is drawn but cannot be pressed (shell.css): apps and the
+// lists' "update automatically" switch (the service refreshes a list older than a day by itself).
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import BRANDS from '../tools/brands.json';
+import './brands.css';
 import type { DCLogic } from './dc';
 import { flagOf, PROTO } from './live';
 import { words } from './live-i18n';
@@ -17,6 +19,11 @@ type Routes = {
   // sites that keep failing on their route: `vpn` fail direct, `direct` fail through the VPN
   suggest?: { vpn: { site: string; count: number }[]; direct: { site: string; count: number }[] };
 };
+
+// what `routes.check` says of a name, and the lists behind the rules as `routes.lists` reports them
+type Verdict = { route: 'direct' | 'vpn' | 'block'; by: string; rule: string };
+type ListInfo = { id: string; entries: number; updated_unix: number; error: string };
+type Lists = { lists: ListInfo[]; unique: number; duplicates: number };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
 const KNOWN = ['ru', 'by', 'cn', 'ir', 'tr']; // the regions the design draws; anything else shows as its "None"
@@ -49,25 +56,90 @@ const ALL = ['rkn', 'geo', 'allblk', 'rusvc', 'rusites', 'lan', 'ads', 'yt', 'ig
 // the "Ads" tile is not a route: its names are refused (the service answers "no such site")
 const ADS = geosite('category-ads-all');
 const BACK = Object.fromEntries(Object.entries(COL).map(([k, v]) => [v, k]));
+const TONES = ['lav', 'sky', 'mint', 'sand', 'rose'];
+// a list as its row names it: the public collection's id, or the host and path of a link
+const listName = (id: string) => id.replace(/^geosite:/, '').replace(/^list:https:\/\/(www\.)?/, '').replace(/^raw\.githubusercontent\.com\//, '');
+// the links the user added and switched off: the window keeps them so their row stays (the service knows only lists in use)
+const OFF_KEY = 'mg.lists.off';
+const offLinks = (): string[] => { try { return JSON.parse(localStorage.getItem(OFF_KEY) ?? '[]'); } catch { return []; } };
+const keepOff = (ids: string[]) => { try { localStorage.setItem(OFF_KEY, JSON.stringify(ids)); } catch { /* the row is lost with the window */ } };
 const MODE: Record<string, string> = { smart: 'except', selected: 'only', all: 'all' };
 
 export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
   return class LiveRoutes extends (liveChip(Base) as any) {
     routes: Routes | null = null;
     sent = ''; // the rules as last heard from or sent to the service
+    lists: Lists | null = null;
+    offIds: string[] = offLinks(); // lists switched off on the Lists sheet, kept as rows
+    seen = new Map<string, ListInfo>(); // the last known numbers of a list, for a row that is switched off
+    verdict: Verdict | null = null;
+    asked = ''; // the name the verdict is for
+    timer = 0;
+    wait = 0; // the update's own timers
 
     mounted() {
-      this.off.push(listen<Routes>('mg://routes', (e) => this.applyRoutes(e.payload)));
+      this.off.push(listen<Routes>('mg://routes', (e) => { this.applyRoutes(e.payload); if (this.state?.upd === 'busy') this.updated('done'); }));
       // the kill switch tile says the design's "on": only true when the setting is not off
       const ks = (s: { kill_switch: string }) => this.setState({ ksOff: s.kill_switch === 'off' });
       this.off.push(listen<{ kill_switch: string }>('mg://settings', (e) => ks(e.payload)));
       rpc<{ kill_switch: string }>('settings.get').then(ks, () => {});
       rpc<Routes>('routes.get').then((r) => this.applyRoutes(r), () => {});
+      this.loadLists(); // the Lists button counts them
       // the "add a site" row is plain markup in the design
       document.addEventListener('click', this.onClick);
       document.addEventListener('keydown', this.onKey);
+      document.addEventListener('input', this.onInput);
+    }
+    // "Check where a site goes": the service answers by the same code as a real flow
+    onInput = (e: Event) => {
+      const input = (e.target as Element | null)?.closest?.('.chk-in input') as HTMLInputElement | null;
+      if (!input) return;
+      window.clearTimeout(this.timer);
+      this.timer = window.setTimeout(() => this.check(input.value.trim()), 250);
+    };
+    check(site: string) {
+      this.asked = site;
+      const done = (x: Verdict | null) => { if (this.asked === site) { this.verdict = x; this.forceUpdate(); } };
+      if (!site) return done(null);
+      rpc<Verdict>('routes.check', { site }).then(done, () => done(null));
+    }
+    loadLists() {
+      rpc<Lists>('routes.lists').then((x) => { this.lists = x; x.lists.forEach((l) => this.seen.set(l.id, l)); this.forceUpdate(); }, () => {});
+    }
+    updateNow() {
+      if (this.state?.upd === 'busy') return;
+      this.setState({ upd: 'busy' });
+      // the service answers at once and says `routes` when the downloads are over (at most a minute)
+      rpc<Routes>('routes.update').then(() => { this.wait = window.setTimeout(() => this.updated('idle'), 70_000); }, () => this.updated('idle'));
+    }
+    updated(upd: string) {
+      window.clearTimeout(this.wait);
+      this.setState({ upd });
+      this.loadLists();
+      if (upd === 'done') this.wait = window.setTimeout(() => this.state?.upd === 'done' && this.setState({ upd: 'idle' }), 4000);
+    }
+    // a list of the Lists sheet goes on or off: a tile's list through its tile, any other through `extra`
+    flipList(id: string, on: boolean) {
+      const m = this.state?.mode === 'only' ? 'only' : 'except';
+      this.offIds = on ? this.offIds.filter((x) => x !== id) : [...new Set([...this.offIds, id])];
+      keepOff(this.offIds.filter((x) => !BACK[x]));
+      if (BACK[id]) this.setState({ sel: { ...this.state.sel, [m]: { ...this.state.sel?.[m], [BACK[id]]: on } } });
+      else {
+        const cur: string[] = this.state?.extra?.[m] ?? [];
+        this.setState({ extra: { ...this.state?.extra, [m]: on ? [...new Set([...cur, id])] : cur.filter((x) => x !== id) } });
+      }
+    }
+    addList() {
+      const input = document.querySelector<HTMLInputElement>('.lcard .addrow .add-in input');
+      const link = (input?.value ?? '').trim();
+      if (!input || !/^https:\/\/[^\s/]+\/\S+$/.test(link) || link.length > 512) return;
+      input.value = '';
+      this.flipList('list:' + link, true);
     }
     componentWillUnmount() {
+      document.removeEventListener('input', this.onInput);
+      window.clearTimeout(this.timer);
+      window.clearTimeout(this.wait);
       super.componentWillUnmount();
       document.removeEventListener('click', this.onClick);
       document.removeEventListener('keydown', this.onKey);
@@ -75,7 +147,11 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     // (the design has a second such row, for list links, on its Lists sheet: that one is not this build's)
     row = (t: EventTarget | null) => { const r = (t as Element | null)?.closest?.('.addrow'); return r?.closest('.lcard') && !this.state?.view?.includes('lists') ? r : null; };
     onClick = (e: MouseEvent) => { if ((e.target as Element).closest('.addb')) this.addSites(this.row(e.target)); };
-    onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') this.addSites(this.row(e.target)); };
+    onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      if (this.state?.view === 'lists' && (e.target as Element | null)?.closest?.('.add-in')) this.addList();
+      else this.addSites(this.row(e.target));
+    };
     addSites(row: Element | null) {
       const input = row?.querySelector('input') as HTMLInputElement | null;
       const names = (input?.value ?? '').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
@@ -100,10 +176,12 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
         // in Smart the region's own addresses and the local network always go direct: their tiles show it
         sel: { except: tiles(rules.direct.collections, { rusites: r.available, lan: true, ads }), only: tiles(rules.vpn.collections, { ads }) },
         sites: { except: rules.direct.sites.map((s) => [s, '']), only: rules.vpn.sites.map((s) => [s, '']) },
+        // lists in the rules that no tile stands for: the links added on the Lists sheet
+        extra: { except: rules.direct.collections.filter((c) => !BACK[c]), only: rules.vpn.collections.filter((c) => !BACK[c]) },
       };
     }
     wanted(state: any) {
-      const pick = (m: string) => ALL.filter((k) => state.sel?.[m]?.[k] && COL[k]).map((k) => COL[k]).sort();
+      const pick = (m: string) => [...ALL.filter((k) => state.sel?.[m]?.[k] && COL[k]).map((k) => COL[k]), ...((state.extra?.[m] ?? []) as string[])].sort();
       const sites = (m: string) => ((state.sites?.[m] ?? []) as string[][]).map((x) => x[0]);
       const m = state.mode === 'only' ? 'only' : 'except'; // the Ads tile of the mode on screen is the one the user flips
       const others = (this.routes?.rules?.block?.collections ?? []).filter((c) => c !== ADS);
@@ -116,6 +194,8 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       this.routes = r;
       const next = this.switches(r);
       this.sent = JSON.stringify(this.wanted(next));
+      if (this.state?.view === 'lists') this.loadLists();
+      if (this.asked) this.check(this.asked); // the rules changed under the name on the test line
       this.setState({ mode: MODE[r.mode] ?? 'all', reg: KNOWN.includes(r.effective) ? r.effective : KNOWN.includes(r.region) ? r.region : 'other', regOpen: false, ...next });
     }
     // The server on the scheme: the design draws its sample's flag; show the flag of the server in use, or the
@@ -178,6 +258,51 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       v.sugs = (this.state?.mode === 'all' ? [] : (m === 'only' ? r?.suggest?.vpn : r?.suggest?.direct) ?? [])
         .filter((x) => !listed.has(x.site))
         .map((x) => ({ name: x.site, meta: line.replace(/\d+/, String(x.count)), add: () => this.addNames([x.site]) }));
+      // a service's own logo instead of the design's symbol, where an open one exists
+      const brands = BRANDS as Record<string, string>;
+      v.tiles = v.tiles.map((t: any) => (brands[t.name] ? { ...t, g: 'b-' + brands[t.name] } : t));
+
+      // the test line: what the service would do with the typed name (the design cycles three samples)
+      const w = words(), x = this.verdict;
+      const [cVPN, cDir, cBlock, cAll, cOn, cNotSel, cDirect, cNotExc] = w.chk;
+      const named = (rule: string) => (x!.by === 'region' ? (r?.effective ?? '').toUpperCase() : listName(rule));
+      v.chk = this.asked;
+      v.nextChk = () => {};
+      v.res = !x ? { cls: 'hide', short: '', why: '' }
+        : x.route === 'block' ? { cls: 'dir', short: cBlock, why: cOn.replace('%s', named(x.rule)) }
+        : x.by === 'mode' ? { cls: 'vpn', short: cVPN, why: cAll }
+        : x.by === 'default' ? (x.route === 'vpn' ? { cls: 'vpn', short: cVPN, why: cNotExc } : { cls: 'dir', short: cDir, why: cNotSel })
+        : x.route === 'vpn' ? { cls: 'vpn', short: cVPN, why: cOn.replace('%s', named(x.rule)) }
+        : { cls: 'dir', short: cDir, why: cDirect.replace('%s', named(x.rule)) };
+
+      // the Lists sheet: the lists behind the rules of the mode on screen, with the service's numbers
+      v.updateNow = () => this.updateNow();
+      v.openLists = () => { this.setState({ view: 'lists', back: this.state?.view }); this.loadLists(); };
+      v.addList = () => this.addList();
+      const inUse = new Set<string>([...(m === 'only' ? r?.rules?.vpn.collections : r?.rules?.direct.collections) ?? [], ...(m === 'except' && r?.available ? ['region:' + r.effective] : [])]);
+      const ids = [...new Set([...(this.lists?.lists ?? []).map((l) => l.id).filter((id) => inUse.has(id)), ...this.offIds])];
+      const num = (n: number) => n.toLocaleString(w.locale);
+      v.mSegs = [];
+      v.srcRows = ids.map((id, i) => {
+        const l = this.seen.get(id), on = inUse.has(id), own = id.startsWith('list:') && !BACK[id], fixed = id.startsWith('region:');
+        const tone = TONES[i % TONES.length];
+        if (on && l && !l.error) v.mSegs.push({ c: tone, w: Math.max(l.entries, 1) });
+        const name = fixed ? w.lists.region(id.slice(7).toUpperCase()) : listName(id);
+        const meta = !l ? (on ? w.lists.checking : '') : l.error && !l.entries ? w.lists.failed
+          : [w.lists.entries(num(l.entries)), l.error ? w.lists.failed : l.updated_unix ? w.lists.updated(w.time(l.updated_unix)) : ''].filter(Boolean).join(' · ');
+        return {
+          name, g: fixed ? 'shield-check' : own ? 'link' : 'code-brackets', tone, meta, builtin: !own, biCls: own ? 'hide' : '', custom: own,
+          err: !!l?.error, mcls: l?.error ? 'err' : '', cls: (on ? 'on' : 'off') + (l?.error ? ' bad' : ''), sw: on ? 'on' : '', on: on ? 'true' : 'false',
+          // the region's own list follows the mode and the region, not a switch
+          flip: () => { if (!fixed) this.flipList(id, !on); },
+          rm: () => { if (on) this.flipList(id, false); this.offIds = this.offIds.filter((y) => y !== id); keepOff(this.offIds.filter((y) => !BACK[y])); this.forceUpdate(); },
+          retry: () => this.updateNow(),
+        };
+      });
+      v.mN = v.srcRows.filter((o: any) => o.on === 'true').length;
+      v.mUnique = num(this.lists?.unique ?? 0);
+      v.mDup = num(this.lists?.duplicates ?? 0);
+      Object.assign(v, { autoCls: 'on', autoOn: 'true', toggleAuto: () => {} });
       return v;
     }
   } as unknown as typeof DCLogic;

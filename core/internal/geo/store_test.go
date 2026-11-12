@@ -1,6 +1,7 @@
 package geo
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -67,12 +68,12 @@ func TestFetchFallbackCapAndMinimum(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cc := range []string{"ru", "cap"} {
-		data, set, err := store.fetch(cc)
+		data, set, err := store.fetch(context.Background(), cc)
 		if err != nil || len(data) == 0 || set == nil {
 			t.Fatalf("fetch %s = %d bytes, %v", cc, len(data), err)
 		}
 	}
-	if _, _, err := store.fetch("small"); err == nil {
+	if _, _, err := store.fetch(context.Background(), "small"); err == nil {
 		t.Fatal("accepted a region with fewer than 100 IPv4 prefixes")
 	}
 }
