@@ -106,6 +106,18 @@ func (s *Store) SetRules(rules Rules) (Rules, bool, error) {
 		return current, false, errors.New("cannot save route rules")
 	}
 	s.rules = normalized
+	// a list the rules no longer name is let go: it can be megabytes
+	named := make(map[string]bool)
+	for _, collection := range ruleCollections(normalized) {
+		named[collection] = true
+	}
+	for collection := range s.siteSets {
+		if !named[collection] {
+			delete(s.siteSets, collection)
+			delete(s.siteLoaded, collection)
+			delete(s.errs, collection)
+		}
+	}
 	s.mu.Unlock()
 	s.rebuildSiteRules()
 	s.signalChange()

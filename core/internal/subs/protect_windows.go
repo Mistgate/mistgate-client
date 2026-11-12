@@ -3,6 +3,9 @@
 package subs
 
 import (
+	"os"
+	"strconv"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -24,6 +27,27 @@ func secureDirectory(path string) error {
 	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 		nil, nil, dacl, nil)
+}
+
+// ClaimDirectory makes sure the data directory is not somebody else's before the service writes into it. ProgramData
+// lets any user create a folder there: one made ahead of the first start would stay its maker's, with full control
+// over where the service (as SYSTEM) writes. Such a directory is moved aside and a new one is made later. Only the
+// installed service does this; a console run keeps what it finds. A directory that cannot be judged is left alone.
+func ClaimDirectory(path string) error {
+	token := windows.GetCurrentProcessToken()
+	user, err := token.GetTokenUser()
+	if err != nil || !user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
+		return nil
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return nil // not there yet, or unreadable
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner == nil || owner.IsWellKnown(windows.WinLocalSystemSid) || owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		return nil
+	}
+	return os.Rename(path, path+".foreign-"+strconv.FormatInt(time.Now().Unix(), 10))
 }
 
 func protect(data []byte) ([]byte, error) {

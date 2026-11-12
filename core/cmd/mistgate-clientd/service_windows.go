@@ -135,6 +135,13 @@ func install(args []string) error {
 		return err
 	}
 	defer service.Close()
+	// A crash takes the kill switch's rules with it: come back at once, so the network is not left open for long.
+	// Not fatal if it cannot be set.
+	_ = service.SetRecoveryActions([]mgr.RecoveryAction{
+		{Type: mgr.ServiceRestart, Delay: 2 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 10 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: time.Minute},
+	}, 24*3600)
 	return service.Start()
 }
 

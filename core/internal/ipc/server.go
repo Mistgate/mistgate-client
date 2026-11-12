@@ -83,6 +83,7 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 		}
 	}()
 	reader := bufio.NewReaderSize(conn, 32*1024)
+	slow := make(chan struct{}, 4)
 	for {
 		line, err := ReadLine(reader)
 		if err != nil {
@@ -98,6 +99,23 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 				return
 			}
 			continue
+		}
+		// A call that waits on the network (a ping of a dead server, a panel that is slow) runs beside the loop, a few
+		// at a time: the window has one connection, and its connect or status must not queue behind it. The window
+		// pairs answers by id. None of these calls opens a subscription.
+		if slowMethods[request.Method] {
+			select {
+			case slow <- struct{}{}:
+				go func() {
+					defer func() { <-slow }()
+					result, _, rpcError := s.dispatch(ctx, request, trusted)
+					if encoded, err := MarshalResponse(Response{ID: request.ID, Result: result, Error: rpcError}); err == nil {
+						client.enqueue(encoded)
+					}
+				}()
+				continue
+			default: // all the side lanes are busy: this one waits in line
+			}
 		}
 		result, nextSubscription, rpcError := s.dispatch(ctx, request, trusted)
 		response := Response{ID: request.ID, Result: result, Error: rpcError}
@@ -118,6 +136,11 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 			go client.forwardEvents(relayContext, subscription.C)
 		}
 	}
+}
+
+// slowMethods wait on the network for seconds.
+var slowMethods = map[string]bool{
+	"servers.ping": true, "servers.hosts": true, "subs.preview": true, "subs.add": true, "subs.refresh": true, "subs.remove": true, "apps.list": true,
 }
 
 func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (any, *session.Subscription, *RPCError) {
@@ -561,10 +584,16 @@ func (s *Server) serverHosts(ctx context.Context, sub string) (map[string]Server
 			continue
 		}
 		hosts[p.ID] = ServerHost{Host: host, IPs: []string{}}
-		if _, seen := resolved[host]; seen || net.ParseIP(host) != nil {
+		// the lookups started above write this map too
+		mu.Lock()
+		_, seen := resolved[host]
+		if !seen && net.ParseIP(host) == nil {
+			resolved[host] = nil
+		}
+		mu.Unlock()
+		if seen || net.ParseIP(host) != nil {
 			continue
 		}
-		resolved[host] = nil
 		wait.Add(1)
 		go func() {
 			defer wait.Done()

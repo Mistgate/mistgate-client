@@ -445,7 +445,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 				err = errors.New("unsupported profile protocol")
 			}
 			if err != nil {
-				return nil, errors.New("stored subscription profile is invalid")
+				continue // one entry this build cannot read (kept by another build) must not take the rest away
 			}
 			profiles = append(profiles, p)
 		}
@@ -551,6 +551,10 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if len(via) > 5 || request.URL.Scheme != "https" {
 			return errors.New("invalid subscription redirect")
+		}
+		// the device id of this panel is not for another host
+		if !strings.EqualFold(request.URL.Host, via[0].URL.Host) {
+			request.Header.Del("x-hwid")
 		}
 		return nil
 	}

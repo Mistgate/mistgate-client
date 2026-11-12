@@ -111,6 +111,11 @@ func defaultDataDir() string {
 
 // run owns the lifecycle; the context ends it (Ctrl+C in a console, a stop request as a Windows service).
 func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents <-chan time.Duration) error {
+	// before anything is written there: a folder planted by another user is not used
+	if err := subs.ClaimDirectory(dataDir); err != nil {
+		fmt.Fprintln(os.Stderr, "the data directory belongs to another user and could not be moved aside")
+		return err
+	}
 	keepCrashOutput(dataDir)
 	var eventMu sync.RWMutex
 	var eventHub *session.Hub

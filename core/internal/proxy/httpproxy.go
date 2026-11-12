@@ -94,6 +94,10 @@ func (p *Proxy) httpAuth(w http.ResponseWriter, r *http.Request, s *session) boo
 			return true
 		}
 		p.authFailed(s)
+		if !s.local {
+			// a guesser gets one try a connection: the block on its address is checked when a connection comes in
+			w.Header().Set("Connection", "close")
+		}
 	}
 	w.Header().Set("Proxy-Authenticate", `Basic realm="Mistgate"`)
 	http.Error(w, "proxy login required", http.StatusProxyAuthRequired)

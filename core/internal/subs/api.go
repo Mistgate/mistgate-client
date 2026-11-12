@@ -27,6 +27,7 @@ const (
 	capsHeader         = "v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1"
 	apiUserAgent       = "Mistgate/0.0.1 (Windows)"
 	minSyncSeconds     = 600
+	maxSyncSeconds     = 7 * 24 * 3600
 	defaultSyncSeconds = 3600
 	maxRetryAfter      = 24 * 3600
 )
@@ -503,10 +504,10 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 // schedule sets the next automatic sync: the panel's interval (at least 10 minutes) plus up to 10% of random wait,
 // so clients behind one exit address do not come together.
 func (st *storedSubscription) schedule(now time.Time, every int64) {
-	if every == 0 {
+	if every <= 0 {
 		every = defaultSyncSeconds
 	}
-	st.SyncEvery = max(every, minSyncSeconds)
+	st.SyncEvery = min(max(every, minSyncSeconds), maxSyncSeconds) // a huge number would overflow the next time
 	st.NextUnix = now.Unix() + st.SyncEvery + mrand.Int64N(st.SyncEvery/10+1)
 }
 
@@ -555,13 +556,38 @@ func (s *Store) enrolHwid(origin string) (string, error) {
 	if known {
 		return id, nil
 	}
+	fresh := ""
 	if id == "" {
 		var err error
-		if id, err = installID(); err != nil {
+		if fresh, err = installID(); err != nil {
 			return "", err
 		}
 	}
-	return id, s.remember(func(d *diskState) { d.Hwids[origin] = id })
+	// Decided again under the writer's lock: two origins asked at once must not both get the install id, or two
+	// operators could tell that it is one machine.
+	err := s.remember(func(d *diskState) {
+		if had, ok := d.Hwids[origin]; ok {
+			id = had
+			return
+		}
+		id = d.InstallID
+		for _, used := range d.Hwids {
+			if used == id {
+				id = ""
+			}
+		}
+		if id == "" {
+			if fresh == "" {
+				fresh, _ = installID()
+			}
+			id = fresh
+		}
+		d.Hwids[origin] = id
+	})
+	if err == nil && id == "" {
+		err = errors.New("cannot create device id")
+	}
+	return id, err
 }
 
 // pendingKey is the device key to send for a link: made and saved before the first request, so that a lost answer is
