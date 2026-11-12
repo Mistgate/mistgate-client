@@ -151,7 +151,10 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         eP: forever ? '100%' : `${Math.max(0, Math.min(100, Math.round((daysLeft / 30) * 100)))}%`, eC: ended ? 'bad' : !forever && daysLeft <= 3 ? 'warn' : '',
         d: capped ? w.size(left) : u.used_bytes ? w.size(u.used_bytes) : '—', dS: capped ? w.leftOf(w.size(u.total_bytes)) : u.used_bytes ? w.used : '',
         dP: capped ? `${Math.round((left / u.total_bytes) * 100)}%` : '100%', dC: capped && left / u.total_bytes < 0.1 ? 'warn' : '',
-        v: '—', vS: '', vP: '0%', vC: 'na', // devices: the panel does not say yet
+        // devices: only a panel that says
+        v: u.devices_limit ? `${u.devices_used ?? 0} / ${u.devices_limit}` : '—', vS: '',
+        vP: u.devices_limit ? `${Math.min(100, Math.round(((u.devices_used ?? 0) / u.devices_limit) * 100))}%` : '0%',
+        vC: !u.devices_limit ? 'na' : (u.devices_used ?? 0) >= u.devices_limit ? 'warn' : '',
       });
       v.B = { show: 'hide', c: '', tone: '', t: '', s: '', b: '', bc: 'hide' };
       const busy = !!this.state?.syncing;

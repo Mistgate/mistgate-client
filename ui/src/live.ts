@@ -12,10 +12,14 @@ import { pref } from './live-settings';
 type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
-export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string; version?: string };
+export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string; version?: string;
+  label?: string; node_label?: string; via_country?: string; ipv6_egress?: boolean }; // the owner's names, where a relay enters, IPv6 out
 export type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; managed?: boolean; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
+  // a Mistgate panel only: MTProto proxies as links Telegram opens, and this person's devices
+  telegram?: { node?: string; country?: string; city?: string; via?: string; via_country?: string; ipv6?: boolean; link: string }[];
+  devices_used?: number; devices_limit?: number;
 };
 
 const rpc = <T = Status>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
@@ -58,8 +62,8 @@ export function nodesOf(servers: Server[]): Node[] {
       const cc = (s.country ?? '').toLowerCase();
       const tail = (s.via === 'warp' ? ' · WARP' : s.via && s.via !== 'direct' ? ' · ' + s.via : '') + (s.ipv6 ? ' · IPv6' : '');
       let node = out.get(s.node);
-      if (!node) out.set(s.node, (node = { key: s.node, name: countryName(cc) || s.city || s.name, flag: FLAG[cc] ?? '', via: '', extra: countryName(cc) ? s.city ?? '' : '', entries: [] }));
-      const entry = { s, fam, label: label + tail, full: full + tail };
+      if (!node) out.set(s.node, (node = { key: s.node, name: s.node_label || countryName(cc) || s.city || s.name, flag: FLAG[cc] ?? '', via: '', extra: countryName(cc) ? s.city ?? '' : '', entries: [] }));
+      const entry = { s, fam, label: label + tail, full: full + tail + (s.label ? ' · ' + s.label : '') }; // the owner's name of the profile
       // the plain path first: it is what a press on the row connects to
       const plainPath = (x: Server) => (!x.via || x.via === 'direct') && !x.ipv6;
       if (tail) node.entries.push(entry); else node.entries.splice(node.entries.findIndex((e) => !plainPath(e.s)) >>> 0, 0, entry);
@@ -160,6 +164,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       document.addEventListener('keydown', this.onKeyDown, true);
       document.addEventListener('input', this.onSearch, true);
       document.addEventListener('click', this.onClickAway);
+      document.addEventListener('click', this.onTg);
       // the choice made before the window went to another screen, or was closed
       this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined, pings: { ...PINGS } }, () => this.sync());
     }
@@ -169,6 +174,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       document.removeEventListener('keydown', this.onKeyDown, true);
       document.removeEventListener('input', this.onSearch, true);
       document.removeEventListener('click', this.onClickAway);
+      document.removeEventListener('click', this.onTg);
       this.off.forEach((p) => void p.then((un) => un()));
     }
 
@@ -189,9 +195,48 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
+      this.paintTg();
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
+
+    // The Telegram tab: the design draws three sample rows as plain markup. They are filled with the subscription's
+    // proxies; more proxies than rows get copies of the first row, fewer hide the rest. No latency: nothing measures it yet.
+    viaWord = 'via';
+    paintTg() {
+      const list = document.querySelector('.list.tg');
+      const proxies = this.sub()?.telegram ?? [];
+      if (!list) return;
+      list.querySelectorAll('[data-tgx]').forEach((n) => n.remove());
+      const rows = [...list.querySelectorAll<HTMLElement>('.r.tgr')];
+      if (!rows.length) return;
+      proxies.forEach((p, i) => {
+        let row = rows[i];
+        if (!row) {
+          row = rows[0].cloneNode(true) as HTMLElement;
+          row.dataset.tgx = '1';
+          list.appendChild(row);
+        }
+        row.style.display = '';
+        row.dataset.tg = String(i);
+        const cc = (p.country ?? '').toLowerCase(), img = row.querySelector('img'), name = row.querySelector('.nm b'), meta = row.querySelector('.mt');
+        if (img) { if (FLAG[cc]) img.setAttribute('src', FLAG[cc]); else img.removeAttribute('src'); img.setAttribute('alt', ''); }
+        const title = (countryName(cc) || p.city || 'Telegram') + (countryName(cc) && p.city ? ' · ' + p.city : '');
+        if (name && name.textContent !== title) name.textContent = title;
+        const note = 'MTProto' + (p.via === 'relay' && p.via_country ? ` · ${this.viaWord} ${p.via_country}` : '') + (p.ipv6 ? ' · IPv6' : '');
+        const text = meta && [...meta.childNodes].reverse().find((n) => n.nodeType === Node.TEXT_NODE);
+        if (text && text.nodeValue !== note) text.nodeValue = note;
+        const sig = row.querySelector<HTMLElement>('.sig');
+        if (sig) sig.style.display = 'none';
+      });
+      rows.slice(proxies.length).forEach((row) => { row.style.display = 'none'; });
+    }
+    // a press on a proxy's button: Telegram's own "add this proxy" page, which hands the link to the app
+    onTg = (e: MouseEvent) => {
+      const row = (e.target as Element | null)?.closest?.('.tgo')?.closest<HTMLElement>('.r.tgr');
+      const link = row && this.sub()?.telegram?.[Number(row.dataset.tg)]?.link;
+      if (link) void invoke('open_url', { url: link.replace(/^tg:\/\/proxy\?/, 'https://t.me/proxy?') }).catch(() => {});
+    };
 
     sync() {
       this.ask('status');
@@ -361,7 +406,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           tP: forever ? '100%' : `${Math.max(0, Math.min(100, Math.round((daysLeft / 30) * 100)))}%`, tG: forever ? 'inf' : tone, tN: 1, tInf: forever, tFin: !forever,
           dV: ended ? '—' : capped ? w.size(left) : u.used_bytes ? w.size(u.used_bytes) : '—', dS: ended ? w.renew : capped ? w.leftOf(w.size(u.total_bytes)) : u.used_bytes ? w.used : '',
           dP: capped ? `${Math.round((left / u.total_bytes) * 100)}%` : '100%', dG: capped ? '' : 'inf', dN: 1, dInf: !capped, dFin: capped,
-          vV: '—', vS: '', vP: '0%', vG: '', vN: 1, vInf: false, vFin: true, // devices: only a Mistgate panel reports them
+          // devices: only a Mistgate panel reports them
+          vV: u.devices_limit ? `${u.devices_used ?? 0} / ${u.devices_limit}` : '—', vS: '', vP: u.devices_limit ? `${Math.min(100, Math.round(((u.devices_used ?? 0) / u.devices_limit) * 100))}%` : '0%',
+          vG: u.devices_limit && (u.devices_used ?? 0) >= u.devices_limit ? 'warn' : '', vN: 1, vInf: false, vFin: true,
           src: file ? 'file' : 'link', srcT: file ? w.file : w.link, srcCls: file ? 'src-file' : 'src-link',
         };
       };
@@ -398,8 +445,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         // the button turns for a moment even when the panel answers at once
         void Promise.all([rpc('subs.refresh', { id: sub.id }).catch(() => {}), new Promise((done) => setTimeout(done, 800))]).then(() => this.setState({ ref: false }));
       };
-      // Telegram proxies come from a Mistgate panel only
-      Object.assign(v, { tgN: 0, noTg: true, hasTg: false });
+      // Telegram proxies come from a Mistgate panel only; their rows are plain markup, filled in paintTg
+      const tgN = sub?.telegram?.length ?? 0;
+      Object.assign(v, { tgN, noTg: tgN === 0, hasTg: tgN > 0, tgOpen: () => {} });
 
       // ---- servers: one row per node
       const servers = sub?.servers ?? [];
@@ -418,7 +466,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const h = HOSTS[x.id]?.host;
         if (h && x.country && (!x.via || x.via === 'direct')) entryAt.set(h, x.country.toUpperCase());
       }
-      const through = (x: Server) => { const cc = x.via === 'relay' ? entryAt.get(HOSTS[x.id]?.host ?? '') : ''; return cc ? `${viaWord} ${cc}` : ''; };
+      this.viaWord = viaWord;
+      // the panel names the relay's country; an older panel does not, and the entry address tells
+      const through = (x: Server) => { const cc = x.via === 'relay' ? x.via_country || entryAt.get(HOSTS[x.id]?.host ?? '') : ''; return cc ? `${viaWord} ${cc}` : ''; };
       for (const x of servers) { const t = through(x); if (t) VIA[x.id] = t; else delete VIA[x.id]; }
       // a node reached only through relays says so on its row
       const viaOf = (n: Node) => n.via || (n.entries.every((e) => e.s.via === 'relay') ? through(n.entries[0].s) : '');

@@ -413,6 +413,41 @@ func TestClientAPISyncAnswers(t *testing.T) {
 		}
 	})
 
+	t.Run("telegram, devices, labels, relay country, ipv6 egress", func(t *testing.T) {
+		panel, store, sub := managedStore(t)
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(panel.syncBody), &doc); err != nil {
+			t.Fatal(err)
+		}
+		server := doc["servers"].([]any)[0].(map[string]any)
+		server["label"] = "Fast	one"
+		path := server["paths"].([]any)[0].(map[string]any)
+		path["label"], path["via_country"], path["ipv6_egress"] = "Home profile", "fi", false
+		doc["devices"] = map[string]any{"used": 2, "limit": 5}
+		doc["telegram"] = []any{
+			map[string]any{"server_id": "srv_1", "country": "de", "via": "relay", "via_country": "FI", "link": "tg://proxy?server=h&port=443&secret=s"},
+			map[string]any{"server_id": "srv_1", "link": "https://evil.example/proxy"},
+			map[string]any{"server_id": "srv_1", "link": "tg://proxy?a b"},
+		}
+		body, _ := json.Marshal(doc)
+		panel.set(func() { panel.syncBody = string(body) })
+		got, err := store.Refresh(ctx, sub.ID)
+		if err != nil || len(got.Servers) != 1 || got.DevicesUsed != 2 || got.DevicesLimit != 5 || len(got.Telegram) != 1 {
+			t.Fatalf("sync = %#v, %v", got, err)
+		}
+		entry, proxy := got.Servers[0], got.Telegram[0]
+		if entry.Label != "Home profile" || entry.NodeLabel != "Fast one" || entry.ViaCountry != "FI" || entry.IPv6Egress == nil || *entry.IPv6Egress {
+			t.Fatalf("server = %#v", entry)
+		}
+		if proxy.Node != "srv_1" || proxy.Country != "DE" || proxy.ViaCountry != "FI" || proxy.Via != "relay" || !strings.HasPrefix(proxy.Link, "tg://proxy?") {
+			t.Fatalf("telegram = %#v", proxy)
+		}
+		panel.set(func() { panel.syncBody = syncDoc("expired") })
+		if got, err = store.Refresh(ctx, sub.ID); err != nil || len(got.Telegram) != 0 || got.DevicesLimit != 0 {
+			t.Fatalf("expired keeps = %#v, %v", got, err)
+		}
+	})
+
 	t.Run("device removed", func(t *testing.T) {
 		panel, store, sub := managedStore(t)
 		oldKey := store.state.Subscriptions[0].Key

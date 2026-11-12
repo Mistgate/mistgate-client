@@ -72,8 +72,55 @@ type syncBody struct {
 		Country string     `json:"country"`
 		City    string     `json:"city"`
 		Load    string     `json:"load"`
+		Label   string     `json:"label"`
 		Paths   []syncPath `json:"paths"`
 	} `json:"servers"`
+	Telegram []struct {
+		ServerID   string `json:"server_id"`
+		Country    string `json:"country"`
+		City       string `json:"city"`
+		Via        string `json:"via"`
+		ViaCountry string `json:"via_country"`
+		IPv6       bool   `json:"ipv6"`
+		Link       string `json:"link"`
+	} `json:"telegram"`
+	Devices *struct {
+		Used  int `json:"used"`
+		Limit int `json:"limit"`
+	} `json:"devices"`
+}
+
+const maxTelegram = 64
+
+// shortText keeps a name the panel's owner typed: one line, no control characters, at most 64 characters.
+func shortText(text string) string {
+	text = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, text)), " ")
+	if runes := []rune(text); len(runes) > 64 {
+		text = string(runes[:64])
+	}
+	return text
+}
+
+// countryCode is a two-letter country code in upper case, or empty.
+func countryCode(text string) string {
+	text = strings.ToUpper(text)
+	if len(text) != 2 || text[0] < 'A' || text[0] > 'Z' || text[1] < 'A' || text[1] > 'Z' {
+		return ""
+	}
+	return text
+}
+
+// telegramLink says whether a link is one Telegram opens as a proxy, and nothing else: the window hands it to Windows.
+func telegramLink(link string) bool {
+	if len(link) > 2048 || strings.ContainsFunc(link, func(r rune) bool { return r <= 0x20 || r == 0x7f || r == '"' }) {
+		return false
+	}
+	return strings.HasPrefix(link, "tg://proxy?") || strings.HasPrefix(link, "https://t.me/proxy?")
 }
 
 type syncDNS struct {
@@ -158,6 +205,10 @@ type syncPath struct {
 	Via      string          `json:"via"`
 	IPv6     bool            `json:"ipv6"`
 	Settings json.RawMessage `json:"settings"`
+	// What the owner called the profile, where a relay path enters, and whether IPv6 leaves through the path.
+	Label      string `json:"label,omitempty"`
+	ViaCountry string `json:"via_country,omitempty"`
+	IPv6Egress *bool  `json:"ipv6_egress,omitempty"`
 }
 
 // pathVersion is the AmneziaWG generation in a path's settings ("2.0", "3.1"): two AmneziaWG paths of one node differ
@@ -328,9 +379,9 @@ func applyDeviceCode(st *storedSubscription, code string) {
 	switch code {
 	case "device_removed":
 		st.Key, st.Base, st.ETag, st.Managed, st.Notice = "", "", "", false, ""
-		st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
+		st.Servers, st.Entries, st.Unsupported, st.Telegram = []Server{}, nil, 0, nil
 	case "device_blocked":
-		st.ETag, st.Servers, st.Entries, st.Unsupported = "", []Server{}, nil, 0
+		st.ETag, st.Servers, st.Entries, st.Unsupported, st.Telegram = "", []Server{}, nil, 0, nil
 	}
 	// link_changed keeps the servers: the tunnel works, only the sync is cut off.
 }
@@ -390,6 +441,10 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.Notice = strings.Join(strings.Fields(b.Notice.Text), " ")
 	st.DNS, st.DNSSplit = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
 	st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
+	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
+	if b.Devices != nil && b.Devices.Used >= 0 && b.Devices.Limit >= 1 && b.Devices.Limit <= 1000 {
+		st.DevicesUsed, st.DevicesLimit = min(b.Devices.Used, 1000), b.Devices.Limit
+	}
 	if b.Status != "active" {
 		st.Error = "inactive"
 		if st.Notice == "" {
@@ -430,9 +485,16 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 			if node == "" {
 				node = "n" + strconv.Itoa(number+1)
 			}
-			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Version: pathVersion(path), Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6, Load: server.Load}
+			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Version: pathVersion(path), Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6, Load: server.Load,
+				Label: shortText(path.Label), NodeLabel: shortText(server.Label), ViaCountry: countryCode(path.ViaCountry), IPv6Egress: path.IPv6Egress}
 			st.Servers = append(st.Servers, entry)
 			st.Entries = append(st.Entries, storedEntry{Server: entry, Raw: string(raw)})
+		}
+	}
+	for _, proxy := range b.Telegram {
+		if len(st.Telegram) < maxTelegram && telegramLink(proxy.Link) {
+			st.Telegram = append(st.Telegram, Telegram{Node: proxy.ServerID, Country: countryCode(proxy.Country), City: shortText(proxy.City),
+				Via: proxy.Via, ViaCountry: countryCode(proxy.ViaCountry), IPv6: proxy.IPv6, Link: proxy.Link})
 		}
 	}
 	return st, nil

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +46,22 @@ type Subscription struct {
 	Unsupported int      `json:"unsupported"`
 	Managed     bool     `json:"managed"`
 	Servers     []Server `json:"servers"`
+	// From a panel's client API only. A Telegram link carries its proxy's secret: it goes to the trusted window and
+	// is never logged. DevicesLimit 0: the panel did not say.
+	Telegram     []Telegram `json:"telegram,omitempty"`
+	DevicesUsed  int        `json:"devices_used,omitempty"`
+	DevicesLimit int        `json:"devices_limit,omitempty"`
+}
+
+// Telegram is one MTProto proxy of the subscription, as a link Telegram opens. Twins of one server share Node.
+type Telegram struct {
+	Node       string `json:"node,omitempty"`
+	Country    string `json:"country,omitempty"`
+	City       string `json:"city,omitempty"`
+	Via        string `json:"via,omitempty"`
+	ViaCountry string `json:"via_country,omitempty"`
+	IPv6       bool   `json:"ipv6,omitempty"`
+	Link       string `json:"link"`
 }
 
 type Server struct {
@@ -59,6 +76,11 @@ type Server struct {
 	IPv6    bool   `json:"ipv6,omitempty"`
 	Version string `json:"version,omitempty"` // the AmneziaWG generation of the path ("2.0", "3.1"), when the panel says
 	Load    string `json:"load,omitempty"`    // low, medium or high; empty when the panel does not know
+	// The owner's names: of the path's profile and of the server. ViaCountry is where a relay path enters.
+	Label      string `json:"label,omitempty"`
+	NodeLabel  string `json:"node_label,omitempty"`
+	ViaCountry string `json:"via_country,omitempty"`
+	IPv6Egress *bool  `json:"ipv6_egress,omitempty"` // whether IPv6 leaves through this path; nil: the panel did not say
 }
 
 type Error struct {
@@ -155,6 +177,11 @@ func (s *Store) Changes() <-chan struct{} { return s.changes }
 func (s *Store) fillVersions() {
 	for i := range s.state.Subscriptions {
 		sub := &s.state.Subscriptions[i]
+		// A copy kept by a build that did not read ipv6_egress (the panel sends it on every path) is taken again in
+		// full: "not changed" would never bring the fields that build dropped.
+		if sub.Managed && sub.ETag != "" && !slices.ContainsFunc(sub.Servers, func(server Server) bool { return server.IPv6Egress != nil }) {
+			sub.ETag = ""
+		}
 		versions := make(map[string]string)
 		for j := range sub.Entries {
 			entry := &sub.Entries[j]
