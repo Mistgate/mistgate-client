@@ -144,7 +144,15 @@ const WORDS: Record<string, Words> = {
   },
 };
 
+// built once per language: the formatters are costly and a screen asks for the words many times a render (the
+// language only changes with a reload of the page)
+let built: { lang: string; value: ReturnType<typeof build> } | null = null;
 export function words() {
+  const lang = document.documentElement.lang;
+  if (built?.lang !== lang) built = { lang, value: build() };
+  return built.value;
+}
+function build() {
   const w = WORDS[document.documentElement.lang] ?? WORDS.en;
   const number = new Intl.NumberFormat(w.locale, { maximumFractionDigits: 1 });
   const day = new Intl.DateTimeFormat(w.locale, { day: 'numeric', month: w === WORDS.en ? 'short' : 'long' });

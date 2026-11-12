@@ -51,7 +51,17 @@ type Entry = { s: Server; fam: string; label: string; full: string };
 type Node = { key: string; name: string; flag: string; via: string; extra: string; entries: Entry[] };
 const PROTO_WORD = /^(hy2|hysteria ?2?|awg( ?[\d.]+)?|amneziawg( ?[\d.]+)?)$/i;
 const VIA_WORD = /^(через|via)\s+\S/i;
+// The rows of one list of servers are built once: a screen asks several times a render, and the list is the same
+// array until the service sends another. The result is only read.
+const builtNodes = new WeakMap<Server[], { lang: string; nodes: Node[] }>();
 export function nodesOf(servers: Server[]): Node[] {
+  const lang = document.documentElement.lang, had = builtNodes.get(servers);
+  if (had?.lang === lang) return had.nodes;
+  const nodes = buildNodes(servers);
+  builtNodes.set(servers, { lang, nodes });
+  return nodes;
+}
+function buildNodes(servers: Server[]): Node[] {
   const out = new Map<string, Node>();
   for (const s of servers) {
     if (s.node) {
@@ -98,9 +108,14 @@ export function nodesOf(servers: Server[]): Node[] {
 // a number follows the name; a city comes after the design's dot
 export const sufOf = (n: Node) => (!n.extra ? '' : /^\d+$/.test(n.extra) ? ' ' + n.extra : ' · ' + n.extra);
 // "DE" -> "Germany", in the window's language
+const regionNames = new Map<string, string>(); // "locale|cc" -> name: one formatter call per country, not per render
 function countryName(cc: string) {
   if (!/^[a-z]{2}$/.test(cc)) return '';
-  try { return new Intl.DisplayNames([words().locale], { type: 'region' }).of(cc.toUpperCase()) ?? ''; } catch { return ''; }
+  const locale = words().locale, key = locale + '|' + cc;
+  if (!regionNames.has(key)) {
+    try { regionNames.set(key, new Intl.DisplayNames([locale], { type: 'region' }).of(cc.toUpperCase()) ?? ''); } catch { regionNames.set(key, ''); }
+  }
+  return regionNames.get(key)!;
 }
 const quality = (ms: number) => (ms <= 50 ? 'q3' : ms <= 90 ? 'q2' : 'q1'); // the design's three bars
 
@@ -155,7 +170,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       super.componentDidMount();
       this.off = [
         listen<Status>('mg://status', (e) => this.apply(e.payload)),
-        listen<Traffic>('mg://traffic', (e) => { this.traffic = e.payload; this.forceUpdate(); }),
+        // a window hidden to the tray draws nothing: the numbers are there when it is shown again
+        listen<Traffic>('mg://traffic', (e) => { this.traffic = e.payload; if (!document.hidden) this.forceUpdate(); }),
         listen<{ subs: Sub[] }>('mg://subs', (e) => this.applySubs(e.payload.subs)),
         listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? this.sync() : this.setState({ cs: 'svc', wave: false }))),
         listen<{ mode: string; effective: string }>('mg://routes', (e) => { this.route = e.payload; this.paint(); }),
@@ -165,6 +181,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       document.addEventListener('input', this.onSearch, true);
       document.addEventListener('click', this.onClickAway);
       document.addEventListener('click', this.onTg);
+      window.addEventListener('storage', this.onStore);
       // the choice made before the window went to another screen, or was closed
       this.setState({ sel: pref.get('server') || 'auto', liveSub: pref.get('sub') || undefined, pings: { ...PINGS } }, () => this.sync());
     }
@@ -175,8 +192,14 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       document.removeEventListener('input', this.onSearch, true);
       document.removeEventListener('click', this.onClickAway);
       document.removeEventListener('click', this.onTg);
+      window.removeEventListener('storage', this.onStore);
       this.off.forEach((p) => void p.then((un) => un()));
     }
+
+    // the tray panel chose a server: this window is hidden, not gone, and must not put its old choice back
+    onStore = (e: StorageEvent) => {
+      if (e.key === 'server' && (e.newValue || 'auto') !== this.st().sel) this.setState({ sel: e.newValue || 'auto' });
+    };
 
     componentDidUpdate() {
       super.componentDidUpdate?.();
@@ -207,9 +230,10 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const list = document.querySelector('.list.tg');
       const proxies = this.sub()?.telegram ?? [];
       if (!list) return;
-      list.querySelectorAll('[data-tgx]').forEach((n) => n.remove());
+      // copies made earlier are kept and filled again: a row replaced between press and release would lose the click
       const rows = [...list.querySelectorAll<HTMLElement>('.r.tgr')];
       if (!rows.length) return;
+      rows.slice(Math.max(proxies.length, rows.filter((r) => !r.dataset.tgx).length)).forEach((r) => r.remove());
       proxies.forEach((p, i) => {
         let row = rows[i];
         if (!row) {
@@ -217,7 +241,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           row.dataset.tgx = '1';
           list.appendChild(row);
         }
-        row.style.display = '';
+        if (row.style.display) row.style.display = '';
         row.dataset.tg = String(i);
         const cc = (p.country ?? '').toLowerCase(), img = row.querySelector('img'), name = row.querySelector('.nm b'), meta = row.querySelector('.mt');
         if (img) { if (FLAG[cc]) img.setAttribute('src', FLAG[cc]); else img.removeAttribute('src'); img.setAttribute('alt', ''); }
@@ -229,13 +253,15 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const sig = row.querySelector<HTMLElement>('.sig');
         if (sig) sig.style.display = 'none';
       });
-      rows.slice(proxies.length).forEach((row) => { row.style.display = 'none'; });
+      rows.slice(proxies.length).forEach((row) => { if (row.isConnected && row.style.display !== 'none') row.style.display = 'none'; });
     }
     // a press on a proxy's button: Telegram's own "add this proxy" page, which hands the link to the app
     onTg = (e: MouseEvent) => {
       const row = (e.target as Element | null)?.closest?.('.tgo')?.closest<HTMLElement>('.r.tgr');
       const link = row && this.sub()?.telegram?.[Number(row.dataset.tg)]?.link;
-      if (link) void invoke('open_url', { url: link.replace(/^tg:\/\/proxy\?/, 'https://t.me/proxy?') }).catch(() => {});
+      // only Telegram's own page, whatever a subscription put in the link
+      const url = link?.replace(/^tg:\/\/proxy\?/, 'https://t.me/proxy?') ?? '';
+      if (url.startsWith('https://t.me/proxy?')) void invoke('open_url', { url }).catch(() => {});
     };
 
     sync() {
@@ -247,6 +273,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       rpc(method, params).then((s) => this.apply(s), (err) => {
         // a failed call still comes back as a status event when the service is up; without the service, say so
         if (err?.code === 'service_down' || err?.code === 'timeout') this.setState({ cs: 'svc', wave: false });
+        else if (method !== 'status') this.ask('status'); // a refused call sends no event: show what is true
       });
     }
     apply(s: Status) {
@@ -311,26 +338,32 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const sub = this.sub();
       if (!sub || !ids.length) return;
       const mark = (on: boolean) => Object.fromEntries(ids.map((id) => [id, on]));
-      this.setState({ checking: { ...this.st().checking, ...mark(true) } });
+      this.setState((old: any) => ({ checking: { ...old?.checking, ...mark(true) } }));
       rpc<{ rtt: Record<string, number> }>('servers.ping', { sub: sub.id, servers: ids }).then((r) => r.rtt, () => ({} as Record<string, number>)).then((rtt) => {
         // a server that did not answer keeps no number
         Object.assign(PINGS, Object.fromEntries(ids.map((id) => [id, rtt[id] ?? 0])));
-        this.setState({ pings: { ...PINGS }, checking: { ...this.st().checking, ...mark(false) }, flash: { ...this.st().flash, ...mark(true) } });
-        setTimeout(() => this.setState({ flash: { ...this.st().flash, ...mark(false) } }), 750); // the design's flash on a fresh number
+        // from the state as it is then: two answers in one tick must not undo each other
+        this.setState((old: any) => ({ pings: { ...PINGS }, checking: { ...old?.checking, ...mark(false) }, flash: { ...old?.flash, ...mark(true) } }));
+        setTimeout(() => this.setState((old: any) => ({ flash: { ...old?.flash, ...mark(false) } })), 750); // the design's flash on a fresh number
       });
     }
     // preview first: nothing is added until the user presses the button on the sheet
+    addSeq = 0;
     startAdd(text: string) {
       text = text.trim();
       if (!text) return;
       this.lastText = text;
       this.pending = null;
       this.setState({ add: 'check', subsPop: false });
+      // an answer counts only for the newest request, and only while its sheet is still open
+      const seq = ++this.addSeq, stale = () => seq !== this.addSeq || this.st().add !== 'check';
       rpc<Sub>('subs.preview', { text }).then(
-        (sub) => { this.pending = { text, sub }; this.setState({ add: 'basic' }); },
+        (sub) => { if (stale()) return; this.pending = { text, sub }; this.setState({ add: 'basic' }); },
         (err) => {
+          if (stale()) return;
           this.refusal = err?.code === 'refused' ? String(err.message ?? '') : '';
-          this.setState({ add: err?.code === 'offline' || err?.code === 'fetch_failed' ? 'offline' : 'badlink' });
+          // no answer from the service is not a bad link either
+          this.setState({ add: ['offline', 'fetch_failed', 'service_down', 'timeout'].includes(err?.code) ? 'offline' : 'badlink' });
         },
       );
     }
@@ -346,7 +379,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     }
     addFromFile() {
       const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.conf,.txt,text/plain' });
-      input.onchange = () => void input.files?.[0]?.text().then((t) => this.startAdd(t));
+      // a subscription is small; anything else was picked by mistake
+      input.onchange = () => { const f = input.files?.[0]; if (f && f.size <= 1 << 20) void f.text().then((t) => this.startAdd(t)); else if (f) this.setState({ add: 'badlink', subsPop: false }); };
       input.click();
     }
 
@@ -448,12 +482,15 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       // Telegram proxies come from a Mistgate panel only; their rows are plain markup, filled in paintTg
       const tgN = sub?.telegram?.length ?? 0;
       Object.assign(v, { tgN, noTg: tgN === 0, hasTg: tgN > 0, tgOpen: () => {} });
+      // "Fix it" when the service does not answer: ask again (the design's sample only hides the notice)
+      v.csFix = () => { this.setState({ fix: true }); this.sync(); setTimeout(() => this.setState({ fix: false }), 1400); };
 
       // ---- servers: one row per node
       const servers = sub?.servers ?? [];
       const nodes = nodesOf(servers);
       const has = (n: Node, id: string) => n.entries.some((e) => e.s.id === id);
-      const pings: Record<string, number> = this.st().pings ?? {}, checking: Record<string, boolean> = this.st().checking ?? {}, flash: Record<string, boolean> = this.st().flash ?? {};
+      // the numbers of the whole session, not this visit's copy: a ping that ends after the screen was left still shows
+      const pings: Record<string, number> = PINGS, checking: Record<string, boolean> = this.st().checking ?? {}, flash: Record<string, boolean> = this.st().flash ?? {};
       // the card beside a row under the pointer: where the server is and what it offers (the design's own card;
       // its "straight to server" wording comes from the design's sample row)
       const direct: string = (v.rows as any[] | undefined)?.find((r) => !r.via)?.tipD?.route ?? '';

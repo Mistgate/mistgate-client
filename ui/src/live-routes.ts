@@ -135,7 +135,8 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       if (this.state?.upd === 'busy') return;
       this.setState({ upd: 'busy' });
       // the service answers at once and says `routes` when the downloads are over (at most a minute)
-      rpc<Routes>('routes.update').then(() => { this.wait = window.setTimeout(() => this.updated('idle'), 70_000); }, () => this.updated('idle'));
+      window.clearTimeout(this.wait);
+      rpc<Routes>('routes.update').then(() => { window.clearTimeout(this.wait); this.wait = window.setTimeout(() => this.updated('idle'), 70_000); }, () => this.updated('idle'));
     }
     updated(upd: string) {
       window.clearTimeout(this.wait);
@@ -231,7 +232,9 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       this.sent = JSON.stringify(this.wanted(next));
       if (this.state?.view === 'lists') this.loadLists();
       if (this.asked) this.check(this.asked); // the rules changed under the name on the test line
-      this.setState({ mode: MODE[r.mode] ?? 'all', reg: KNOWN.includes(r.effective) ? r.effective : KNOWN.includes(r.region) ? r.region : 'other', regOpen: false, ...next });
+      const reg = KNOWN.includes(r.effective) ? r.effective : KNOWN.includes(r.region) ? r.region : 'other';
+      // the region list closes when a region was picked, not on every piece of news from the service
+      this.setState({ mode: MODE[r.mode] ?? 'all', reg, ...(reg !== this.state?.reg ? { regOpen: false } : {}), ...next });
     }
     // The server on the scheme: the design draws its sample's flag; show the flag of the server in use, or the
     // design's own server glyph when its name carries none. Off, the design draws the glyph by itself.
@@ -309,7 +312,9 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       });
       Object.assign(v, { appCnt: chosen.size, appTotal: this.apps.length, hasApps: this.apps.length > 0, noApps: this.apps.length === 0 });
       const openApps = v.vPick.apps;
-      v.vPick = { ...v.vPick, apps: () => { openApps(); void this.loadApps(); } };
+      // the search field is made anew with its tab: its filter must not outlive it
+      const tabs = v.vPick;
+      v.vPick = { col: () => { tabs.col(); this.setState({ appQ: '' }); }, sites: () => { tabs.sites(); this.setState({ appQ: '' }); }, apps: () => { openApps(); this.setState({ appQ: '' }); void this.loadApps(); } };
 
       // a service's own logo instead of the design's symbol, where an open one exists
       const brands = BRANDS as Record<string, string>;

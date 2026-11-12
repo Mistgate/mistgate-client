@@ -54,16 +54,25 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
   return class LiveDiag extends (liveChip(Base) as any) {
     diag: State = { state: 'idle', step: 0, pct: 0, error: '', result: null };
     log: LogEntry[] = [];
+    logFrame = 0;
+    bySub = new Map<string, Server[]>();
     servers: Server[] = []; // the subscriptions' servers, to name a result row as Home names the server
 
     mounted() {
       S ??= samples(Base);
       this.off.push(
         listen<State>('mg://diag', (e) => this.applyDiag(e.payload)),
-        listen<LogEntry>('mg://log', (e) => { this.log = [...this.log.slice(-499), e.payload]; if (!this.state?.paused) this.forceUpdate(); }),
+        // a burst of lines draws once a frame, not once a line
+        listen<LogEntry>('mg://log', (e) => {
+          this.log = [...this.log.slice(-499), e.payload];
+          if (this.state?.paused || this.logFrame) return;
+          this.logFrame = requestAnimationFrame(() => { this.logFrame = 0; this.forceUpdate(); });
+        }),
       );
       rpc<State>('diag.get').then((s) => this.applyDiag(s), () => {});
-      rpc<{ subs: { servers: Server[] }[] }>('subs.list').then((r) => { this.servers = r.subs.flatMap((u) => u.servers); this.forceUpdate(); }, () => {});
+      const subs = (list: { id: string; servers: Server[] }[]) => { this.bySub = new Map(list.map((u) => [u.id, u.servers])); this.servers = list.flatMap((u) => u.servers); this.forceUpdate(); };
+      this.off.push(listen<{ subs: { id: string; servers: Server[] }[] }>('mg://subs', (e) => subs(e.payload.subs)));
+      rpc<{ subs: { id: string; servers: Server[] }[] }>('subs.list').then((r) => subs(r.subs), () => {});
       rpc<{ entries: LogEntry[] }>('log.get').then((r) => { this.log = r.entries; this.forceUpdate(); }, () => {});
       // a link subscription has no panel behind it: the design's "basic" variant, reports not offered
       this.setState({ md: 'basic', anonK: 'old', rep: 'closed' });
@@ -97,7 +106,8 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       const sp = r.speed && r.speed.verdict !== 'skipped' && r.speed.verdict !== 'failed' ? r.speed : null;
       // a result row is named as Home names the server: the country with its number, then what the path adds
       const named = new Map<string, { flag: string; text: string }>();
-      for (const node of nodesOf(this.servers)) for (const e of node.entries) {
+      // numbered as Home numbers them: within the subscription that was checked
+      for (const node of nodesOf(this.bySub.get(r.sub) ?? this.servers)) for (const e of node.entries) {
         const tail = e.label.slice((PROTO[e.s.protocol]?.[1] ?? '').length).replace('relay', VIA[e.s.id] ?? 'relay');
         named.set(e.s.id, { flag: node.flag, text: node.name + sufOf(node) + tail });
       }

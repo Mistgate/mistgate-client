@@ -68,7 +68,11 @@ export function liveChip(Base: typeof DCLogic): typeof DCLogic {
     serverId = ''; // the server in use: names repeat, ids do not
     componentDidMount() {
       super.componentDidMount?.();
-      this.off = [listen<Status>('mg://status', (e) => this.status(e.payload))];
+      this.off = [
+        listen<Status>('mg://status', (e) => this.status(e.payload)),
+        // the service went away or came back: no status event tells of it
+        listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? rpc<Status>('status').then((s) => this.status(s), () => {}) : this.status({ state: 'off', server: '' }))),
+      ];
       rpc<Status>('status').then((s) => this.status(s), () => this.status({ state: 'off', server: '' }));
       this.mounted();
     }
@@ -196,7 +200,8 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         applyShell(key);
         this.setState((old: any) => ({ on: Object.assign({}, old?.on, { [key]: !shell[key] }) }));
       };
-      v.tg.auto = () => { flip('auto'); this.save({ autoconnect: !shell.auto }); };
+      // what is shown is the service's setting: flip that, and bring the window's own half in line with it
+      v.tg.auto = () => { const next = !on.auto; pref.set('auto', next ? '1' : '0'); applyShell('auto'); this.save({ autoconnect: next }); };
       // notifications: the window's own switches (live-notify reads them when something happens)
       for (const key of ['nt', 'n0', 'n1', 'n2', 'n3'] as NotifyKey[]) {
         v.tg[key] = () => {
