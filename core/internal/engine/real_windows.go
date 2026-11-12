@@ -631,6 +631,17 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return false
 		}
 	}
+	// Per-program rules: a flow is looked up only while the rules of the current mode name some program.
+	apps := &appRouter{
+		owners: processOwners,
+		listed: func() bool { return appsListed(r.settings().RouteMode, r.geo.ActiveSiteRules()) },
+		rule:   func(path string) appVerdict { return appRule(r.settings().RouteMode, r.geo.ActiveSiteRules(), path) },
+		plain:  func(address netip.Addr) bool { return slices.Contains(probeAddrs, address) },
+		blocks: func() bool {
+			rules := r.geo.ActiveSiteRules()
+			return rules != nil && rules.HasBlock
+		},
+	}
 	var track *geo.Tracker // "all" has no forwarder decision to second-guess
 	if useForwarder {
 		track = r.geo.Failures()
@@ -770,7 +781,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, via, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, via, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute, apps); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -808,7 +819,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
-			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute); err != nil {
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute, apps); err != nil {
 				if runCtx.Err() != nil {
 					return Info{}, runCtx.Err()
 				}
@@ -1255,13 +1266,13 @@ func (t *realTunnel) setVLESS(x *xray.Instance) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort)) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return context.Canceled
 	}
-	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track, names)
+	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track, names, apps)
 	if err != nil {
 		return err
 	}

@@ -332,6 +332,49 @@ func directByRules(address netip.Addr, name, mode string, region *geo.Set, rules
 	}
 }
 
+// appVerdict is what the rules say about the program that owns a flow. A program's rule beats the site and address
+// rules in its own direction only: block, the DNS port, private addresses and a missing direct IPv6 still win over it.
+type appVerdict uint8
+
+const (
+	appNone   appVerdict = iota // the program is not listed (or its owner is unknown): the site and address rules decide
+	appDirect                   // smart: a program of rules.direct.apps
+	appVPN                      // selected: a program of rules.vpn.apps
+)
+
+// appsListed says whether any program is named for this mode; without one no flow is looked up.
+func appsListed(mode string, rules *geo.SiteRules) bool {
+	if rules == nil {
+		return false
+	}
+	switch mode {
+	case "smart":
+		return len(rules.DirectApps) != 0
+	case "selected":
+		return len(rules.VPNApps) != 0
+	}
+	return false
+}
+
+// appRule reads the program's path (lower case) against the sets of the mode: smart sees only the direct programs and
+// selected only the VPN ones, as for sites.
+func appRule(mode string, rules *geo.SiteRules, path string) appVerdict {
+	if rules == nil || path == "" {
+		return appNone
+	}
+	switch mode {
+	case "smart":
+		if _, ok := rules.DirectApps[path]; ok {
+			return appDirect
+		}
+	case "selected":
+		if _, ok := rules.VPNApps[path]; ok {
+			return appVPN
+		}
+	}
+	return appNone
+}
+
 func (m *dnsMemory) remember(message []byte) {
 	m.rememberAt(message, time.Now())
 }

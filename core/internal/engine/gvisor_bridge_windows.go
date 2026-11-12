@@ -39,6 +39,7 @@ type gvisorBridge struct {
 	direct       outbound
 	shouldDirect func(netip.Addr, string) bool
 	hasSiteRules func() bool
+	apps         *appRouter   // nil: no program has a rule of its own
 	track        *geo.Tracker // nil: flows are not watched for "doesn't open?"
 	dns          *dnsMemory
 	stack        *stack.Stack
@@ -61,7 +62,7 @@ type gvisorBridge struct {
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort)) (*gvisorBridge, error) {
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) (*gvisorBridge, error) {
 	if vpn == nil {
 		return nil, errors.New("VPN outbound is unavailable")
 	}
@@ -99,6 +100,7 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 		direct:       direct,
 		shouldDirect: shouldDirect,
 		hasSiteRules: hasSiteRules,
+		apps:         apps,
 		track:        track,
 		names:        names,
 		dns:          &dnsMemory{entries: make(map[netip.Addr]dnsEntry)},
@@ -237,9 +239,15 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		req.Complete(true)
 		return
 	}
-	// Watching a TLS flow needs its name, so port 443 is read first even without site rules.
-	watching := b.track != nil && target.Port() == 443
-	needsName := b.hasSiteRules != nil && b.hasSiteRules() || watching
+	// This goroutine is the flow's own, so waiting here for the owner of the socket stalls nothing else.
+	srcAddr, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
+	app := b.appWait(false, netip.AddrPortFrom(srcAddr.Unmap(), id.RemotePort), target)
+	// A program kept on the VPN cannot use a VPN without IPv6: refuse as above.
+	if app == appVPN && target.Addr().Is6() && b.noVPN6.Load() {
+		req.Complete(true)
+		return
+	}
+	needsName, watching := b.readsName(app, target.Port())
 	var remote net.Conn
 	var local *gonet.TCPConn
 	var sniffed []byte
@@ -266,7 +274,7 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		watching = watching && name != ""
 		var err error
 		var route geo.Route
-		remote, route, err = b.dialTCPName(b.ctx, target, name)
+		remote, route, err = b.dialTCPName(b.ctx, target, name, app)
 		if err != nil {
 			// A cancelled context is the app closing, not the site failing.
 			if watching && b.ctx.Err() == nil {
@@ -295,7 +303,7 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		}
 	} else {
 		var err error
-		remote, err = b.dialTCP(b.ctx, target)
+		remote, _, err = b.dialTCPName(b.ctx, target, "", app)
 		if err != nil {
 			req.Complete(true)
 			return
@@ -316,6 +324,17 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		_ = local.Close()
 		_ = remote.Close()
 	}
+}
+
+// readsName says whether a TCP flow is accepted first and read for its name before it is dialed, and whether the
+// tracker watches it. Watching a TLS flow needs its name, so port 443 is read even without site rules. A flow decided by
+// its program is not the site's doing: it is not watched, and needs a name only to be blocked by it.
+func (b *gvisorBridge) readsName(app appVerdict, port uint16) (needsName, watching bool) {
+	if app != appNone {
+		return (port == 443 || port == 80) && b.apps.blocks(), false
+	}
+	watching = b.track != nil && port == 443
+	return b.hasSiteRules != nil && b.hasSiteRules() || watching, watching
 }
 
 var noAnswerAfter = 10 * time.Second // a variable for the test
@@ -397,8 +416,25 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 		return
 	}
 	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
+	srcAddr, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
+	src := netip.AddrPortFrom(srcAddr.Unmap(), id.RemotePort)
+	app, ready := b.appQuick(true, src, target)
+	if !ready {
+		// Finding the owner of the socket may wait for a table snapshot, and this runs on the packet pump, which must not
+		// wait. The endpoint is made first so the flow's next packets queue on it instead of starting new requests.
+		var queue waiter.Queue
+		endpoint, err := req.CreateEndpoint(&queue)
+		if err != nil {
+			return
+		}
+		local := gonet.NewUDPConn(&queue, endpoint)
+		if !b.startForward(func() { b.runUDP(local, target, b.appResolve(true, src)) }) {
+			_ = local.Close()
+		}
+		return
+	}
 	flowCtx, cancel := context.WithCancel(b.ctx)
-	remote, dialErr := b.listenUDP(flowCtx, target)
+	remote, dialErr := b.listenUDP(flowCtx, target, app)
 	if dialErr != nil {
 		cancel()
 		return
@@ -410,7 +446,22 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 		cancel()
 		return
 	}
-	local := gonet.NewUDPConn(&queue, endpoint)
+	b.serveUDP(gonet.NewUDPConn(&queue, endpoint), remote, target, flowCtx, cancel)
+}
+
+// runUDP gives an accepted flow its outbound once the program is known.
+func (b *gvisorBridge) runUDP(local net.Conn, target netip.AddrPort, app appVerdict) {
+	flowCtx, cancel := context.WithCancel(b.ctx)
+	remote, err := b.listenUDP(flowCtx, target, app)
+	if err != nil {
+		cancel()
+		_ = local.Close()
+		return
+	}
+	b.serveUDP(local, remote, target, flowCtx, cancel)
+}
+
+func (b *gvisorBridge) serveUDP(local net.Conn, remote packetFlow, target netip.AddrPort, flowCtx context.Context, cancel context.CancelFunc) {
 	flow := &udpFlow{
 		local:  local,
 		remote: remote,
@@ -744,33 +795,38 @@ func (b *gvisorBridge) Close() {
 }
 
 func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
-	conn, _, err := b.dialTCPName(ctx, target, "")
+	conn, _, err := b.dialTCPName(ctx, target, "", appNone)
 	return conn, err
 }
 
 // dialTCPName also says which route the flow was given, even when the dial fails.
-func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string) (net.Conn, geo.Route, error) {
-	if name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
+func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string, app appVerdict) (net.Conn, geo.Route, error) {
+	if app == appNone && name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
 		name = b.dns.lookup(target.Addr())
 	}
-	out, route := selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct)
+	out, route := selectOutbound(target, name, b.shouldDirect, app, b.vpn, b.direct)
 	conn, err := out.DialTCP(ctx, target)
 	return conn, route, err
 }
 
-func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort) (packetFlow, error) {
+func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort, app appVerdict) (packetFlow, error) {
 	name := ""
-	if target.Port() != 53 && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
+	if app == appNone && target.Port() != 53 && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
 		name = b.dns.lookup(target.Addr())
 	}
-	out, _ := selectOutbound(target, name, b.shouldDirect, b.vpn, b.direct)
+	out, _ := selectOutbound(target, name, b.shouldDirect, app, b.vpn, b.direct)
 	return out.ListenUDP(ctx)
 }
 
-func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, vpn, direct outbound) (outbound, geo.Route) {
+// selectOutbound: the program's verdict replaces the site and address rules in its own direction. The DNS port, the
+// addresses that cannot go direct and IPv6 without a direct path stay as they are (block works before this, by name).
+func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, app appVerdict, vpn, direct outbound) (outbound, geo.Route) {
 	address := target.Addr()
+	if app == appVPN {
+		return vpn, geo.ViaVPN
+	}
 	// Keep the adapter's configured DNS resolver on the VPN.
-	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && shouldDirect != nil && shouldDirect(address, name) && (address.Is4() || directIPv6()) {
+	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && (app == appDirect || shouldDirect != nil && shouldDirect(address, name)) && (address.Is4() || directIPv6()) {
 		return direct, geo.ViaDirect
 	}
 	return vpn, geo.ViaVPN

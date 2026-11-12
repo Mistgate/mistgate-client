@@ -45,6 +45,7 @@ type Server struct {
 	Geo       *geo.Store
 	Routes    func() geo.Routes
 	Check     func(name string) geo.Check // routes.check
+	Apps      func() []engine.AppInfo     // apps.list
 	Ping      PingFunc                    // servers.ping
 	Logs      *LogStore
 	Proxy     *proxy.Proxy
@@ -275,6 +276,18 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 			return nil, nil, &RPCError{Code: "service_error", Message: "route rules could not be saved"}
 		}
 		return s.Routes(), nil, nil
+	case "apps.list":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Apps == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "program list is unavailable"}
+		}
+		apps := s.Apps()
+		if apps == nil {
+			apps = []engine.AppInfo{}
+		}
+		return map[string]any{"apps": apps}, nil, nil // not logged: the paths show what the user runs
 	case "routes.check":
 		var params struct {
 			Site string `json:"site"`
@@ -659,13 +672,16 @@ func mergeSelection(raw json.RawMessage, selection *geo.Selection) bool {
 	}
 	for key, value := range patch {
 		var items []string
-		if key != "collections" && key != "sites" || strings.TrimSpace(string(value)) == "null" || json.Unmarshal(value, &items) != nil || items == nil {
+		if key != "collections" && key != "sites" && key != "apps" || strings.TrimSpace(string(value)) == "null" || json.Unmarshal(value, &items) != nil || items == nil {
 			return false
 		}
-		if key == "collections" {
+		switch key {
+		case "collections":
 			selection.Collections = items
-		} else {
+		case "sites":
 			selection.Sites = items
+		default:
+			selection.Apps = items
 		}
 	}
 	return true
@@ -763,13 +779,13 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, ping PingFunc, localProxy *proxy.Proxy) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, apps func() []engine.AppInfo, ping PingFunc, localProxy *proxy.Proxy) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Ping: ping, Logs: logs, Proxy: localProxy}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Apps: apps, Ping: ping, Logs: logs, Proxy: localProxy}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}

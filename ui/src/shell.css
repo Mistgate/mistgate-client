@@ -11,8 +11,7 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell-tray .ty-scr { width: 100vw; height: 100vh; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
 /* no entrance: the window itself appears, and a paused entrance would leave the panel invisible */
 html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; animation: none !important; opacity: 1; transform: none; }
-/* Routes: drawn for the finished product, not in this build yet: apps. The lists' daily update is always on. */
-.shell .utabs button:nth-child(2), .shell .grid.apps { opacity: .45; pointer-events: none; }
+/* Routes: the lists' daily update is always on. */
 .shell .lp-auto .sw { opacity: .45; pointer-events: none; }
 /* a tile's title stays on one line: two lines crowd the line under it */
 .shell .tile .tx b { display: block; white-space: nowrap; }

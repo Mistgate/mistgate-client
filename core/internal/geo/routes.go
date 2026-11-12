@@ -7,11 +7,20 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+)
+
+const (
+	maxApps    = 200 // programs per selection
+	maxAppPath = 512 // bytes of one path
 )
 
 type Selection struct {
 	Collections []string `json:"collections"`
 	Sites       []string `json:"sites"`
+	// Apps are full paths of programs (lower case, backslashes), whose connections follow the selection. Not for block.
+	Apps []string `json:"apps"`
 }
 
 type Rules struct {
@@ -34,12 +43,15 @@ type SiteRules struct {
 	HasDirect bool
 	HasVPN    bool
 	HasBlock  bool
+	// Programs by normalised path. Only the direct set counts in smart and only the VPN set in selected.
+	DirectApps map[string]struct{}
+	VPNApps    map[string]struct{}
 }
 
 var ErrBadRules = errors.New("bad route rules")
 
 func emptySelection() Selection {
-	return Selection{Collections: []string{}, Sites: []string{}}
+	return Selection{Collections: []string{}, Sites: []string{}, Apps: []string{}}
 }
 
 func emptyRules() Rules {
@@ -130,13 +142,23 @@ func (s *Store) rebuildSiteRules() {
 	add(vpn, rules.VPN)
 	add(block, rules.Block)
 	s.siteRules.Store(&SiteRules{
-		Direct:    direct,
-		VPN:       vpn,
-		Block:     block,
-		HasDirect: len(rules.Direct.Collections)+len(rules.Direct.Sites) != 0,
-		HasVPN:    len(rules.VPN.Collections)+len(rules.VPN.Sites) != 0,
-		HasBlock:  len(rules.Block.Collections)+len(rules.Block.Sites) != 0,
+		Direct:     direct,
+		VPN:        vpn,
+		Block:      block,
+		HasDirect:  len(rules.Direct.Collections)+len(rules.Direct.Sites) != 0,
+		HasVPN:     len(rules.VPN.Collections)+len(rules.VPN.Sites) != 0,
+		HasBlock:   len(rules.Block.Collections)+len(rules.Block.Sites) != 0,
+		DirectApps: appSet(rules.Direct.Apps),
+		VPNApps:    appSet(rules.VPN.Apps),
 	})
+}
+
+func appSet(paths []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		set[path] = struct{}{}
+	}
+	return set
 }
 
 func (s *Store) signalChange() {
@@ -147,23 +169,23 @@ func (s *Store) signalChange() {
 }
 
 func normalizeRules(rules Rules) (Rules, error) {
-	direct, err := normalizeSelection(rules.Direct)
+	direct, err := normalizeSelection(rules.Direct, true)
 	if err != nil {
 		return Rules{}, err
 	}
-	vpn, err := normalizeSelection(rules.VPN)
+	vpn, err := normalizeSelection(rules.VPN, true)
 	if err != nil {
 		return Rules{}, err
 	}
-	block, err := normalizeSelection(rules.Block)
+	block, err := normalizeSelection(rules.Block, false)
 	if err != nil {
 		return Rules{}, err
 	}
 	return Rules{Direct: direct, VPN: vpn, Block: block}, nil
 }
 
-func normalizeSelection(selection Selection) (Selection, error) {
-	if len(selection.Collections) > 200 || len(selection.Sites) > 500 {
+func normalizeSelection(selection Selection, allowApps bool) (Selection, error) {
+	if len(selection.Collections) > 200 || len(selection.Sites) > 500 || len(selection.Apps) > maxApps || len(selection.Apps) != 0 && !allowApps {
 		return Selection{}, ErrBadRules
 	}
 	collections := make([]string, 0, len(selection.Collections))
@@ -189,7 +211,43 @@ func normalizeSelection(selection Selection) (Selection, error) {
 			sites = append(sites, domain)
 		}
 	}
-	return Selection{Collections: collections, Sites: sites}, nil
+	apps := make([]string, 0, len(selection.Apps))
+	seen = make(map[string]struct{}, len(selection.Apps))
+	for _, app := range selection.Apps {
+		path, ok := normalizeAppPath(app)
+		if !ok {
+			return Selection{}, ErrBadRules
+		}
+		if _, ok := seen[path]; !ok {
+			seen[path] = struct{}{}
+			apps = append(apps, path)
+		}
+	}
+	slices.Sort(apps)
+	return Selection{Collections: collections, Sites: sites, Apps: apps}, nil
+}
+
+// normalizeAppPath accepts the full path of an exe on a drive letter and returns it in the form flows are compared in
+// (lower case, backslashes). The path comes from the window, so everything a file name cannot hold is refused.
+func normalizeAppPath(value string) (string, bool) {
+	if len(value) > maxAppPath || !utf8.ValidString(value) || strings.TrimSpace(value) != value || strings.ContainsFunc(value, unicode.IsControl) || strings.ContainsAny(value, `<>"|?*`) {
+		return "", false
+	}
+	path := strings.ReplaceAll(strings.ToLower(value), "/", `\`)
+	if len(path) < 8 || path[0] < 'a' || path[0] > 'z' || path[1] != ':' || path[2] != '\\' || !strings.HasSuffix(path, ".exe") { // 8 = the shortest, c:\a.exe
+		return "", false
+	}
+	parts := strings.Split(path[3:], `\`)
+	for i, part := range parts {
+		// no empty or dot parts, no stream (":") and no trailing dot or space, which Windows would drop silently
+		if part == "" || part == "." || part == ".." || strings.Contains(part, ":") || strings.HasSuffix(part, " ") || i < len(parts)-1 && strings.HasSuffix(part, ".") {
+			return "", false
+		}
+	}
+	if parts[len(parts)-1] == ".exe" {
+		return "", false
+	}
+	return path, true
 }
 
 func normalizeUserSite(value string) (string, bool) {
@@ -208,16 +266,22 @@ func normalizeUserSite(value string) (string, bool) {
 
 func cloneRules(rules Rules) Rules {
 	return Rules{
-		Direct: Selection{Collections: append([]string{}, rules.Direct.Collections...), Sites: append([]string{}, rules.Direct.Sites...)},
-		VPN:    Selection{Collections: append([]string{}, rules.VPN.Collections...), Sites: append([]string{}, rules.VPN.Sites...)},
-		Block:  Selection{Collections: append([]string{}, rules.Block.Collections...), Sites: append([]string{}, rules.Block.Sites...)},
+		Direct: cloneSelection(rules.Direct),
+		VPN:    cloneSelection(rules.VPN),
+		Block:  cloneSelection(rules.Block),
 	}
 }
 
+func cloneSelection(s Selection) Selection {
+	return Selection{Collections: append([]string{}, s.Collections...), Sites: append([]string{}, s.Sites...), Apps: append([]string{}, s.Apps...)}
+}
+
 func sameRules(a, b Rules) bool {
-	return sameStrings(a.Direct.Collections, b.Direct.Collections) && sameStrings(a.Direct.Sites, b.Direct.Sites) &&
-		sameStrings(a.VPN.Collections, b.VPN.Collections) && sameStrings(a.VPN.Sites, b.VPN.Sites) &&
-		sameStrings(a.Block.Collections, b.Block.Collections) && sameStrings(a.Block.Sites, b.Block.Sites)
+	return sameSelection(a.Direct, b.Direct) && sameSelection(a.VPN, b.VPN) && sameSelection(a.Block, b.Block)
+}
+
+func sameSelection(a, b Selection) bool {
+	return sameStrings(a.Collections, b.Collections) && sameStrings(a.Sites, b.Sites) && sameStrings(a.Apps, b.Apps)
 }
 
 func sameStrings(a, b []string) bool {

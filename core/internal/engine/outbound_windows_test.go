@@ -55,7 +55,7 @@ func TestBridgeSelectsExitForNewTCPAndUDPFlows(t *testing.T) {
 	if _, err := bridge.dialTCP(context.Background(), target); err != nil {
 		t.Fatal(err)
 	}
-	flow, err := bridge.listenUDP(context.Background(), target)
+	flow, err := bridge.listenUDP(context.Background(), target, appNone)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestPrivateAndDNSDestinationsNeverUseDirectExit(t *testing.T) {
 		if _, err := bridge.dialTCP(context.Background(), netip.MustParseAddrPort(address)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := bridge.listenUDP(context.Background(), netip.MustParseAddrPort(address)); err != nil {
+		if _, err := bridge.listenUDP(context.Background(), netip.MustParseAddrPort(address), appNone); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -91,7 +91,7 @@ func TestPublicIPv6CanUseDirectExit(t *testing.T) {
 	defer func() { directIPv6 = real }()
 	for _, has := range []bool{false, true} {
 		directIPv6 = func() bool { return has }
-		out, _ := selectOutbound(netip.MustParseAddrPort("[2001:4860:4860::8888]:443"), "", func(netip.Addr, string) bool { return true }, hy2Outbound{}, directOutbound{})
+		out, _ := selectOutbound(netip.MustParseAddrPort("[2001:4860:4860::8888]:443"), "", func(netip.Addr, string) bool { return true }, appNone, hy2Outbound{}, directOutbound{})
 		if _, direct := out.(directOutbound); direct != has {
 			t.Fatalf("direct IPv6 available = %v, flow direct = %v", has, direct)
 		}
@@ -103,7 +103,7 @@ func TestPublicIPv6CanUseDirectExit(t *testing.T) {
 	if _, err := bridge.dialTCP(context.Background(), target); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bridge.listenUDP(context.Background(), target); err != nil {
+	if _, err := bridge.listenUDP(context.Background(), target, appNone); err != nil {
 		t.Fatal(err)
 	}
 	if direct.tcp.Load() != 1 || direct.udp.Load() != 1 || vpn.tcp.Load() != 0 || vpn.udp.Load() != 0 {

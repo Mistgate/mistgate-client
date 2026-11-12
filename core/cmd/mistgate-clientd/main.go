@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -181,6 +182,11 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		check = func(name string) geo.Check { return real.CheckSite(settingsStore.Get(), name) }
 	}
 	routeState.Snapshot = func() geo.Routes { return routes() }
+	// the programs the rules already name stay in the window's list even when they are not running
+	apps := func() []engine.AppInfo {
+		rules := geoStore.GetRules()
+		return engine.ListApps(slices.Concat(rules.Direct.Apps, rules.VPN.Apps))
+	}
 	manager := session.NewManager(eng, settingsStore.Get, routeState)
 	defer manager.Close()
 	if powerEvents != nil {
@@ -222,7 +228,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	})
 	defer localProxy.Close()
 	localProxy.Reload()
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, ping, localProxy); err != nil {
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, apps, ping, localProxy); err != nil {
 		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}

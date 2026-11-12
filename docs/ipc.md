@@ -63,9 +63,10 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `routes.get` | none | Route state, rules, and named collection status |
 | `routes.update` | none | The `routes.get` object as it is now; the downloads go on in the background and a `routes` event follows when they end |
 | `routes.lists` | none | `{"lists": [{"id": "<list id>", "entries": N, "updated_unix": N, "error": "<code>"}], "unique": N, "duplicates": N}` |
-| `routes.set` | `{"direct": Selection, "vpn": Selection, "block": Selection}` (any key may be omitted; an omitted one keeps what is stored) | The `routes.get` object |
+| `routes.set` | `{"direct": Selection, "vpn": Selection, "block": Selection}` (any key may be omitted; an omitted one keeps what is stored). A `Selection` is `{"collections": [...], "sites": [...], "apps": [...]}`, any key may be omitted too, and an omitted one keeps what is stored | The `routes.get` object |
 | `routes.check` | `{"site": "<name>"}`; a host name or an https URL of one, checked like a site entry | `{"route": "direct" \| "vpn" \| "block", "by": "mode" \| "site" \| "collection" \| "region" \| "default", "rule": "<entry or collection id>", "dns": "direct" \| "vpn"}` |
 | `routes.dismiss` | `{"route": "direct" \| "vpn", "site": "<name>"}`; `route` is the `suggest` list the site was in | The `routes.get` object |
+| `apps.list` | none; a trusted caller only | `{"apps": [{"path": "c:\\tools\\app.exe", "name": "App", "running": true}]}`: the programs for the "Programs" tab (see "Rules by program") |
 | `diag.run` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | Diagnostic State |
 | `diag.get` | none | Diagnostic State |
 | `diag.cancel` | none | Diagnostic State |
@@ -188,7 +189,8 @@ local country lookup, then discarded; it is never stored, logged or returned.
 is the selected country (`none` when auto has no match), `selected` in selected mode, or `none` in all mode;
 `available` reports whether the smart-mode region list is cached; `entries` is the number of IPv4 prefixes in that
 list; and `updated_unix` is the cached file time, or `0` when no file exists. `rules` has `direct`, `vpn` and `block`
-selections, each with `collections` and `sites` arrays. `collections` reports each named collection's `id`,
+selections, each with `collections`, `sites` and `apps` arrays (all three are always present, empty ones are `[]`;
+`block.apps` is always empty). `collections` reports each named collection's `id`,
 `available` (whether a valid cached list is present), `entries` (the number of valid unique domains), and
 `updated_unix`, for the collections of all three selections. `block_active` is `true` in `smart` and `selected` and
 `false` in `all`: the block lists work only where the forwarder runs (see "Blocking by name").
@@ -274,6 +276,48 @@ the app would otherwise connect to an address the flow cannot reach, and would n
 A TCP flow to port 80 or 443 whose sniffed name matches is closed without a dial. Block wins over `direct` and `vpn`.
 Flows that never show a name (other ports, QUIC) are not blocked by name. In `all` there is no forwarder:
 block does nothing (`block_active` is `false`).
+
+### Rules by program
+
+`rules.direct.apps` and `rules.vpn.apps` name programs by the full path of their exe. In `smart`, the connections of a
+program in `rules.direct.apps` go direct, outside the VPN. In `selected`, a connection goes through the VPN when its
+site matches `rules.vpn` **or** its program is in `rules.vpn.apps`; everything else goes direct. `smart` reads only
+`direct.apps` and `selected` only `vpn.apps` (the other list is kept and used when the mode changes). Rules apply to
+new connections at once; connections already open keep their path.
+
+A path is checked when it comes in (`routes.set`, and `routes.json` on load): an absolute Windows path on a drive letter
+(`C:\dir\app.exe`, `/` is taken for `\`), ending in `.exe`, at most 512 bytes, no control characters, none of
+`<>"|?*`, no `:` after the drive, no empty, `.` or `..` parts and no part that ends in a space (a directory also not
+in a dot). It is stored in lower case with backslashes, without duplicates, sorted; at most 200 per selection. UNC
+paths, `\\?\` paths and relative paths are refused with `bad_params`, and so is a non-empty `rules.block.apps`.
+A `routes.json` from an older version without `apps` loads with empty lists.
+
+A program's rule is stronger than the rules for sites and addresses in its own direction, and nothing else. These
+stay as they are: `rules.block` (a flow to port 80 or 443 of a listed program is still read for its name and closed when
+the name is blocked), port 53 (DNS goes as for every program: through the VPN, or to the regional resolver, by the
+rules of the name), private, loopback, link-local and multicast destinations (always the VPN), a public IPv6 destination
+when the machine has no IPv6 beside the tunnel (the VPN, or refused when it has none either), and the address of the
+tunnel check (always through the VPN). A flow decided by its program is not counted for the "Doesn't open?" suggestions.
+
+The owner of a flow is found from the local port of the program's socket (the IP Helper owner tables for TCP and UDP,
+the process id, then its image path). It costs nothing while no program is named for the current mode: nothing is
+looked up. Otherwise a table is read at most once per 50 ms for all waiting connections, and the owner of a port is
+kept for 5 seconds. A new connection of a program may wait for one table read (about a millisecond, plus up to 50 ms
+when the program opened several at once). If the owner cannot be found (the process is gone, a system process closed to
+the service, a connection of another machine routed through this one) the flow is decided as if it had no program. Paths
+of programs are never logged.
+
+Where it does not apply: in `all`, where the forwarder takes no decisions and everything uses the VPN (the lists are
+kept for when the mode changes); with AmneziaWG in `all` and no IPv6 address the tunnel does not even pass through the
+forwarder. A program's own DNS questions (port 53) are decided like anyone's.
+
+`apps.list` gives the window the programs to choose from, at most 300: those running in a user's session (not the
+services of session 0, not the Windows directory, not the client's own folder) and, even when they are not running,
+the ones already named in `rules.direct.apps` and `rules.vpn.apps` (`running: false`). Each `path` is lower case in the
+form the rules store; `name` is the file description of the exe, or the file name without the extension. Running
+programs come first, then by name; past 300 the unchosen ones are dropped first. A scan is reused for 2 seconds. The
+answer is not logged. Programs that are installed but not running are not listed: the window adds one by its path in
+`routes.set`.
 
 ### Where a site goes
 

@@ -1,8 +1,8 @@
 // Routes on the real service: the mode, the region, the collections and the user's sites are the service's.
 // The design's logic stays as generated and keeps drawing its catalogue; this subclass keeps its switches in step
 // with the service: what the service says is put into the design's own state, and what the user flips there is
-// sent to the service. What this build does not do yet is drawn but cannot be pressed (shell.css): apps and the
-// lists' "update automatically" switch (the service refreshes a list older than a day by itself).
+// sent to the service. What this build does not do yet is drawn but cannot be pressed (shell.css): the lists'
+// "update automatically" switch (the service refreshes a list older than a day by itself).
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import BRANDS from '../tools/brands.json';
@@ -12,7 +12,9 @@ import { flagOf, PROTO } from './live';
 import { words } from './live-i18n';
 import { liveChip } from './live-settings';
 
-type Selection = { collections: string[]; sites: string[] };
+type Selection = { collections: string[]; sites: string[]; apps?: string[] }; // apps: full paths of programs
+// a program the service has seen running, or one the rules name
+type App = { path: string; name: string; running: boolean };
 type Routes = {
   mode: 'all' | 'smart' | 'selected'; region: string; effective: string; available: boolean; entries: number; updated_unix: number;
   rules?: { direct: Selection; vpn: Selection; block?: Selection };
@@ -76,6 +78,7 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     lists: Lists | null = null;
     offIds: string[] = offLinks(); // lists switched off on the Lists sheet, kept as rows
     seen = new Map<string, ListInfo>(); // the last known numbers of a list, for a row that is switched off
+    apps: App[] = [];
     verdict: Verdict | null = null;
     asked = ''; // the name the verdict is for
     timer = 0;
@@ -89,6 +92,7 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       rpc<{ kill_switch: string }>('settings.get').then(ks, () => {});
       rpc<Routes>('routes.get').then((r) => this.applyRoutes(r), () => {});
       this.loadLists(); // the Lists button counts them
+      void this.loadApps();
       // the "add a site" row is plain markup in the design
       document.addEventListener('click', this.onClick);
       document.addEventListener('keydown', this.onKey);
@@ -96,6 +100,8 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     }
     // "Check where a site goes": the service answers by the same code as a real flow
     onInput = (e: Event) => {
+      const find = (e.target as Element | null)?.closest?.('.lc-s input') as HTMLInputElement | null;
+      if (find && this.state?.view === 'apps') return this.setState({ appQ: find.value.trim().toLowerCase() });
       const input = (e.target as Element | null)?.closest?.('.chk-in input') as HTMLInputElement | null;
       if (!input) return;
       window.clearTimeout(this.timer);
@@ -106,6 +112,21 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       const done = (x: Verdict | null) => { if (this.asked === site) { this.verdict = x; this.forceUpdate(); } };
       if (!site) return done(null);
       rpc<Verdict>('routes.check', { site }).then(done, () => done(null));
+    }
+    loadApps = () => rpc<{ apps: App[] }>('apps.list').then((x) => { this.apps = x.apps; this.forceUpdate(); }, () => {});
+    // a program goes on or off for the mode on screen
+    flipApp(path: string, on: boolean) {
+      const m = this.state?.mode === 'only' ? 'only' : 'except';
+      const cur: string[] = this.state?.xapps?.[m] ?? [];
+      this.setState({ xapps: { ...this.state?.xapps, [m]: on ? [...new Set([...cur, path])] : cur.filter((x) => x !== path) } });
+    }
+    // "Add .exe": Windows' own file dialog; the program is switched on and stays in the list
+    pickApp() {
+      void invoke<string>('pick_exe').then((path) => {
+        if (!path) return;
+        this.flipApp(path.toLowerCase(), true);
+        window.setTimeout(this.loadApps, 600); // once the rules are saved, the service lists it
+      }, () => {});
     }
     loadLists() {
       rpc<Lists>('routes.lists').then((x) => { this.lists = x; x.lists.forEach((l) => this.seen.set(l.id, l)); this.forceUpdate(); }, () => {});
@@ -150,7 +171,15 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     }
     // (the design has a second such row, for list links, on its Lists sheet: that one is not this build's)
     row = (t: EventTarget | null) => { const r = (t as Element | null)?.closest?.('.addrow'); return r?.closest('.lcard') && !this.state?.view?.includes('lists') ? r : null; };
-    onClick = (e: MouseEvent) => { if ((e.target as Element).closest('.addb')) this.addSites(this.row(e.target)); };
+    onClick = (e: MouseEvent) => {
+      const t = e.target as Element;
+      // the Apps tab's plain buttons: add a program file, look again
+      if (this.state?.view === 'apps') {
+        if (t.closest('.lc-row .lsb, .e-act .addb')) return this.pickApp();
+        if (t.closest('.found .lnk, .e-act .lsb')) return void this.loadApps();
+      }
+      if (t.closest('.addb')) this.addSites(this.row(e.target));
+    };
     onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter') return;
       if (this.state?.view === 'lists' && (e.target as Element | null)?.closest?.('.add-in')) this.addList();
@@ -182,15 +211,17 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
         sites: { except: rules.direct.sites.map((s) => [s, '']), only: rules.vpn.sites.map((s) => [s, '']) },
         // lists in the rules that no tile stands for: the links added on the Lists sheet
         extra: { except: rules.direct.collections.filter((c) => !BACK[c]), only: rules.vpn.collections.filter((c) => !BACK[c]) },
+        xapps: { except: rules.direct.apps ?? [], only: rules.vpn.apps ?? [] },
       };
     }
     wanted(state: any) {
       const pick = (m: string) => [...ALL.filter((k) => state.sel?.[m]?.[k] && COL[k]).map((k) => COL[k]), ...((state.extra?.[m] ?? []) as string[])].sort();
       const sites = (m: string) => ((state.sites?.[m] ?? []) as string[][]).map((x) => x[0]);
+      const apps = (m: string) => [...((state.xapps?.[m] ?? []) as string[])].sort();
       const m = state.mode === 'only' ? 'only' : 'except'; // the Ads tile of the mode on screen is the one the user flips
       const others = (this.routes?.rules?.block?.collections ?? []).filter((c) => c !== ADS);
       return {
-        direct: { collections: pick('except'), sites: sites('except') }, vpn: { collections: pick('only'), sites: sites('only') },
+        direct: { collections: pick('except'), sites: sites('except'), apps: apps('except') }, vpn: { collections: pick('only'), sites: sites('only'), apps: apps('only') },
         block: { collections: [...others, ...(state.sel?.[m]?.ads ? [ADS] : [])].sort(), sites: this.routes?.rules?.block?.sites ?? [] },
       };
     }
@@ -262,6 +293,24 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       v.sugs = (this.state?.mode === 'all' ? [] : (m === 'only' ? r?.suggest?.vpn : r?.suggest?.direct) ?? [])
         .filter((x) => !listed.has(x.site))
         .map((x) => ({ name: x.site, meta: line.replace(/\d+/, String(x.count)), add: () => this.addNames([x.site]) }));
+      // the Apps tab: the programs the service sees (running ones first), switched for the mode on screen. The design's
+      // sample tiles lend their words: "Running" / "Installed" and the way a chosen one goes.
+      const sample: any[] = v.apps ?? [];
+      const onTile = sample.find((a) => a.way) ?? {}, runTile = sample.find((a) => a.mcls === 'run') ?? {}, idleTile = sample.find((a) => a.mcls !== 'run') ?? {};
+      const chosen = new Set<string>((this.state?.xapps?.[m] ?? []) as string[]);
+      const q: string = this.state?.appQ ?? '';
+      v.apps = this.apps.filter((a) => !q || a.name.toLowerCase().includes(q) || a.path.includes(q)).map((a, i) => {
+        const on = chosen.has(a.path);
+        return {
+          name: a.name, g: 'app-window', tone: TONES[i % TONES.length], meta: a.running ? runTile.meta ?? '' : idleTile.meta ?? '', mcls: a.running ? 'run' : '',
+          way: on ? onTile.way ?? '' : '', wayC: on ? onTile.wayC ?? '' : 'hide', cls: on ? onTile.cls ?? 'on' : '', on: on ? 'true' : 'false',
+          flip: () => this.flipApp(a.path, !on),
+        };
+      });
+      Object.assign(v, { appCnt: chosen.size, appTotal: this.apps.length, hasApps: this.apps.length > 0, noApps: this.apps.length === 0 });
+      const openApps = v.vPick.apps;
+      v.vPick = { ...v.vPick, apps: () => { openApps(); void this.loadApps(); } };
+
       // a service's own logo instead of the design's symbol, where an open one exists
       const brands = BRANDS as Record<string, string>;
       v.tiles = v.tiles.map((t: any) => (brands[t.name] ? { ...t, g: 'b-' + brands[t.name] } : t));
