@@ -470,6 +470,12 @@ func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo
 	return server, false
 }
 
+// LiveAWG tells which AmneziaWG profile the tunnel is using now, and its round trip (the engine sets it). A second
+// handshake with that profile's key, from another socket, makes the server send its answers there: the live tunnel
+// goes silent until it handshakes again. So no check ever handshakes that profile: it is answered with the live
+// number. Hysteria2 has no such rule: every connection is its own.
+var LiveAWG func() (id string, rtt time.Duration)
+
 // Handshake is one handshake attempt to p's server outside the tunnel, on the physical interface, resolve included,
 // in timeout at most. It returns the round trip. The engine uses it to find the quickest server.
 func Handshake(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error) {

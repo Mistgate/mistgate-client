@@ -185,6 +185,11 @@ func attemptProfile(ctx context.Context, p profile.Profile, endpoint netip.AddrP
 	case "hysteria2":
 		return attemptHy2(ctx, p.Hy2, endpoint, physical)
 	case "awg":
+		if LiveAWG != nil {
+			if id, rtt := LiveAWG(); id != "" && id == p.ID {
+				return max(rtt, time.Millisecond), nil // in use: it works, and must not be handshaken beside the tunnel
+			}
+		}
 		return attemptAWG(ctx, p.AWG, endpoint, physical, config.AWGTimeout)
 	default:
 		return 0, errors.New("unsupported protocol")

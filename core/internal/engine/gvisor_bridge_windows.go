@@ -49,6 +49,10 @@ type gvisorBridge struct {
 	// directly. nil: DNS questions and TLS names are left alone.
 	names   func(name string) (block bool, resolver netip.AddrPort)
 	dnsDown atomic.Int64 // unix nanoseconds until which regional resolvers are not tried, after one was silent
+	// noVPN6: the VPN carries no IPv6 (an AmneziaWG server that hands out an address and routes nothing, a Hysteria2
+	// server without IPv6). Asked once when the tunnel comes up. Names that go through the VPN then get no IPv6
+	// addresses and IPv6 connections are refused at once, so every app uses IPv4 instead of waiting on a dead path.
+	noVPN6 atomic.Bool
 
 	mu     sync.Mutex
 	closed bool
@@ -112,7 +116,34 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 	go bridge.readTun()
 	go bridge.writeTun()
 	bridge.vpn = countedOutbound{vpn, &bridge.vpnRx}
+	go bridge.checkVPN6()
 	return bridge, nil
+}
+
+// vpn6Probes are public IPv6 resolvers' HTTPS ports: one answer through the VPN means IPv6 works there.
+var vpn6Probes = []netip.AddrPort{netip.MustParseAddrPort("[2606:4700:4700::1111]:443"), netip.MustParseAddrPort("[2001:4860:4860::8888]:443")}
+
+func (b *gvisorBridge) checkVPN6() {
+	ctx, cancel := context.WithTimeout(b.ctx, 3*time.Second)
+	defer cancel()
+	answers := make(chan bool, len(vpn6Probes))
+	for _, target := range vpn6Probes {
+		go func() {
+			conn, err := b.vpn.DialTCP(ctx, target)
+			if err == nil {
+				_ = conn.Close()
+			}
+			answers <- err == nil
+		}()
+	}
+	for range vpn6Probes {
+		if <-answers {
+			return
+		}
+	}
+	if b.ctx.Err() == nil {
+		b.noVPN6.Store(true)
+	}
 }
 
 func (b *gvisorBridge) readTun() {
@@ -184,6 +215,12 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 		return
 	}
 	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
+	// No IPv6 through the VPN and none beside it: refuse before accepting, so the app turns to IPv4 at once. (Accepted
+	// first, to read the name, the connection would hang on a path that carries nothing.)
+	if target.Addr().Is6() && b.noVPN6.Load() && !directIPv6() {
+		req.Complete(true)
+		return
+	}
 	// Watching a TLS flow needs its name, so port 443 is read first even without site rules.
 	watching := b.track != nil && target.Port() == 443
 	needsName := b.hasSiteRules != nil && b.hasSiteRules() || watching
@@ -367,7 +404,7 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 		dns:    b.dns,
 	}
 	if target.Port() == 53 {
-		flow.names, flow.direct, flow.down = b.names, b.direct, &b.dnsDown
+		flow.names, flow.direct, flow.down, flow.noVPN6 = b.names, b.direct, &b.dnsDown, b.noVPN6.Load
 	}
 	flow.lastActivity.Store(time.Now().UnixNano())
 	b.mu.Lock()
@@ -407,6 +444,7 @@ type udpFlow struct {
 	names  func(string) (bool, netip.AddrPort)
 	direct outbound
 	down   *atomic.Int64
+	noVPN6 func() bool // port 53 only: the VPN carries no IPv6
 
 	sendMu  sync.Mutex // the VPN flow takes one writer at a time (Hysteria2 reuses one send buffer)
 	mu      sync.Mutex // guards the fields below; never held across a send
@@ -436,9 +474,17 @@ func (f *udpFlow) dnsPacket(payload []byte) bool {
 	if !ok {
 		return false
 	}
-	block, resolver := f.names(name)
+	block, resolver := false, netip.AddrPort{}
+	if f.names != nil {
+		block, resolver = f.names(name)
+	}
 	if block {
 		_, _ = f.local.Write(blockedAnswer(payload, end))
+		return true
+	}
+	// A name that goes through a VPN without IPv6 gets no IPv6 addresses (see noVPN6).
+	if !resolver.IsValid() && payload[end-4] == 0 && payload[end-3] == dnsTypeAAAA && f.noVPN6 != nil && f.noVPN6() {
+		_, _ = f.local.Write(noData(payload, end))
 		return true
 	}
 	if !resolver.IsValid() || f.direct == nil || time.Now().UnixNano() < f.down.Load() {
@@ -582,7 +628,7 @@ func (f *udpFlow) run() {
 			}
 			f.lastActivity.Store(time.Now().UnixNano())
 			payload := append([]byte(nil), buf[:n]...)
-			if f.names != nil && f.dnsPacket(payload) {
+			if (f.names != nil || f.noVPN6 != nil) && f.dnsPacket(payload) {
 				continue
 			}
 			if err := f.send(payload); err != nil {

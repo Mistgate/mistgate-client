@@ -12,7 +12,7 @@ import { pref } from './live-settings';
 type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
-export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string };
+export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string; version?: string };
 type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
@@ -52,14 +52,17 @@ export function nodesOf(servers: Server[]): Node[] {
   for (const s of servers) {
     if (s.node) {
       // the panel's own structure: one node, its paths as the protocol menu
-      const [fam, label, full] = PROTO[s.protocol] ?? ['', s.protocol, s.protocol];
+      let [fam, label, full] = PROTO[s.protocol] ?? ['', s.protocol, s.protocol];
+      // two AmneziaWG paths of one node differ by their generation
+      if (s.protocol === 'awg' && s.version) [label, full] = ['AWG ' + s.version, full + ' ' + s.version];
       const cc = (s.country ?? '').toLowerCase();
       const tail = (s.via === 'warp' ? ' · WARP' : s.via && s.via !== 'direct' ? ' · ' + s.via : '') + (s.ipv6 ? ' · IPv6' : '');
       let node = out.get(s.node);
       if (!node) out.set(s.node, (node = { key: s.node, name: countryName(cc) || s.city || s.name, flag: FLAG[cc] ?? '', via: '', extra: countryName(cc) ? s.city ?? '' : '', entries: [] }));
       const entry = { s, fam, label: label + tail, full: full + tail };
       // the plain path first: it is what a press on the row connects to
-      if (tail) node.entries.push(entry); else node.entries.splice(node.entries.findIndex((e) => e.label !== PROTO[e.s.protocol]?.[1]) >>> 0, 0, entry);
+      const plainPath = (x: Server) => (!x.via || x.via === 'direct') && !x.ipv6;
+      if (tail) node.entries.push(entry); else node.entries.splice(node.entries.findIndex((e) => !plainPath(e.s)) >>> 0, 0, entry);
       continue;
     }
     const { flag, text } = flagOf(s.name);

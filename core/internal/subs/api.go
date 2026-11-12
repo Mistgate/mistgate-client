@@ -159,6 +159,25 @@ type syncPath struct {
 	Settings json.RawMessage `json:"settings"`
 }
 
+// pathVersion is the AmneziaWG generation in a path's settings ("2.0", "3.1"): two AmneziaWG paths of one node differ
+// by it. Empty for other protocols and when the panel does not say.
+func pathVersion(path syncPath) string {
+	if path.Protocol != "awg" {
+		return ""
+	}
+	var settings struct {
+		Version json.RawMessage `json:"version"`
+	}
+	if json.Unmarshal(path.Settings, &settings) != nil {
+		return ""
+	}
+	version := strings.Trim(string(settings.Version), `"`)
+	if len(version) == 0 || len(version) > 8 || version == "null" {
+		return ""
+	}
+	return version
+}
+
 type reply struct {
 	status int
 	header http.Header
@@ -406,7 +425,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 			if node == "" {
 				node = "n" + strconv.Itoa(number+1)
 			}
-			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6, Load: server.Load}
+			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Version: pathVersion(path), Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6, Load: server.Load}
 			st.Servers = append(st.Servers, entry)
 			st.Entries = append(st.Entries, storedEntry{Server: entry, Raw: string(raw)})
 		}

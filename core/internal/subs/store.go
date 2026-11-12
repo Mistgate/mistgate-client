@@ -57,7 +57,8 @@ type Server struct {
 	City    string `json:"city,omitempty"`
 	Via     string `json:"via,omitempty"`
 	IPv6    bool   `json:"ipv6,omitempty"`
-	Load    string `json:"load,omitempty"` // low, medium or high; empty when the panel does not know
+	Version string `json:"version,omitempty"` // the AmneziaWG generation of the path ("2.0", "3.1"), when the panel says
+	Load    string `json:"load,omitempty"`    // low, medium or high; empty when the panel does not know
 }
 
 type Error struct {
@@ -125,6 +126,7 @@ func openStore(dir string, protectData, unprotectData func([]byte) ([]byte, erro
 				state.Subscriptions = []storedSubscription{}
 			}
 			s.state = state
+			s.fillVersions()
 			return s, nil
 		}
 		badPath := filepath.Join(dir, "subscriptions.bad")
@@ -147,6 +149,31 @@ func openStore(dir string, protectData, unprotectData func([]byte) ([]byte, erro
 }
 
 func (s *Store) Changes() <-chan struct{} { return s.changes }
+
+// fillVersions gives stored client API paths the AmneziaWG generation an older build did not keep: the panel answers
+// "not changed" to a sync, so the stored copy is all there is until the list changes.
+func (s *Store) fillVersions() {
+	for i := range s.state.Subscriptions {
+		sub := &s.state.Subscriptions[i]
+		versions := make(map[string]string)
+		for j := range sub.Entries {
+			entry := &sub.Entries[j]
+			if entry.Server.Version != "" || entry.Server.Protocol != "awg" || !strings.HasPrefix(entry.Raw, "{") {
+				continue
+			}
+			var path syncPath
+			if json.Unmarshal([]byte(entry.Raw), &path) == nil {
+				entry.Server.Version = pathVersion(path)
+				versions[entry.Server.ID] = entry.Server.Version
+			}
+		}
+		for j := range sub.Servers {
+			if version := versions[sub.Servers[j].ID]; version != "" {
+				sub.Servers[j].Version = version
+			}
+		}
+	}
+}
 
 func (s *Store) List() []Subscription {
 	s.mu.RLock()

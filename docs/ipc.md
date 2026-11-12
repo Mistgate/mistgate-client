@@ -324,7 +324,8 @@ because Mistgate applies its own routing. Supported proxies are Hysteria2 and Wi
 `amnezia-wg-option`; other types are counted as unsupported.
 
 A server of a panel's client API also carries its place in the panel's structure: `node` (the paths of one node share
-it), `country` (code), `city`, `via` (`direct`, `relay` or `warp`), `ipv6` and `load` (`low`, `medium`, `high`, or absent). The window draws one row per node and
+it), `country` (code), `city`, `via` (`direct`, `relay` or `warp`), `ipv6`, `load` (`low`, `medium`, `high`, or absent) and, for AmneziaWG, `version`
+(`2.0`, `3.1`). The window draws one row per node and
 lists the node's paths as its protocols. Other subscriptions have only `id`, `name` and `protocol`; the window then
 groups by the first part of the name, which is a guess.
 

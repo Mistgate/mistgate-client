@@ -71,6 +71,7 @@ type realRun struct {
 	verify  string
 	probeIP netip.Addr
 	rtt     time.Duration
+	awgID   string // the AmneziaWG profile in use (empty for Hysteria2): nothing else may handshake with its key
 	luid    uint64
 	dns     []netip.Addr
 
@@ -102,6 +103,14 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 		changed:           make(chan struct{}, 1),
 		interfaceChanges:  make(chan struct{}, 1),
 		gatewayInterfaces: make(map[winipcfg.LUID]struct{}),
+	}
+	diag.LiveAWG = func() (string, time.Duration) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if run := r.current; run != nil && run.probeIP.IsValid() {
+			return run.awgID, run.rtt
+		}
+		return "", 0
 	}
 	if gateways, err := ipv4GatewayInterfaces(); err == nil {
 		r.gatewayInterfaces = gateways
@@ -535,6 +544,15 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		return Info{}, failure("no_subscription", "read profile endpoint")
 	}
 
+	// AmneziaWG: the round trip is measured now, before the tunnel takes the key (see diag.LiveAWG)
+	var before time.Duration
+	if selected.Protocol == "awg" {
+		before, _ = diag.Handshake(runCtx, selected, fastestTimeout)
+		if err := runCtx.Err(); err != nil {
+			return Info{}, err
+		}
+	}
+
 	step(report, StepResolve)
 	serverIP, err := r.resolveServer(runCtx, run, host, target.Hold)
 	if err != nil {
@@ -790,6 +808,9 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		return Info{}, context.Canceled
 	}
 	_ = rtt // the tunnel check's time is not the server's: see keepLatency
+	if selected.Protocol == "awg" {
+		run.awgID, run.rtt = selected.ID, before
+	}
 	run.verify = verify
 	run.probeIP = localIP
 	r.mu.Unlock()
@@ -803,6 +824,9 @@ const latencyEvery = 30 * time.Second
 // the way the server list measures it (a handshake outside the tunnel), now and every 30 seconds. The tunnel's own
 // probes cannot give it: with the forwarder they are answered inside this process.
 func (r *Real) keepLatency(ctx context.Context, run *realRun, p profile.Profile) {
+	if p.Protocol == "awg" {
+		return // its key is the tunnel's: the number measured before connecting stays
+	}
 	ticker := time.NewTicker(latencyEvery)
 	defer ticker.Stop()
 	for {
