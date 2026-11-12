@@ -1,7 +1,7 @@
 {
   "identifier": "default",
-  "description": "What the windows may ask of the shell: the main one moves, minimizes and closes itself; both listen to the service's events.",
-  "windows": ["main", "tray"],
+  "description": "What the windows may ask of the shell: the main one (and the setup program's) moves, minimizes and closes itself; the app's two listen to the service's events.",
+  "windows": ["main", "tray", "setup"],
   "permissions": [
     "core:default",
     "core:event:allow-listen",

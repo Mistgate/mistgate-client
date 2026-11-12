@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "bundle": "node tools/prepare-bundle.mjs && tauri build"
+    "bundle": "node tools/prepare-bundle.mjs && tauri build && node tools/setup-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "^5.3.1",

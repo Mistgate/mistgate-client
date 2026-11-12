@@ -6,6 +6,10 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 /* the design's own rule for the app on its desk is more specific than a plain ".shell .app": its ring and wide shadow
    showed at the window's edge, cut off square */
 .shell .desk .app.app { box-shadow: none; }
+/* The setup program's window is the dialog alone: its ring is drawn inside, its shadow has no room. What has
+   nothing behind it yet is not offered: a help page. */
+.shell .desk .su.su { box-shadow: inset 0 0 0 1px var(--border); }
+.shell .su-f a.su-lnk { display: none; }
 /* The quick panel's window is the panel alone: no sample desktop around it. */
 .shell-tray, .shell-tray body { background: transparent; }
 .shell-tray .desk { width: 100vw; height: 100vh; background: none; display: block; }

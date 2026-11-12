@@ -4,6 +4,10 @@ version = "0.0.1"
 edition = "2021"
 license = "AGPL-3.0-only"
 
+[features]
+# the setup program instead of the app: see src/setup.rs
+setup = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -19,6 +23,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_UI_Shell_Common",
   "Win32_UI_Shell",
   "Win32_UI_Controls_Dialogs",
   "Win32_UI_WindowsAndMessaging",
@@ -26,6 +33,7 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Diagnostics_Debug",
   "Win32_System_Memory",
   "Win32_System_Pipes",
+  "Win32_System_Registry",
   "Win32_System_Threading"
 ] }
 

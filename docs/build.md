@@ -16,6 +16,12 @@ pnpm bundle
 wintun.net once and checked against a pinned SHA-256), then builds the window and the installer:
 `ui/src-tauri/target/release/bundle/nsis/Mistgate_<version>_x64-setup.exe`.
 
+It then builds the setup program, the file to give to people:
+`ui/src-tauri/target/release/bundle/setup/MistgateSetup_<version>_x64.exe`. It is this same window program built with
+the `setup` feature (`ui/src-tauri/src/setup.rs`, `ui/tools/setup-build.mjs`): it shows the design's Setup screens,
+carries the installer above inside and runs it silently, with Windows' permission prompt. Where the WebView2 runtime
+is missing it shows that installer as it is.
+
 ## The service links Xray
 
 VLESS runs on `github.com/xtls/xray-core` as a library, in the service's own process: no second executable. Only what
