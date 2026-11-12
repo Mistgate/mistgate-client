@@ -79,15 +79,16 @@ var (
 	srcName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 	reLink  = regexp.MustCompile(`\S*://\S*`)
 	reEmail = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
-	reUser  = regexp.MustCompile(`(?i)(?:[a-z]:)?[\\/]+users[\\/]+[^\\/\s"']+(?:[\\/][^\s"']*)*`)
+	reUser  = regexp.MustCompile(`(?i)(?:[a-z]:)?[\\/]+users[\\/]+[^"'<>|]*`)
 	reMAC   = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b`)
-	reIPv4  = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	reIPv4  = regexp.MustCompile(`(?:\d{1,3}\.){3}\d{1,3}`)
 	reToken = regexp.MustCompile(`[A-Za-z0-9+/_=-]{32,}`)
-	reIPv6  = regexp.MustCompile(`(?i)(^|[^0-9a-z:])((?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?|::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4}|::)`)
+	reIPv6  = regexp.MustCompile(`(?i)(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?|::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4}|::)`)
 	// any path on a drive (a program's file) and any dotted name that ends like a host name: the log should hold
 	// neither, and a method or file name lost to this costs less than a site name sent
-	rePath    = regexp.MustCompile(`(?i)\b[a-z]:[\\/]\S+`)
-	reHost    = regexp.MustCompile(`(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b`)
+	// A path may hold spaces (a person's name, "Program Files"), so it runs to the end of the text or to a quote.
+	rePath    = regexp.MustCompile(`(?i)(?:\b[a-z]:[\\/]|\\\\|\\device\\)[^"'<>|]*`)
+	reHost    = regexp.MustCompile(`(?:[\p{L}0-9-]+\.)+\p{L}{2,}`)
 	scrubbers = []*regexp.Regexp{reLink, reEmail, reUser, rePath, reMAC, reHost}
 )
 
@@ -103,8 +104,8 @@ func scrub(text string) string {
 	for _, re := range scrubbers {
 		text = re.ReplaceAllString(text, removedText)
 	}
-	text = reIPv6.ReplaceAllString(text, "${1}"+removedText)
-	text = reIPv4.ReplaceAllString(text, removedText)
+	text = reIPv4.ReplaceAllString(text, removedText) // first: an IPv4 tail inside an IPv6 address goes whole
+	text = reIPv6.ReplaceAllString(text, removedText)
 	return reToken.ReplaceAllString(text, removedText)
 }
 
@@ -189,7 +190,8 @@ func Build(in Input) (Bundle, error) {
 			msg := fmt.Sprintf("mistgate %s %s %s %s", in.Version, runtime.GOOS, osBuild(), runtime.GOARCH)
 			add(line(now.UnixMilli(), "info", "system", msg, map[string]string{"version": in.Version, "mode": in.Mode, "state": in.State, "protocol": in.Protocol}), false)
 		case "checks":
-			if r := in.Checks; r != nil {
+			// a check from days ago says nothing about now, and the panel refuses old lines
+			if r := in.Checks; r != nil && (r.AtUnix == 0 || now.Sub(time.Unix(r.AtUnix, 0)) <= logWindow) {
 				ts := now.UnixMilli()
 				if r.AtUnix > 0 {
 					ts = r.AtUnix * 1000

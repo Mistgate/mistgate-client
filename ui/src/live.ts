@@ -247,6 +247,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         if (img) { if (FLAG[cc]) img.setAttribute('src', FLAG[cc]); else img.removeAttribute('src'); img.setAttribute('alt', ''); }
         const title = (countryName(cc) || p.city || 'Telegram') + (countryName(cc) && p.city ? ' · ' + p.city : '');
         if (name && name.textContent !== title) name.textContent = title;
+        row.querySelector('.tgo')?.setAttribute('aria-label', title); // the design's label names its sample place
         const note = 'MTProto' + (p.via === 'relay' && p.via_country ? ` · ${this.viaWord} ${p.via_country}` : '') + (p.ipv6 ? ' · IPv6' : '');
         const text = meta && [...meta.childNodes].reverse().find((n) => n.nodeType === Node.TEXT_NODE);
         if (text && text.nodeValue !== note) text.nodeValue = note;
@@ -591,7 +592,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
 
       // ---- the add sheet: the design's "from a file" variant is the basic mode's confirm
       const p = this.pending;
-      if (v.ad.isCheck) v.ad.host = /^https:\/\/[^\s]+$/.test(this.lastText) ? this.lastText.split('/')[2] : '';
+      if (v.ad.isCheck) v.ad.host = /^https:\/\/[^\s]+$/.test(this.lastText) && URL.canParse(this.lastText) ? new URL(this.lastText).host : ''; // the host only: no user, password or query
       if (v.ad.isConfirm && p) {
         const link = p.sub.kind !== 'awg'; // the design's "file on this PC" wording is for a config file only
         Object.assign(v.ad, {

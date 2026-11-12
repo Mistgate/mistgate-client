@@ -245,6 +245,8 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       const soon = new Set([...(u ? [] : [1]), 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
       v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
       v.ver = version;
+      v.copyVer = () => { void navigator.clipboard?.writeText('Mistgate ' + version).catch(() => {}); this.setState({ verCopied: true }); };
+      v.excCls = 'hide'; // "Allowed while blocked" lists the design's sample addresses; the service has the LAN switch only
       v.tmSet.dark = () => setTheme('dark');
       v.tmSet.light = () => setTheme('light');
       const lang = document.documentElement.lang || 'en';

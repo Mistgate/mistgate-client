@@ -79,7 +79,7 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         // a burst of lines draws once a frame, not once a line
         listen<LogEntry>('mg://log', (e) => {
           this.log = [...this.log.slice(-499), e.payload];
-          if (this.state?.paused || this.logFrame) return;
+          if (this.state?.paused || this.logFrame || (this.state?.tab || this.props?.tab) !== 'log') return; // only the Log tab shows them
           this.logFrame = requestAnimationFrame(() => { this.logFrame = 0; this.forceUpdate(); });
         }),
       );
@@ -124,17 +124,28 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
     async take() {
       const want = this.want(), key = JSON.stringify(want);
       if (this.snap?.key === key && Date.now() - this.snap.at < 9 * 60_000) return this.snap;
+      this.snap = null; // a preview that fails must not leave the old lines on the screen
       const r = await rpc<Omit<Snap, 'key' | 'at'>>('debug.preview', want);
       return (this.snap = { ...r, key, at: Date.now() });
     }
-    resize = () => void this.take().then(() => this.forceUpdate(), () => {});
+    resize = () => void this.take().then(() => this.forceUpdate(), () => this.forceUpdate());
+    // the lines the person has on the screen right now, if they are still what is ticked
+    seen() { return this.state?.showC && this.snap?.key === JSON.stringify(this.want()) && Date.now() - this.snap.at < 9 * 60_000 ? this.snap : null; }
     async send() {
       if (this.busy) return;
       this.busy = true;
       this.setState({ dbgErr: '' });
       const w = words().dbg;
       try {
-        const r = await rpc<{ ok: boolean; id?: string; code?: string; retry_s?: number }>('debug.send', { id: (await this.take()).id });
+        // Only what was shown goes out. Anything else (never opened, the note changed since) is shown first, and the
+        // next press sends it.
+        const snap = this.seen();
+        if (!snap) {
+          await this.take();
+          this.setState({ showC: true, dbgErr: w.look });
+          return;
+        }
+        const r = await rpc<{ ok: boolean; id?: string; code?: string; retry_s?: number }>('debug.send', { id: snap.id });
         if (r.ok) {
           const q = this.ask();
           if (q) this.answered.add(q.id);
@@ -143,7 +154,8 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
           this.setState({ rep: 'sent', copied: false, showC: false });
         } else {
           if (r.code === 'expired') this.snap = null;
-          const why = r.retry_s ? w.wait(Math.max(1, Math.ceil(r.retry_s / 60))) : r.code === 'offline' ? w.offline : r.code === 'no_request' ? w.gone : r.code === 'debug_full' ? w.full : w.fail;
+          const why = r.retry_s ? w.wait(Math.max(1, Math.ceil(r.retry_s / 60))) : r.code === 'offline' ? w.offline : r.code === 'no_request' ? w.gone : r.code === 'debug_full' ? w.full
+            : (r.code !== 'expired' && words().subErr[r.code ?? '']) || w.fail; // a lasting reason (device removed, app off) in its own words
           if (r.code === 'no_request') { const q = this.ask(); if (q) this.answered.add(q.id); }
           this.setState({ dbgErr: why });
         }
@@ -166,7 +178,9 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       set(document.querySelector('.ask .tx span'), this.ask()?.note ?? '');
       const sheet = document.querySelector('.sheet');
       if (!sheet) return;
-      set(sheet.querySelector('.sent .code > span'), this.sentId);
+      const code = sheet.querySelector('.sent .code > span');
+      code?.classList.add('mo'); // "mo" keeps the Persian digit pass off: the code is read out as it is written
+      set(code, this.sentId);
       const warn = sheet.querySelector('.sh-warn');
       const text = warn && [...warn.childNodes].reverse().find((n) => n.nodeType === Node.TEXT_NODE);
       if (text && this.state?.dbgErr && text.nodeValue !== this.state.dbgErr) text.nodeValue = this.state.dbgErr;
@@ -175,7 +189,8 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       if (!snap) { box?.remove(); return; }
       if (!box) {
         box = document.createElement('pre');
-        box.className = 'mg-lines';
+        box.className = 'mg-lines mo'; // shown as sent: Latin digits, left to right
+        box.dir = 'ltr';
         box.tabIndex = 0;
         sheet.querySelector('.sh-f')?.after(box);
       }
@@ -327,6 +342,11 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         .slice(-200).reverse()
         .map((e) => ({ t: clock(e.t_unix_ms), lv: LV[e.level] ? e.level : 'info', lvT: LV[e.level] ?? 'INFO', src: e.src ?? 'service', msg: e.msg }));
       v.logN = v.logRows.length;
+      // the design's button only says "Copied"
+      v.copySum = () => {
+        void navigator.clipboard?.writeText([v.R?.title, v.R?.sub, v.R?.srvSum, v.R?.netSum].filter(Boolean).join('\n')).catch(() => {});
+        this.setState({ sumCopied: true });
+      };
       return v;
     }
   } as unknown as typeof DCLogic;

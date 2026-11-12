@@ -50,21 +50,24 @@ func (s *Server) handleDebug(ctx context.Context, request Request) (any, *RPCErr
 		if !decodeParams(request.Params, &params) || params.ID == "" {
 			return nil, badParams()
 		}
+		// taken, not read: two calls with one id must not both send it
 		s.debugMu.Lock()
 		snap := s.debugSnap
-		s.debugMu.Unlock()
 		if snap == nil || snap.id != params.ID || time.Now().After(snap.expires) {
+			s.debugMu.Unlock()
 			return map[string]any{"ok": false, "code": "expired", "retry_s": 0}, nil
 		}
+		s.debugSnap = nil
+		s.debugMu.Unlock()
 		out := s.Subs.SendDebug(ctx, snap.sub, snap.request, snap.gz)
 		if out.Code != "" {
+			s.debugMu.Lock()
+			if s.debugSnap == nil { // back for another try, unless a newer preview took its place
+				s.debugSnap = snap
+			}
+			s.debugMu.Unlock()
 			return map[string]any{"ok": false, "code": out.Code, "retry_s": out.RetryS}, nil
 		}
-		s.debugMu.Lock()
-		if s.debugSnap == snap {
-			s.debugSnap = nil
-		}
-		s.debugMu.Unlock()
 		return map[string]any{"ok": true, "id": out.ID, "lines": out.Lines}, nil
 	default: // debug.decline
 		var params struct {
@@ -114,7 +117,10 @@ func (s *Server) debugPreview(ctx context.Context, sub subs.Subscription, parts 
 		in.Mode = s.Settings.Get().RouteMode
 	}
 	if s.Diag != nil {
-		in.Checks = s.Diag.Get().Result
+		// only this subscription's check: another one's servers are not this admin's to see
+		if r := s.Diag.Get().Result; r != nil && r.Sub == sub.ID {
+			in.Checks = r
+		}
 	}
 	for _, server := range sub.Servers {
 		in.Vias[server.ID] = server.Via

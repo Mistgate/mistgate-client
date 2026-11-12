@@ -51,13 +51,14 @@ function tooltip(Tray: typeof DCLogic, state: string, server: string) {
 }
 
 export function startTrayIcon(Tray: typeof DCLogic) {
-  let last = '';
+  let last = '', seq = 0;
   const show = (s: Status | null) => {
     const state = view(s);
     const key = state + '|' + (s?.server ?? '');
     if (key === last) return;
     last = key;
-    void glyph(state, 32).then((rgba) => invoke('tray_state', { rgba, size: 32, tooltip: tooltip(Tray, state, state === 'on' ? s!.server : '') }));
+    const n = ++seq; // a slower drawing of an older state must not land on top of a newer one
+    void glyph(state, 32).then((rgba) => n === seq && invoke('tray_state', { rgba, size: 32, tooltip: tooltip(Tray, state, state === 'on' ? s!.server : '') }));
   };
   void listen<Status>('mg://status', (e) => show(e.payload));
   void listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? rpc<Status>('status').then(show, () => show(null)) : show(null)));
@@ -86,7 +87,7 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       document.addEventListener('click', this.onClick);
       // the panel is shown again and again without being loaded again: catch up each time
       window.addEventListener('focus', this.sync);
-      this.clock = window.setInterval(() => this.live?.state === 'connected' && this.forceUpdate(), 1000);
+      this.clock = window.setInterval(() => this.live?.state === 'connected' && !document.hidden && this.forceUpdate(), 1000);
       this.sync();
     }
     componentWillUnmount() {

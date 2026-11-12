@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"os"
 	"time"
 
@@ -66,7 +67,11 @@ func (run handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status
 					}
 					resumeC = nil
 				case 7, 18:
-					pendingSleep = sleptDuration(suspendedAt, time.Now())
+					// Windows sends both 18 and 7 for one wake-up: the second finds no suspend time, and must not
+					// replace the real length with the "unknown, long" one.
+					if !suspendedAt.IsZero() || resumeC == nil {
+						pendingSleep = sleptDuration(suspendedAt, time.Now())
+					}
 					suspendedAt = time.Time{}
 					if resumeTimer == nil {
 						resumeTimer = time.NewTimer(5 * time.Second)
@@ -104,6 +109,7 @@ func serviceStderrTo(file *os.File) {
 	// Only the handle: the runtime looks it up when it writes. os.Stderr keeps the old one, so the service's ordinary
 	// log lines do not fill the file.
 	_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(file.Fd()))
+	safe.Out = file // a caught panic's stack goes there as well
 }
 
 func sleptDuration(suspendedAt, resumedAt time.Time) time.Duration {

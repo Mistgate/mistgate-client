@@ -521,6 +521,7 @@ func (s *Store) preview(ctx context.Context, text, id string) (storedSubscriptio
 	if parseErr != nil {
 		return storedSubscription{}, parseErr
 	}
+	servers, entries, unsupported = capServers(servers, entries, unsupported)
 	sub := Subscription{ID: id, Kind: "links", Name: "Servers", UpdatedUnix: time.Now().Unix(), Unsupported: unsupported, Servers: servers}
 	return storedSubscription{Subscription: sub, Entries: entries, IntervalHours: defaultIntervalHours}, nil
 }
@@ -582,6 +583,8 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 		ExpireUnix: expire, UsedBytes: used, TotalBytes: total, Notice: responseNotice(response.Header.Get("Announce")),
 	}
 	servers, entries, unsupported, err := parseURLBody(string(body), id)
+	servers, entries, unsupported = capServers(servers, entries, unsupported)
+	sub.Name, sub.Notice = shortText(sub.Name), shortTextN(sub.Notice, maxNotice)
 	var coded *Error
 	if err != nil && errors.As(err, &coded) && coded.Notice != "" {
 		sub.Notice = coded.Notice

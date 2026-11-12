@@ -65,7 +65,7 @@ impl BridgeState {
             reply,
         };
 
-        match tokio::time::timeout(REQUEST_TIMEOUT, async {
+        match tokio::time::timeout(timeout_for(&method), async {
             self.requests
                 .send(command)
                 .await
@@ -81,6 +81,20 @@ impl BridgeState {
             }),
         }
     }
+}
+
+/// How long the window waits for an answer. Calls where the service itself waits for the network get more than its
+/// own wait: an answer dropped here would say "failed" about something that then succeeds.
+fn timeout_for(method: &str) -> Duration {
+    Duration::from_secs(if method.starts_with("debug.") {
+        70
+    } else if method.starts_with("subs.") {
+        45
+    } else if method == "servers.ping" {
+        25
+    } else {
+        10
+    })
 }
 
 pub fn spawn(app: AppHandle) -> BridgeState {

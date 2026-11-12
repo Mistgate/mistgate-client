@@ -103,6 +103,29 @@ type syncBody struct {
 
 const maxTelegram = 64
 
+// The window reads a line of at most 1 MiB, and a subscription list longer than that would cut it off from the service
+// for good: what a panel or a link names is cut to size, and so is the number of servers.
+const (
+	maxServers = 500
+	maxNotice  = 500
+)
+
+// capServers is that limit for a list read from links or a profile.
+func capServers(servers []Server, entries []storedEntry, unsupported int) ([]Server, []storedEntry, int) {
+	if len(servers) > maxServers {
+		unsupported += len(servers) - maxServers
+		servers = servers[:maxServers]
+	}
+	entries = entries[:min(len(entries), maxServers)]
+	for i := range servers {
+		servers[i].Name = shortText(servers[i].Name)
+	}
+	for i := range entries {
+		entries[i].Server.Name = shortText(entries[i].Server.Name)
+	}
+	return servers, entries, unsupported
+}
+
 // shortText keeps a name the panel's owner typed: one line, no control characters, at most 64 characters.
 func shortText(text string) string { return shortTextN(text, 64) }
 
@@ -451,11 +474,11 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	}
 	st.Halt, st.Error, st.ETag, st.UpdatedUnix = false, "", r.header.Get("ETag"), now.Unix()
 	st.schedule(now, b.SyncEvery)
-	if name := strings.Join(b.Brand.Parts, ""); name != "" {
+	if name := shortText(strings.Join(b.Brand.Parts, "")); name != "" {
 		st.Name = name
 	}
 	st.ExpireUnix, st.TotalBytes, st.UsedBytes = b.Plan.ExpiresUnix, b.Plan.QuotaBytes, b.Plan.UsedBytes
-	st.Notice = strings.Join(strings.Fields(b.Notice.Text), " ")
+	st.Notice = shortTextN(b.Notice.Text, maxNotice)
 	st.DNS, st.DNSSplit = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
 	st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
@@ -476,9 +499,15 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	}
 	seen := make(map[string]bool)
 	for number, server := range b.Servers {
+		server.ID, server.City, server.Country, server.Load = shortText(server.ID), shortText(server.City), shortText(server.Country), shortText(server.Load)
 		for _, path := range server.Paths {
+			if len(st.Servers) >= maxServers {
+				st.Unsupported++
+				continue
+			}
+			path.Via = shortText(path.Via)
 			raw, err := json.Marshal(path)
-			if _, _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" {
+			if _, _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" || len(path.ID) > 128 {
 				st.Unsupported++
 				continue
 			}

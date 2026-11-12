@@ -149,7 +149,24 @@ func TestBuildFitsTheWire(t *testing.T) {
 
 func TestScrubPathsAndHosts(t *testing.T) {
 	got := scrub(`app d:\games\play.exe asked vpn.example.com twice, version 0.0.1`)
-	if strings.Contains(got, "play") || strings.Contains(got, "example") || !strings.Contains(got, "0.0.1") || !strings.Contains(got, "twice") {
+	if strings.Contains(got, "play") || strings.Contains(got, "example") || !strings.HasPrefix(got, "app ") {
 		t.Fatalf("scrub = %q", got)
+	}
+	if got := scrub("asked vpn.example.com twice, version 0.0.1"); strings.Contains(got, "example") || !strings.Contains(got, "twice, version 0.0.1") {
+		t.Fatalf("scrub = %q", got)
+	}
+	for in, bad := range map[string]string{
+		"peer ::ffff:203.0.113.7 gone":                                 "113",
+		"addr:2001:db8::1 down":                                        "db8",
+		"ip_203.0.113.7":                                               "203",
+		`open C:\Users\John Smith\app.exe`:                             "Smith",
+		`run C:\Program Files\Some App\x.exe`:                          "Some",
+		`file \device\harddiskvolume3\games\a.exe`:                     "games",
+		`share \\nas\films\me`:                                         "films",
+		"asked \u043f\u0440\u0438\u043c\u0435\u0440.\u0440\u0444 once": "\u043f\u0440\u0438\u043c\u0435\u0440",
+	} {
+		if got := scrub(in); strings.Contains(got, bad) {
+			t.Errorf("scrub(%q) = %q, still holds %q", in, got, bad)
+		}
 	}
 }

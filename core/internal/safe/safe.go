@@ -5,10 +5,14 @@ package safe
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"runtime/debug"
 )
+
+// Out is where the stack goes. The service points it at crash.log: its own standard error leads nowhere.
+var Out io.Writer = os.Stderr
 
 // Recover is deferred directly: `defer safe.Recover("socks")`.
 func Recover(what string) {
@@ -17,9 +21,9 @@ func Recover(what string) {
 	}
 }
 
-// Report writes the panic and its stack where a crash would have gone (stderr is crash.log in the service); the log
-// the window shows gets the place only, as the value may name a host.
+// Report writes the panic and its stack where a crash would have gone; the log the window shows gets the place only,
+// as the value may name a host.
 func Report(what string, r any) {
-	fmt.Fprintf(os.Stderr, "panic in %s: %v\n%s\n", what, r, debug.Stack())
-	slog.Error("a task failed and was dropped", "in", what)
+	fmt.Fprintf(Out, "panic in %s: %v\n%s\n", what, r, debug.Stack())
+	slog.Error("a task failed and was dropped: " + what) // in the text: the log keeps no attributes
 }
