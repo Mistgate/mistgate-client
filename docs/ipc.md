@@ -355,6 +355,7 @@ A managed subscription reports its state in `error`; `subs.refresh` also returns
 | `offline`, `fetch_failed` | any | kept | goes on | Cannot reach the panel; the saved servers still work |
 | `unsupported_format` | true | kept | goes on | This panel is newer than the app; update the app |
 | `inactive` | true | none | goes on | The subscription is not active; `notice` is the panel's text or the status (`disabled`, `expired`, `limited`) |
+| `app_disabled` | true | none | goes on | The owner switched the app off for this person; the device stays, and the servers return by themselves when it is switched on |
 | `link_changed` | true | kept | stopped | The panel's link has changed; add the new link (same panel) to keep this one |
 | `device_blocked` | true | none | stopped | This device is blocked by the owner |
 | `device_removed` | false | none | stopped | This device was removed; refresh to enrol again |

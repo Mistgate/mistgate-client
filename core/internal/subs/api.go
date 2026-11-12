@@ -53,6 +53,7 @@ type apiState struct {
 type syncBody struct {
 	V         int    `json:"v"`
 	Status    string `json:"status"`
+	Reason    string `json:"reason"`
 	SyncEvery int64  `json:"sync_every_s"`
 	Brand     struct {
 		Parts []string `json:"parts"`
@@ -394,6 +395,10 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 		if st.Notice == "" {
 			st.Notice = b.Status
 		}
+		return st, nil
+	}
+	if b.Reason == "app_disabled" { // the owner switched the app off for this person: no servers, the device and its
+		st.Error = b.Reason // key stay, and the usual sync brings the servers back when it is switched on again
 		return st, nil
 	}
 	seen := make(map[string]bool)

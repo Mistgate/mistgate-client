@@ -398,6 +398,14 @@ func TestClientAPISyncAnswers(t *testing.T) {
 		if errorCode(err) != "unsupported_format" || got.Error != "unsupported_format" || len(got.Servers) != 1 {
 			t.Fatalf("v 2 = %#v, %v", got, err)
 		}
+		key := store.state.Subscriptions[0].Key
+		panel.set(func() {
+			panel.syncBody = strings.Replace(syncDoc("active"), `"v":1`, `"v":1,"reason":"app_disabled"`, 1)
+		})
+		got, err = store.Refresh(ctx, sub.ID)
+		if st := store.state.Subscriptions[0]; err != nil || got.Error != "app_disabled" || len(got.Servers) != 0 || !got.Managed || st.Key != key || st.Halt {
+			t.Fatalf("app off = %#v, %v", got, err)
+		}
 		panel.set(func() { panel.syncBody = syncDoc("expired") })
 		got, err = store.Refresh(ctx, sub.ID)
 		if err != nil || got.Error != "inactive" || got.Notice != "expired" || len(got.Servers) != 0 || !got.Managed {
