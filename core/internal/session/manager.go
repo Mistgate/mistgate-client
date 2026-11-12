@@ -383,7 +383,8 @@ func (m *Manager) run() {
 					if errors.As(request.err, &failed) {
 						reason = failed.Error()
 					}
-					slog.Warn("connect failed", "code", code, "reason", reason, "protocol", state.status.Protocol)
+					// in the message itself: the log ring keeps the message only
+					slog.Warn("connect failed: " + code + " (" + state.status.Protocol + "; " + reason + ")")
 					if m.currentSettings().KillSwitch == "always" {
 						if m.engine != nil && m.engine.Hold() {
 							state.status.State = "blocked"
