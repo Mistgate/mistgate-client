@@ -134,6 +134,15 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       super.componentWillUnmount();
       document.removeEventListener('click', this.onPage, true);
     }
+    componentDidUpdate(...a: unknown[]) {
+      super.componentDidUpdate?.(...a);
+      // About: the design names the MIT licence; the code is under AGPL-3.0
+      const text = document.querySelector('.sx-row:has(.g-code-brackets) .tx > span');
+      if (text?.textContent?.includes('MIT')) {
+        if (document.documentElement.lang === 'fa') text.classList.add('mo'); // "mo" keeps the Persian digit pass off the licence's name
+        text.textContent = text.textContent.replace('MIT', 'AGPL-3.0');
+      }
+    }
     onPage = (e: MouseEvent) => {
       const t = e.target as Element | null;
       // Local proxy: "Copy" and "New" are plain buttons in the design. A row's Copy takes what the row shows, the
@@ -142,6 +151,11 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       if (row && button && this.proxy) {
         if (button.querySelector('.g-refresh')) void rpc<Proxy>('proxy.password').then((p) => { this.proxy = p; this.forceUpdate(); }, () => {});
         else if (button.querySelector('.g-copy')) void navigator.clipboard?.writeText(row.querySelector('.g-key') ? this.proxy.password : row.querySelector('.mo')?.textContent ?? '').catch(() => {});
+        return;
+      }
+      if (t?.closest?.('.sx-row:has(.g-code-brackets) a')) { // the design links its sample address
+        e.preventDefault();
+        void invoke('open_url', { url: 'https://github.com/Mistgate/mistgate-client' }).catch(() => {});
         return;
       }
       if (!t?.closest?.('.sb-act a')) return;

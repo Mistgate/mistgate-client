@@ -36,5 +36,6 @@ html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: 
 .shell .stip-l:has(.bar i[style*="width: 0%"]), .shell .stip-l:has(.bar i[style*="width:0%"]) { display: none; }
 /* Diag: the design's "full check again in 48 min" is a sample; this build has no such timer. */
 .shell .ck-go .cg-t small { display: none; }
-/* About: the design's samples (service state, Restart, licence and its links) are hidden until they are real */
-.shell .sx-ab .m, .shell .sx-pg:has(> .sx-ab) > .sx-g { display: none; }
+/* About: the design's samples (service state, Restart, the links to nowhere) are hidden until they are real; the
+   source code row stays */
+.shell .sx-ab .m, .shell .sx-pg:has(> .sx-ab) > .sx-g .sx-row:not(:has(.g-code-brackets)) { display: none; }
