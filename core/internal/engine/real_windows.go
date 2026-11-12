@@ -789,11 +789,36 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		r.mu.Unlock()
 		return Info{}, context.Canceled
 	}
-	run.rtt = rtt
+	_ = rtt // the tunnel check's time is not the server's: see keepLatency
 	run.verify = verify
 	run.probeIP = localIP
 	r.mu.Unlock()
+	go r.keepLatency(runCtx, run, selected)
 	return info, nil
+}
+
+const latencyEvery = 30 * time.Second
+
+// keepLatency keeps the number the window shows beside the speed: one round trip to the server in use, measured
+// the way the server list measures it (a handshake outside the tunnel), now and every 30 seconds. The tunnel's own
+// probes cannot give it: with the forwarder they are answered inside this process.
+func (r *Real) keepLatency(ctx context.Context, run *realRun, p profile.Profile) {
+	ticker := time.NewTicker(latencyEvery)
+	defer ticker.Stop()
+	for {
+		if rtt, err := diag.Handshake(ctx, p, fastestTimeout); err == nil {
+			r.mu.Lock()
+			if r.current == run {
+				run.rtt = rtt
+			}
+			r.mu.Unlock()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (r *Real) Next(target Target, after string) (string, bool) {
@@ -1060,10 +1085,7 @@ func (r *Real) Probe(ctx context.Context) error {
 	if r.current != run {
 		return context.Canceled
 	}
-	// ponytail: the probe's time is not kept. With the forwarder its connection is answered inside this process
-	// before the server is asked (about a millisecond), so the number shown stays the one measured at connect; a
-	// live number needs the forwarder to time its dial.
-	_ = rtt
+	_ = rtt // not the server's time (the forwarder answers the probe itself): keepLatency measures that
 	return nil
 }
 

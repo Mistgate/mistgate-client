@@ -102,6 +102,9 @@ const PINGS: Record<string, number> = {};
 // where each server is (its name and addresses), for the hint on a row: two nodes of one country look the same
 const HOSTS: Record<string, { host: string; ips: string[] }> = {};
 let hostsFor = '';
+// "via RU" for each relay path whose entry is a server of the list, as Home words it: Diagnostics names its rows
+// the same way. ponytail: filled when Home draws (it is the first screen); empty before that, the row says "relay".
+export const VIA: Record<string, string> = {};
 let pingedAtStart = false; // the first list of the session is measured without being asked
 
 export function liveHome(Base: typeof DCLogic): typeof DCLogic {
@@ -319,7 +322,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       if (on && this.traffic) {
         v.down = mbps(this.traffic.rx_bps);
         v.up = mbps(this.traffic.tx_bps);
-        v.msTxt.cur = v.cur.ms = String(this.traffic.rtt_ms);
+        v.msTxt.cur = v.cur.ms = this.traffic.rtt_ms ? String(this.traffic.rtt_ms) : '—'; // 0: not measured yet
       } else if (on) v.down = v.up = '0.0';
       // "Unblock": open the network, stay off. Held by the "always" kill switch, that means stepping it down:
       // the service opens the network and reports off.
@@ -413,6 +416,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         if (h && x.country && (!x.via || x.via === 'direct')) entryAt.set(h, x.country.toUpperCase());
       }
       const through = (x: Server) => { const cc = x.via === 'relay' ? entryAt.get(HOSTS[x.id]?.host ?? '') : ''; return cc ? `${viaWord} ${cc}` : ''; };
+      for (const x of servers) { const t = through(x); if (t) VIA[x.id] = t; else delete VIA[x.id]; }
       // a node reached only through relays says so on its row
       const viaOf = (n: Node) => n.via || (n.entries.every((e) => e.s.via === 'relay') ? through(n.entries[0].s) : '');
       const LOAD: Record<string, number> = { low: 25, medium: 55, high: 85 };

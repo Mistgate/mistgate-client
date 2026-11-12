@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import FLAGS from './design/flags.json';
-import { nodesOf, PROTO, sufOf, type Server } from './live';
+import { nodesOf, PROTO, sufOf, VIA, type Server } from './live';
 import { words } from './live-i18n';
 import { liveChip, pref } from './live-settings';
 
@@ -98,12 +98,13 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       // a result row is named as Home names the server: the country with its number, then what the path adds
       const named = new Map<string, { flag: string; text: string }>();
       for (const node of nodesOf(this.servers)) for (const e of node.entries) {
-        const tail = e.label.slice((PROTO[e.s.protocol]?.[1] ?? '').length);
+        const tail = e.label.slice((PROTO[e.s.protocol]?.[1] ?? '').length).replace('relay', VIA[e.s.id] ?? 'relay');
         named.set(e.s.id, { flag: node.flag, text: node.name + sufOf(node) + tail });
       }
       const servers = r.servers.map((n) => {
         const { flag, text } = named.get(n.id) ?? flagOf(n.name);
-        const fast = sp && (sp.server === n.id || sp.server === n.name) ? ` · ${sp.down_mbps.toFixed(1)} ${unit}` : ''; // the server the VPN is on
+        // (by id; the result names the server, and a name is shared by the servers of one country)
+        const fast = sp && (sp.server === n.id || (this.serverId ? this.serverId === n.id : sp.server === n.name)) ? ` · ${sp.down_mbps.toFixed(1)} ${unit}` : ''; // the server the VPN is on
         const m = n.verdict === 'ok' ? `${n.rtt_ms} ms${fast}` : why[n.reason] ?? '';
         const meta = n.verdict === 'ok' ? `${way(n.protocol).split(' · ')[0]} · ${n.rtt_ms} ms${fast}` : n.verdict === 'down' ? I.srvRows[3].meta : n.verdict === 'config' ? I.srvRows[4].meta : m;
         return { kind: 'srv', flag, name: text, v: n.verdict, alt: '', meta, paths: [{ n: way(n.protocol), v: n.verdict, m }], lines: [] as string[], hops: [] as any[], g: '', tone: '', term: '', act: [] as string[], hasFlag: true };

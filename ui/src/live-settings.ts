@@ -6,7 +6,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import { version } from '../package.json';
 
-type Status = { state: string; server: string; protocol?: string };
+type Status = { state: string; server: string; server_id?: string; protocol?: string };
 type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean; autoconnect: boolean };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
@@ -59,6 +59,7 @@ export function liveChip(Base: typeof DCLogic): typeof DCLogic {
     off: Promise<UnlistenFn>[] = [];
     server = '';
     proto = '';
+    serverId = ''; // the server in use: names repeat, ids do not
     componentDidMount() {
       super.componentDidMount?.();
       this.off = [listen<Status>('mg://status', (e) => this.status(e.payload))];
@@ -73,6 +74,7 @@ export function liveChip(Base: typeof DCLogic): typeof DCLogic {
     status(s: Status) {
       this.server = s.state === 'connected' ? s.server : '';
       this.proto = s.state === 'connected' ? s.protocol ?? '' : '';
+      this.serverId = s.state === 'connected' ? s.server_id ?? '' : '';
       this.setState({ vp: s.state === 'connected' ? 'on' : s.state === 'connecting' || s.state === 'reconnecting' ? 'ing' : 'off' });
     }
     renderVals() {
