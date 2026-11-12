@@ -3,7 +3,9 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 /* In the app window the desk of the design and its state switchers are gone: the window is the 1000×660 app itself. */
 .shell .desk { width: 100vw; height: 100vh; background: none; }
 .shell .dev { display: none; }
-.shell .app { box-shadow: none; }
+/* the design's own rule for the app on its desk is more specific than a plain ".shell .app": its ring and wide shadow
+   showed at the window's edge, cut off square */
+.shell .desk .app.app { box-shadow: none; }
 /* The quick panel's window is the panel alone: no sample desktop around it. */
 .shell-tray, .shell-tray body { background: transparent; }
 .shell-tray .desk { width: 100vw; height: 100vh; background: none; display: block; }
@@ -11,9 +13,8 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell-tray .ty-scr { width: 100vw; height: 100vh; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
 /* no entrance: the window itself appears, and a paused entrance would leave the panel invisible */
 html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; animation: none !important; opacity: 1; transform: none; }
-/* The design's wide shadow was cut off square by the window's edge, 8px away: this one fits inside that margin. There
-   is no page behind the panel to blur either, and the filter left marks at the rounded corners. */
-html.shell-tray .ty-fly { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 9%, transparent), 0 2px 6px -1px rgba(0, 0, 0, .45); }
+/* The design's wide shadow was cut off square by the window's edge, 8px away: this one fits inside that margin. */
+html.shell-tray .ty-fly { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 9%, transparent), 0 2px 6px -1px rgba(0, 0, 0, .45); }
 /* Routes: the lists' daily update is always on. */
 .shell .lp-auto .sw { opacity: .45; pointer-events: none; }
 /* a tile's title stays on one line: two lines crowd the line under it */
