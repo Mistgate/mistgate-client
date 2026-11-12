@@ -58,6 +58,10 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
 
     mounted() {
       this.off.push(listen<Routes>('mg://routes', (e) => this.applyRoutes(e.payload)));
+      // the kill switch tile says the design's "on": only true when the setting is not off
+      const ks = (s: { kill_switch: string }) => this.setState({ ksOff: s.kill_switch === 'off' });
+      this.off.push(listen<{ kill_switch: string }>('mg://settings', (e) => ks(e.payload)));
+      rpc<{ kill_switch: string }>('settings.get').then(ks, () => {});
       rpc<Routes>('routes.get').then((r) => this.applyRoutes(r), () => {});
       // the "add a site" row is plain markup in the design
       document.addEventListener('click', this.onClick);
@@ -149,6 +153,7 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     renderVals() {
       const v = super.renderVals();
       const r = this.routes;
+      if (this.state?.ksOff) Object.assign(v, { ksSub: words().off, ksTone: 'neu' });
       // the server in use instead of the design's sample (off, the design words it itself)
       if (this.server) Object.assign(v, { srvName: flagOf(this.server).text, srvSub: PROTO[this.proto]?.[2] ?? '' });
       v.setExc = () => this.save({ route_mode: 'smart' });
