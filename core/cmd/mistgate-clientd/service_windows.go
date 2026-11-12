@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/proxy"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -158,5 +159,7 @@ func uninstall() error {
 	if err := service.Delete(); err != nil && !errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) {
 		return err
 	}
+	// the service takes its home-network rule away when it stops; this covers a stop that was a crash
+	_ = proxy.FirewallRule(false)
 	return nil
 }

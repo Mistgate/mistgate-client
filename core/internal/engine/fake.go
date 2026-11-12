@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -195,3 +196,6 @@ func (f *Fake) Targets() []Target {
 	defer f.mu.RUnlock()
 	return append([]Target(nil), f.targets...)
 }
+
+// DialVPN: the fake has no tunnel to dial through.
+func (*Fake) DialVPN(context.Context, string, uint16) (net.Conn, error) { return nil, ErrNoTunnel }

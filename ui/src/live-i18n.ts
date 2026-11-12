@@ -34,6 +34,7 @@ type Words = {
   off: string; // a switch that is off, as a short state (the kill switch on the Routes screen)
   modes: [only: string, all: string, smart: string]; // the route modes on Home's chip, worded as on the Routes screen
   // the Routes test line, in the design's own words: the three verdicts, then why (%s: the rule's name)
+  proxyBusy: string; // Settings, Local proxy: it could not listen
   synced: (time: string) => string; // Settings, Subscription: when it was last taken from the provider
   chk: [vpn: string, direct: string, blocked: string, all: string, on: string, notSelected: string, goesDirect: string, notException: string];
   lists: { region: (cc: string) => string; entries: (n: string) => string; updated: (time: string) => string; failed: string; checking: string }; // rows of the Lists sheet
@@ -57,6 +58,7 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["Nothing to check yet", "Add a subscription first: the check tests its servers"], offline: ["No internet", "Connect to a network and run the check again"] },
     off: 'off',
     modes: ['Only selected', 'Everything', 'Smart'],
+    proxyBusy: 'Couldn’t start · port 1080 or 8080 is used by another program',
     synced: (t) => `Updated ${t}`,
     chk: ['VPN', 'Direct', 'Blocked', 'Rule: Everything mode', 'Rule: “%s” is on', 'Rule: not in your selection', 'Rule: “%s” goes direct', 'Rule: not an exception'],
     lists: { region: (cc) => `Addresses of ${cc}`, entries: (n) => `${n} entries`, updated: (t) => `updated ${t}`, failed: 'Couldn’t update', checking: 'Checking the link…' },
@@ -74,6 +76,7 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["Пока нечего проверять", "Сначала добавьте подписку: проверка тестирует её серверы"], offline: ["Нет интернета", "Подключитесь к сети и запустите проверку снова"] },
     off: 'выключен',
     modes: ['Только выбранное', 'Всё', 'Умный'],
+    proxyBusy: 'Не удалось запустить · порт 1080 или 8080 занят другой программой',
     synced: (t) => `Обновлено ${t}`,
     chk: ['VPN', 'Напрямую', 'Заблокирован', 'Правило: режим «Всё»', 'Правило: «%s» включено', 'Правило: нет в вашем выборе', 'Правило: «%s» идёт напрямую', 'Правило: не исключение'],
     lists: { region: (cc) => `Адреса ${cc}`, entries: (n) => `записей: ${n}`, updated: (t) => `обновлён ${t}`, failed: 'Не удалось обновить', checking: 'Проверяем ссылку…' },
@@ -91,6 +94,7 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["Henüz kontrol edilecek bir şey yok", "Önce bir abonelik ekleyin: kontrol onun sunucularını test eder"], offline: ["İnternet yok", "Bir ağa bağlanın ve kontrolü yeniden başlatın"] },
     off: 'kapalı',
     modes: ['Yalnızca seçilenler', 'Her şey', 'Akıllı'],
+    proxyBusy: 'Başlatılamadı · 1080 veya 8080 portu başka bir program tarafından kullanılıyor',
     synced: (t) => `Güncellendi: ${t}`,
     chk: ['VPN', 'Doğrudan', 'Engelli', 'Kural: “Her şey” modu', 'Kural: “%s” açık', 'Kural: seçiminizde yok', 'Kural: “%s” doğrudan gider', 'Kural: istisna değil'],
     lists: { region: (cc) => `${cc} adresleri`, entries: (n) => `${n} kayıt`, updated: (t) => `güncellendi: ${t}`, failed: 'Güncellenemedi', checking: 'Bağlantı kontrol ediliyor…' },
@@ -108,6 +112,7 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["暂无可检查的内容", "请先添加订阅：检查会测试其中的服务器"], offline: ["无网络连接", "请连接网络后重新检查"] },
     off: '已关闭',
     modes: ['仅所选', '全部', '智能'],
+    proxyBusy: '无法启动 · 端口 1080 或 8080 已被其他程序占用',
     synced: (t) => `更新于 ${t}`,
     chk: ['VPN', '直连', '已拦截', '规则：“全部”模式', '规则：“%s”已开启', '规则：不在您的选择中', '规则：“%s”直连', '规则：不在例外中'],
     lists: { region: (cc) => `${cc} 地址`, entries: (n) => `${n} 条`, updated: (t) => `更新于 ${t}`, failed: '更新失败', checking: '正在检查链接…' },
@@ -125,6 +130,7 @@ const WORDS: Record<string, Words> = {
     diagFail: { no_subscription: ["هنوز چیزی برای بررسی نیست", "ابتدا یک اشتراک اضافه کنید: بررسی، سرورهای آن را می‌آزماید"], offline: ["اینترنت در دسترس نیست", "به یک شبکه وصل شوید و بررسی را دوباره اجرا کنید"] },
     off: 'خاموش',
     modes: ['فقط انتخابی‌ها', 'همه‌چیز', 'هوشمند'],
+    proxyBusy: 'راه‌اندازی نشد · درگاه 1080 یا 8080 را برنامهٔ دیگری گرفته است',
     synced: (t) => `به‌روزرسانی ${t}`,
     chk: ['VPN', 'مستقیم', 'مسدود', 'قاعده: حالت «همه‌چیز»', 'قاعده: «%s» روشن است', 'قاعده: در انتخاب شما نیست', 'قاعده: «%s» مستقیم می‌رود', 'قاعده: استثنا نیست'],
     lists: { region: (cc) => `نشانی‌های ${cc}`, entries: (n) => `${n} مورد`, updated: (t) => `به‌روزرسانی ${t}`, failed: 'به‌روزرسانی نشد', checking: 'در حال بررسی لینک…' },

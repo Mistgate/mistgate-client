@@ -5,13 +5,18 @@ package engine
 import (
 	"context"
 	"errors"
+	"net"
+	"net/netip"
 
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
-type Real struct{ geo *geo.Store }
+type Real struct {
+	geo       *geo.Store
+	AllowDest func(netip.Addr) bool
+}
 
 func NewReal(_ func() ([]profile.Profile, error), _ func() settings.Settings, geoStore *geo.Store, _ ...string) *Real {
 	return &Real{geo: geoStore}
@@ -43,3 +48,6 @@ func (*Real) RefreshAutoRegion(onChange func()) {
 }
 
 func (*Real) Fastest(context.Context, Target, string) (string, bool) { return "", false }
+
+func (*Real) DialVPN(context.Context, string, uint16) (net.Conn, error) { return nil, ErrNoTunnel }
+func (*Real) HomeAddr() string                                          { return "" }

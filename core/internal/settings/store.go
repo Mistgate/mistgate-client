@@ -32,6 +32,9 @@ type Settings struct {
 	DNS string `json:"dns"`
 	// 0 is automatic.
 	MTU int `json:"mtu"`
+	// The local SOCKS5/HTTP proxy through the tunnel; ProxyLAN (the home network may use it too) does nothing without Proxy.
+	Proxy    bool `json:"proxy"`
+	ProxyLAN bool `json:"proxy_lan"`
 }
 
 type Store struct {
@@ -157,7 +160,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.RouteRegion = v
-	case "autoconnect", "restore", "last_on":
+	case "autoconnect", "restore", "last_on", "proxy", "proxy_lan":
 		var v bool
 		if !strictBool(raw, &v) {
 			return false
@@ -167,6 +170,10 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			value.Autoconnect = v
 		case "restore":
 			value.Restore = v
+		case "proxy":
+			value.Proxy = v
+		case "proxy_lan":
+			value.ProxyLAN = v
 		default:
 			value.LastOn = v
 		}

@@ -62,9 +62,14 @@ type Real struct {
 	interfaceCB          *winipcfg.InterfaceChangeCallback
 	gatewayInterfaces    map[winipcfg.LUID]struct{}
 	panelSplit           atomic.Pointer[[]profile.DNSSplit] // the panel's regional resolvers of the profile last started
+
+	// AllowDest, when set before the first connect, vets the addresses a name resolves to inside DialVPN.
+	AllowDest func(netip.Addr) bool
 }
 
 type realRun struct {
+	ctx     context.Context // ends with the run: connections made by DialVPN end with it
+	dial    vpnDialer       // set when the tunnel is verified, nil before
 	cancel  context.CancelFunc
 	tunnel  *realTunnel
 	hold    bool
@@ -808,11 +813,21 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		serverName = selected.ID
 	}
 	info = Info{Server: serverName, ServerID: selected.ID, Protocol: selected.Protocol, Route: route}
+	var proxyDial vpnDialer
+	switch {
+	case selected.Protocol == "hysteria2":
+		proxyDial = hy2Dialer(hy2Outbound{client: hy2Client})
+	case awgStack:
+		proxyDial = awgStackDialer(awgNet, r.AllowDest)
+	default:
+		proxyDial = awgPlainDialer(localIP, adapter, awgDNS, r.AllowDest)
+	}
 	r.mu.Lock()
 	if r.current != run || runCtx.Err() != nil {
 		r.mu.Unlock()
 		return Info{}, context.Canceled
 	}
+	run.dial = proxyDial
 	_ = rtt // the tunnel check's time is not the server's: see keepLatency
 	if selected.Protocol == "awg" {
 		run.awgID, run.rtt = selected.ID, before
@@ -910,7 +925,7 @@ func (r *Real) Fastest(ctx context.Context, target Target, except string) (strin
 func (r *Real) startRun(ctx context.Context, hold bool) (context.Context, *realRun, error) {
 	r.lifecycle.Lock()
 	runCtx, cancel := context.WithCancel(ctx)
-	run := &realRun{cancel: cancel, tunnel: &realTunnel{}, hold: hold, lastStatsAt: time.Now()}
+	run := &realRun{ctx: runCtx, cancel: cancel, tunnel: &realTunnel{}, hold: hold, lastStatsAt: time.Now()}
 	r.mu.Lock()
 	old := r.current
 	r.current = run

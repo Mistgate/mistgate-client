@@ -52,6 +52,12 @@ type Engine interface {
 	Fastest(ctx context.Context, target Target, except string) (server string, ok bool)
 }
 
+// ErrNoTunnel: DialVPN has no tunnel that is up. ErrBlockedDest: the destination is one the proxy may not reach.
+var (
+	ErrNoTunnel    = errors.New("no tunnel")
+	ErrBlockedDest = errors.New("destination not allowed")
+)
+
 type Failure struct {
 	Code string
 	Err  error

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -140,5 +141,38 @@ func TestStoreRejectsUnknownAndBadValues(t *testing.T) {
 	}
 	if got := store.Get(); got != Defaults() {
 		t.Fatalf("invalid patch changed settings: %#v", got)
+	}
+}
+
+func TestProxyKeys(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Get(); got.Proxy || got.ProxyLAN {
+		t.Fatalf("defaults = %#v, the proxy must be off", got)
+	}
+	for _, bad := range []string{`"true"`, `1`, `null`, `[]`} {
+		for _, key := range []string{"proxy", "proxy_lan"} {
+			if _, err := store.Set(map[string]json.RawMessage{key: json.RawMessage(bad)}); err != ErrBadParams {
+				t.Fatalf("%s=%s: err = %v, want ErrBadParams", key, bad, err)
+			}
+		}
+	}
+	got, err := store.Set(map[string]json.RawMessage{"proxy": json.RawMessage(`true`), "proxy_lan": json.RawMessage(`true`)})
+	if err != nil || !got.Proxy || !got.ProxyLAN {
+		t.Fatalf("Set() = %#v, %v", got, err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Get(); !got.Proxy || !got.ProxyLAN {
+		t.Fatalf("reopened = %#v, the keys were not saved", got)
+	}
+	data, _ := json.Marshal(reopened.Get())
+	if !strings.Contains(string(data), `"proxy":true`) || !strings.Contains(string(data), `"proxy_lan":true`) {
+		t.Fatalf("encoded = %s", data)
 	}
 }

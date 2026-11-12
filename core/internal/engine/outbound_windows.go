@@ -28,6 +28,11 @@ type packetFlow interface {
 type hy2Outbound struct{ client client.Client }
 
 func (o hy2Outbound) DialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
+	return o.dial(ctx, target.String())
+}
+
+// dial takes a host:port; the server resolves a name.
+func (o hy2Outbound) dial(ctx context.Context, address string) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -39,7 +44,7 @@ func (o hy2Outbound) DialTCP(ctx context.Context, target netip.AddrPort) (net.Co
 	var mu sync.Mutex
 	canceled := false
 	go func() {
-		conn, err := o.client.TCP(target.String())
+		conn, err := o.client.TCP(address)
 		mu.Lock()
 		if canceled {
 			mu.Unlock()

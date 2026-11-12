@@ -9,6 +9,8 @@ import type { Sub } from './live';
 import { words } from './live-i18n';
 
 type Status = { state: string; server: string; server_id?: string; protocol?: string };
+// the local proxy as `proxy.get` reports it; the password goes to this window only and is never kept or logged here
+type Proxy = { on: boolean; lan: boolean; host: string; socks_port: number; http_port: number; user: string; password: string; error: string };
 type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean; autoconnect: boolean };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
@@ -99,7 +101,12 @@ const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'a
 export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
   return class LiveSettings extends (liveChip(Base) as any) {
     subs: Sub[] = [];
+    proxy: Proxy | null = null;
+    loadProxy = () => rpc<Proxy>('proxy.get').then((p) => { this.proxy = p; this.setState({ px: !p.on ? 'off' : p.lan ? 'lan' : 'on' }); }, () => {});
+    // the proxy starts and stops a moment after the setting changes: ask again once it has
+    setProxy(patch: object) { void rpc('settings.set', patch).then(this.loadProxy).then(() => setTimeout(this.loadProxy, 700), () => {}); }
     mounted() {
+      void this.loadProxy();
       const subs = (list: Sub[]) => { this.subs = list; this.forceUpdate(); };
       this.off.push(listen<{ subs: Sub[] }>('mg://subs', (e) => subs(e.payload.subs)));
       rpc<{ subs: Sub[] }>('subs.list').then((r) => subs(r.subs), () => {});
@@ -114,7 +121,16 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       document.removeEventListener('click', this.onPage, true);
     }
     onPage = (e: MouseEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.sb-act a')) return;
+      const t = e.target as Element | null;
+      // Local proxy: "Copy" and "New" are plain buttons in the design. A row's Copy takes what the row shows, the
+      // password's takes the password itself, shown or not.
+      const row = t?.closest?.('.sx-row.ad'), button = t?.closest?.('.sx-row.ad .lsb');
+      if (row && button && this.proxy) {
+        if (button.querySelector('.g-refresh')) void rpc<Proxy>('proxy.password').then((p) => { this.proxy = p; this.forceUpdate(); }, () => {});
+        else if (button.querySelector('.g-copy')) void navigator.clipboard?.writeText(row.querySelector('.g-key') ? this.proxy.password : row.querySelector('.mo')?.textContent ?? '').catch(() => {});
+        return;
+      }
+      if (!t?.closest?.('.sb-act a')) return;
       e.preventDefault();
       const id = this.sub()?.id;
       if (id) void rpc<{ url: string }>('subs.link', { id }).then((r) => invoke('open_url', { url: r.url }), () => {});
@@ -183,7 +199,16 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
       const u = this.sub();
       if (u) this.subVals(v, u);
-      const soon = new Set([...(u ? [] : [1]), 2, 4, 5, 6]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
+      const p = this.proxy;
+      if (p) {
+        const lan = p.on && p.lan;
+        Object.assign(v, {
+          pxTog: () => this.setProxy({ proxy: !p.on }), pxLanTog: () => this.setProxy({ proxy_lan: !p.lan }),
+          pxHost: lan && p.host ? p.host : '127.0.0.1', pwd: this.state?.pwdShow ? p.password : '•'.repeat(p.password.length || 12),
+        });
+        if (p.error) v.pxSub = words().proxyBusy;
+      }
+      const soon = new Set([...(u ? [] : [1]), 2, 4, 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
       v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
       v.ver = version;
       v.tmSet.dark = () => setTheme('dark');

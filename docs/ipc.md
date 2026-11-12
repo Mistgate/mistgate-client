@@ -58,6 +58,8 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `servers.hosts` | `{"sub": "<subscription id>"}` (optional; empty selects the first subscription) | `{"hosts": {"<server id>": {"host": "<name or address>", "ips": ["<address>", ...]}}}`; `ips` are the addresses the name has now (empty for an address or a name that did not resolve in 2 s). For the hint on a server row; never logged |
 | `settings.get` | — | Settings |
 | `settings.set` | the settings keys to change | Settings |
+| `proxy.get` | none | ProxyState (see "The local proxy"); carries the password |
+| `proxy.password` | none | ProxyState, after a new password was made and the connections from other machines were cut |
 | `routes.get` | none | Route state, rules, and named collection status |
 | `routes.update` | none | The `routes.get` object as it is now; the downloads go on in the background and a `routes` event follows when they end |
 | `routes.lists` | none | `{"lists": [{"id": "<list id>", "entries": N, "updated_unix": N, "error": "<code>"}], "unique": N, "duplicates": N}` |
@@ -131,6 +133,8 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 | `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
 | `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` takes the first that exists of: the profile's own (AmneziaWG), the panel's (managed subscriptions, see "The panel's DNS"), `1.1.1.1` and `1.0.0.1` |
 | `mtu` | `0`, or `1280` to `1500` | `0` | The tunnel adapter's MTU. `0` is automatic |
+| `proxy` | `true`, `false` | `false` | The local proxy (SOCKS5 on 1080, HTTP on 8080, this machine only); see "The local proxy" |
+| `proxy_lan` | `true`, `false` | `false` | Let the devices of the home network use the proxy too; does nothing while `proxy` is off |
 
 `dns` takes one or two valid IPv4 or IPv6 addresses (no port, not unspecified, not loopback); a value is stored
 normalised (`netip.Addr` text, joined with `,`), and anything else is `bad_params`. The servers are reached through the
@@ -527,6 +531,59 @@ and NDP, optionally the local network (private and link-local ranges; not its DN
 DNS to the tunnel's resolvers. With `off`, a connected tunnel keeps only its DNS rules. The rules name the service
 SID, so a console run cannot install them. The dynamic session ends with the process, so a service crash opens the
 network.
+
+## The local proxy
+
+`settings.set {"proxy": true}` starts a SOCKS5 proxy (port 1080) and an HTTP proxy (port 8080) in the service. Programs
+on this PC (or, with `proxy_lan: true`, devices of the home network: a TV, a set-top box, another PC) set them as their
+proxy and their TCP traffic goes through the VPN tunnel that is up. `settings.set` answers after the listeners have been
+changed, so a `proxy.get` right after it shows the result; the service also follows the settings itself.
+
+`proxy.get` and `proxy.password` answer with the same object (trusted callers only; the password is in it, so it is
+never logged and never in a `settings` event):
+
+```json
+{"on": true, "lan": false, "host": "192.168.1.5", "socks_port": 1080, "http_port": 8080, "user": "mistgate",
+ "password": "k7Hq2mWpXe9RtZ4v", "error": "", "error_port": 0, "clients": 3}
+```
+
+`on` and `lan` are the settings in force (`lan` is `proxy_lan` and `proxy`). `host` is this machine's IPv4 address on the
+interface the internet is reached through outside the tunnel, when it is a private one (empty otherwise): what to type
+into the TV. `password` is empty until the proxy has been switched on once. `error` is empty, or `port_busy` when
+another program holds a port (`error_port` says which; the proxy is then not listening at all, and the next
+`settings.set` or service start tries again). `clients` is the number of open connections. `proxy.password` makes a
+new 16-character password (no `0`, `O`, `1`, `l`, `I`) and closes every connection that did not come from this machine.
+
+Who may connect. By default only `127.0.0.1`. With `proxy_lan` the listeners are on every IPv4 address of the machine,
+and a connection is served only from loopback or from a private or link-local address (10/8, 172.16/12, 192.168/16,
+169.254/16); any other source is closed at once, without an answer. From this machine no login is needed, but one that
+is sent is checked and refused if wrong. From any other address a login is required: user `mistgate` and the password,
+as SOCKS5 username/password (RFC 1929) or HTTP `Proxy-Authorization: Basic` (answer 407). A wrong login is answered after
+a second; five wrong logins in a minute from one address close its connections without an answer for the rest of
+the minute. The password is kept in `<data directory>\proxy.json` (`{"password": "..."}`), next to the settings and in
+the directory that only SYSTEM and administrators may open; it is not in `settings.json`. At most 512 connections in all,
+64 from one address (256 from this machine), 10 s for the handshake, 15 s to reach the target, and a tunnel with no
+data in either direction for 5 minutes is closed.
+
+Where the traffic goes. Only through the tunnel that is up: with no VPN (not connected, still connecting, held) a
+request is refused (SOCKS5 reply `0x03`, HTTP `503`), and nothing is ever sent directly. A connection ends with its
+tunnel. Names are resolved on the tunnel's side, never by this machine's DNS. Destinations that are loopback,
+unspecified, multicast, link-local, private, carrier-grade NAT (100.64/10) or other reserved addresses are refused
+(SOCKS5 `0x02`, HTTP `403`), and so is a name that cannot be a public one (no dot, `.local`, `.lan`, `.internal`, a
+numeric spelling of an address and the like). A name's addresses are checked after it resolves for AmneziaWG; over
+Hysteria2 the server resolves it and the check is the name's shape only.
+
+What it does. SOCKS5: the CONNECT command with IPv4, IPv6 and name addresses; UDP ASSOCIATE and BIND are answered
+"command not supported". HTTP: `CONNECT host:port` (a tunnel) and requests with an absolute `http://` URL, forwarded
+with the hop-by-hop headers and `Proxy-Authorization` removed; any other request (to the proxy as a web server) gets
+`400`. What it does not do: UDP (no console games, no QUIC; browsers fall back to TCP), and the route rules: the smart
+and selected modes and the blocked names do not apply to the proxy, everything goes through the VPN.
+
+The Windows Firewall blocks inbound connections by default, so while `proxy` and `proxy_lan` are both on the service adds
+the rule `MistgateLocalProxy` (inbound TCP 1080 and 8080, this program only, private and domain profiles, local subnet
+only; `netsh advfirewall firewall`), and removes it when either is switched off, when the service stops and in
+`uninstall`. The kill switch's own filters let the home network in through the `lan` setting (see above); with `lan:
+false` and the kill switch active the devices of the home network cannot reach the proxy.
 
 ## The route step of the network check
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/ipc"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/proxy"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
@@ -142,9 +144,14 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	var routeState session.RouteState
 	var routes func() geo.Routes
 	var check func(string) geo.Check
+	var dialVPN func(context.Context, string, uint16) (net.Conn, error)
+	var homeAddr func() string
 	ping := ipc.PingFunc(diag.Handshake)
 	if useFake {
-		eng = engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
+		fake := engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
+		eng = fake
+		dialVPN = fake.DialVPN
+		homeAddr = func() string { return "" }
 		routeState.Effective = func(settings.Settings) string { return "all" }
 		routes = func() geo.Routes {
 			configured := settingsStore.Get()
@@ -164,6 +171,9 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	} else {
 		real := engine.NewReal(store.Profiles, settingsStore.Get, geoStore, verify)
 		eng = real
+		real.AllowDest = proxy.AllowedAddr
+		dialVPN = real.DialVPN
+		homeAddr = real.HomeAddr
 		routeState.Effective = real.EffectiveRoute
 		routeState.Path = real.RoutePath
 		routeState.Refresh = real.RefreshAutoRegion
@@ -206,7 +216,13 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
 		manager.Events().Publish("diag", state)
 	})
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, ping); err != nil {
+	localProxy := proxy.New(proxy.Config{
+		Dir: dataDir, Settings: settingsStore.Get, Dial: dialVPN, Host: homeAddr,
+		Firewall: proxy.FirewallRule, Logger: logger.With("src", "proxy"),
+	})
+	defer localProxy.Close()
+	localProxy.Reload()
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, ping, localProxy); err != nil {
 		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}

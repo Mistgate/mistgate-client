@@ -16,6 +16,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/proxy"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
@@ -46,6 +47,7 @@ type Server struct {
 	Check     func(name string) geo.Check // routes.check
 	Ping      PingFunc                    // servers.ping
 	Logs      *LogStore
+	Proxy     *proxy.Proxy
 	Logger    *slog.Logger
 	QueueSize int
 }
@@ -318,7 +320,33 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 		if err != nil {
 			return nil, nil, &RPCError{Code: "service_error", Message: "settings could not be saved"}
 		}
+		// the proxy follows its switches before this answer goes out, so a proxy.get right after sees the result
+		_, onKey := patch["proxy"]
+		_, lanKey := patch["proxy_lan"]
+		if s.Proxy != nil && (onKey || lanKey) {
+			s.Proxy.Reload()
+		}
 		return configured, nil, nil
+	case "proxy.get", "proxy.password":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		if s.Proxy == nil {
+			return nil, nil, &RPCError{Code: "service_error", Message: "local proxy is unavailable"}
+		}
+		// The answer carries the password: it is not logged, not sent as an event, and goes to this caller only.
+		if request.Method == "proxy.password" {
+			state, err := s.Proxy.NewPassword()
+			if err != nil {
+				return nil, nil, &RPCError{Code: "service_error", Message: "the new password could not be saved"}
+			}
+			return state, nil, nil
+		}
+		state := s.Proxy.State()
+		if s.Logger != nil {
+			s.Logger.Debug("proxy state read", "clients", state.Clients)
+		}
+		return state, nil, nil
 	case "diag.run":
 		var params struct {
 			Sub string `json:"sub"`
@@ -733,13 +761,13 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, ping PingFunc) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, ping PingFunc, localProxy *proxy.Proxy) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Ping: ping, Logs: logs}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Ping: ping, Logs: logs, Proxy: localProxy}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}
@@ -764,6 +792,9 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 				case <-settingsStore.Changes():
 					manager.SettingsChanged()
 					manager.Events().Publish("settings", settingsStore.Get())
+					if localProxy != nil {
+						localProxy.Reload() // idempotent: settings.set has done it already for the proxy's own keys
+					}
 				}
 			}
 		}()

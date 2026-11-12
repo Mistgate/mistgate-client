@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
 	"sync"
@@ -231,6 +232,31 @@ func (a *Adapter) addBypass(destination netip.Addr) error {
 // PhysicalInterfaceIndex4 is the interface the internet is reached through when the tunnel is left out.
 func PhysicalInterfaceIndex4() (uint32, error) {
 	return PhysicalInterfaceIndexFor(netip.MustParseAddr("1.1.1.1"))
+}
+
+// PhysicalAddr4 is this machine's IPv4 address on the interface PhysicalInterfaceIndex4 names (the first that is not
+// link-local).
+func PhysicalAddr4() (netip.Addr, error) {
+	index, err := PhysicalInterfaceIndex4()
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	iface, err := net.InterfaceByIndex(int(index))
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	addresses, err := iface.Addrs()
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	for _, item := range addresses {
+		if network, ok := item.(*net.IPNet); ok {
+			if address, ok := netip.AddrFromSlice(network.IP.To4()); ok && !address.IsLinkLocalUnicast() {
+				return address, nil
+			}
+		}
+	}
+	return netip.Addr{}, ErrNoRoute
 }
 
 // PhysicalInterfaceIndexFor is the interface a destination is reached through when the tunnel is left out.
