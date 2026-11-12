@@ -13,8 +13,8 @@ type Status = { state: string; step: string; since_unix: number; server: string;
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
 export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string; version?: string };
-type Sub = {
-  id: string; kind: 'url' | 'links' | 'awg'; name: string; host: string; updated_unix: number; expire_unix: number;
+export type Sub = {
+  id: string; kind: 'url' | 'links' | 'awg'; managed?: boolean; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
 };
 

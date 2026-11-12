@@ -5,6 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import { version } from '../package.json';
+import type { Sub } from './live';
+import { words } from './live-i18n';
 
 type Status = { state: string; server: string; server_id?: string; protocol?: string };
 type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean; autoconnect: boolean };
@@ -96,10 +98,56 @@ const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'a
 
 export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
   return class LiveSettings extends (liveChip(Base) as any) {
+    subs: Sub[] = [];
     mounted() {
+      const subs = (list: Sub[]) => { this.subs = list; this.forceUpdate(); };
+      this.off.push(listen<{ subs: Sub[] }>('mg://subs', (e) => subs(e.payload.subs)));
+      rpc<{ subs: Sub[] }>('subs.list').then((r) => subs(r.subs), () => {});
+      // "Subscription page" inside the Subscription section is a link to the design's sample address
+      document.addEventListener('click', this.onPage, true);
       this.off.push(listen<Settings>('mg://settings', (e) => this.apply(e.payload)));
       rpc<Settings>('settings.get').then((s) => this.apply(s), () => {});
       this.setState({ lg: document.documentElement.lang || 'en' });
+    }
+    componentWillUnmount() {
+      super.componentWillUnmount();
+      document.removeEventListener('click', this.onPage, true);
+    }
+    onPage = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.sb-act a')) return;
+      e.preventDefault();
+      const id = this.sub()?.id;
+      if (id) void rpc<{ url: string }>('subs.link', { id }).then((r) => invoke('open_url', { url: r.url }), () => {});
+    };
+    sub(): Sub | null { return this.subs.find((u) => u.id === pref.get('sub')) ?? this.subs[0] ?? null; }
+    // The Subscription section: the subscription shown on Home, with the service's numbers.
+    subVals(v: any, u: Sub) {
+      const w = words(), now = Date.now() / 1000, DAY = 86400;
+      const daysLeft = Math.ceil((u.expire_unix - now) / DAY), forever = u.expire_unix === 0, ended = !forever && u.expire_unix <= now;
+      const capped = u.total_bytes > 0, left = Math.max(0, u.total_bytes - u.used_bytes);
+      const why = u.error ? w.subErr[u.error === 'inactive' ? u.notice ?? '' : u.error] || (u.error === 'inactive' && u.notice) || '' : '';
+      const stale = u.error && !why; // the last update failed: the saved copy is in use
+      Object.assign(v.S, {
+        name: u.name, ini: (u.name.trim()[0] ?? '?').toUpperCase(), logoC: 'hide', iniC: '', host: u.host,
+        srcT: u.managed ? 'Mistgate' : u.kind === 'awg' ? w.file : w.link, srcCls: u.managed ? 'src-mg' : 'src-link',
+        st: why || (ended ? w.expired : v.S.st), stC: why || ended ? 'bad' : stale ? 'warn' : 'ok', pageCls: u.kind === 'url' ? '' : 'hide',
+        e: forever ? w.lifetime : w.date(u.expire_unix), eS: forever ? w.noEnd : ended ? w.expired : w.left(w.days(daysLeft)),
+        eP: forever ? '100%' : `${Math.max(0, Math.min(100, Math.round((daysLeft / 30) * 100)))}%`, eC: ended ? 'bad' : !forever && daysLeft <= 3 ? 'warn' : '',
+        d: capped ? w.size(left) : u.used_bytes ? w.size(u.used_bytes) : '—', dS: capped ? w.leftOf(w.size(u.total_bytes)) : u.used_bytes ? w.used : '',
+        dP: capped ? `${Math.round((left / u.total_bytes) * 100)}%` : '100%', dC: capped && left / u.total_bytes < 0.1 ? 'warn' : '',
+        v: '—', vS: '', vP: '0%', vC: 'na', // devices: the panel does not say yet
+      });
+      v.B = { show: 'hide', c: '', tone: '', t: '', s: '', b: '', bc: 'hide' };
+      const busy = !!this.state?.syncing;
+      Object.assign(v, {
+        subDim: '', devGrp: 'hide', renaming: false, basicGrp: u.managed ? 'hide' : '', syncGrp: u.kind === 'url' ? '' : 'hide',
+        syncT: busy ? v.syncT : stale ? w.stale(w.time(u.updated_unix)) : w.synced(w.time(u.updated_unix)), syncS: '', syncCls: stale ? 'warn' : '',
+        syncNow: () => {
+          if (busy) return;
+          this.setState({ syncing: true });
+          void Promise.all([rpc('subs.refresh', { id: u.id }).catch(() => {}), new Promise((done) => setTimeout(done, 800))]).then(() => this.setState({ syncing: false }));
+        },
+      });
     }
     // into the design's own switches, so its notes and summaries follow
     apply(s: Settings) {
@@ -131,9 +179,11 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
       v.prSet.vless = () => {}; // drawn for the finished product; not in this build
-      // Sections drawn for the finished product and not in this build (Subscription, Privacy, Notifications, Updates,
-      // Local proxy): shown dimmed and closed, so that the design's samples are not taken for the real state.
-      const soon = new Set([1, 2, 4, 5, 6]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
+      // Sections drawn for the finished product and not in this build (Privacy, Notifications, Updates, Local proxy;
+      // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
+      const u = this.sub();
+      if (u) this.subVals(v, u);
+      const soon = new Set([...(u ? [] : [1]), 2, 4, 5, 6]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
       v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
       v.ver = version;
       v.tmSet.dark = () => setTheme('dark');

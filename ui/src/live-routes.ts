@@ -56,6 +56,9 @@ const ALL = ['rkn', 'geo', 'allblk', 'rusvc', 'rusites', 'lan', 'ads', 'yt', 'ig
 // the "Ads" tile is not a route: its names are refused (the service answers "no such site")
 const ADS = geosite('category-ads-all');
 const BACK = Object.fromEntries(Object.entries(COL).map(([k, v]) => [v, k]));
+// Public lists worth offering where they apply: shown on the Lists sheet, off, in "Only selected" (they name what a
+// region blocks, which is what goes through the VPN there). ponytail: Russia only, the two lists the tiles already use.
+const OFFER: Record<string, string[]> = { ru: [COL.rkn, COL.geo] };
 const TONES = ['lav', 'sky', 'mint', 'sand', 'rose'];
 // a list as its row names it: the public collection's id, or the host and path of a link
 const listName = (id: string) => id.replace(/^geosite:/, '').replace(/^list:https:\/\/(www\.)?/, '').replace(/^raw\.githubusercontent\.com\//, '');
@@ -280,7 +283,8 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       v.openLists = () => { this.setState({ view: 'lists', back: this.state?.view }); this.loadLists(); };
       v.addList = () => this.addList();
       const inUse = new Set<string>([...(m === 'only' ? r?.rules?.vpn.collections : r?.rules?.direct.collections) ?? [], ...(m === 'except' && r?.available ? ['region:' + r.effective] : [])]);
-      const ids = [...new Set([...(this.lists?.lists ?? []).map((l) => l.id).filter((id) => inUse.has(id)), ...this.offIds])];
+      const offered = m === 'only' ? OFFER[r?.effective ?? ''] ?? [] : [];
+      const ids = [...new Set([...(this.lists?.lists ?? []).map((l) => l.id).filter((id) => inUse.has(id)), ...offered, ...this.offIds])];
       const num = (n: number) => n.toLocaleString(w.locale);
       v.mSegs = [];
       v.srcRows = ids.map((id, i) => {
@@ -300,7 +304,9 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
         };
       });
       v.mN = v.srcRows.filter((o: any) => o.on === 'true').length;
-      v.mUnique = num(this.lists?.unique ?? 0);
+      // the region's addresses are a list of their own kind: counted on top of the site lists' unique names
+      const region = (this.lists?.lists ?? []).find((l) => l.id.startsWith('region:') && inUse.has(l.id));
+      v.mUnique = num((this.lists?.unique ?? 0) + (region?.entries ?? 0));
       v.mDup = num(this.lists?.duplicates ?? 0);
       Object.assign(v, { autoCls: 'on', autoOn: 'true', toggleAuto: () => {} });
       return v;
