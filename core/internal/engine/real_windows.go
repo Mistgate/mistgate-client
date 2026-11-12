@@ -53,7 +53,7 @@ type Real struct {
 	gatewayMu            sync.Mutex
 	current              *realRun
 	resolved             map[string]netip.Addr
-	autoRegion           string
+	autoRegion           atomic.Pointer[string] // read by every flow's routing, so not under mu (setFirewall holds mu for a whole transaction)
 	autoRefreshing       bool
 	autoRefreshAgain     bool
 	autoRefreshCallbacks []func()
@@ -123,6 +123,7 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 		r.gatewayInterfaces = gateways
 	}
 	callback, err := winipcfg.RegisterRouteChangeCallback(func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
+		netcfg.InvalidateRoutes() // any route: direct flows read the table from a cache
 		if route == nil || route.DestinationPrefix.Prefix().Bits() != 0 {
 			return
 		}
@@ -136,6 +137,7 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 		r.routeCB = callback
 	}
 	interfaceCallback, err := winipcfg.RegisterInterfaceChangeCallback(func(_ winipcfg.MibNotificationType, iface *winipcfg.MibIPInterfaceRow) {
+		netcfg.InvalidateRoutes()
 		if iface == nil || iface.Family != windows.AF_INET {
 			return
 		}
@@ -300,9 +302,7 @@ func (r *Real) routeRegion(configured settings.Settings) string {
 		region = "auto"
 	}
 	if region == "auto" {
-		r.mu.Lock()
-		region = r.autoRegion
-		r.mu.Unlock()
+		region = r.autoRegionValue()
 	}
 	if region == "auto" || region == "none" || !geo.ValidRegion(region) {
 		return ""
@@ -341,6 +341,12 @@ func (r *Real) nameRoute(name string) (block bool, resolver netip.AddrPort) {
 	case geo.NameBlock:
 		return true, netip.AddrPort{}
 	case geo.NameDirect:
+		// With programs on the VPN list the question is asked by the system's DNS service, not by the program, so a
+		// name that is not on the list cannot be told from the program's own. Everything goes through the VPN then;
+		// a direct name resolved in the clear at a regional resolver would leak the program's.
+		if configured.RouteMode == "selected" && appsListed("selected", rules) {
+			return false, netip.AddrPort{}
+		}
 		return false, r.regionResolver(region)
 	}
 	return false, netip.AddrPort{}
@@ -361,17 +367,17 @@ func (r *Real) CheckSite(configured settings.Settings, name string) geo.Check {
 }
 
 func (r *Real) Routes(configured settings.Settings) geo.Routes {
-	r.mu.Lock()
-	autoRegion := r.autoRegion
-	r.mu.Unlock()
-	return r.geo.Routes(configured.RouteMode, configured.RouteRegion, autoRegion)
+	return r.geo.Routes(configured.RouteMode, configured.RouteRegion, r.autoRegionValue())
 }
 
-func (r *Real) setAutoRegion(region string) {
-	r.mu.Lock()
-	r.autoRegion = region
-	r.mu.Unlock()
+func (r *Real) autoRegionValue() string {
+	if region := r.autoRegion.Load(); region != nil {
+		return *region
+	}
+	return ""
 }
+
+func (r *Real) setAutoRegion(region string) { r.autoRegion.Store(&region) }
 
 func (r *Real) RefreshAutoRegion(onChange func()) {
 	configured := r.settings()
@@ -384,7 +390,7 @@ func (r *Real) RefreshAutoRegion(onChange func()) {
 		r.mu.Unlock()
 		return
 	}
-	if configured.RouteMode != "smart" || !autoRoute(configured.RouteRegion) || r.autoRegion != "" && r.autoRegion != "none" {
+	if configured.RouteMode != "smart" || !autoRoute(configured.RouteRegion) || r.autoRegionValue() != "" && r.autoRegionValue() != "none" {
 		callbacks := r.autoRefreshCallbacks
 		r.autoRefreshCallbacks = nil
 		r.mu.Unlock()
@@ -408,9 +414,7 @@ func (r *Real) refreshAutoRegion() {
 					region = detected
 				}
 			}
-			r.mu.Lock()
-			r.autoRegion = region
-			r.mu.Unlock()
+			r.setAutoRegion(region)
 		}
 		r.mu.Lock()
 		if r.autoRefreshAgain {
@@ -593,9 +597,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 					r.setAutoRegion(detected)
 				}
 			}
-			r.mu.Lock()
-			region = r.autoRegion
-			r.mu.Unlock()
+			region = r.autoRegionValue()
 		}
 		if region != "none" && geo.ValidRegion(region) && r.geo != nil {
 			if _, available := r.geo.Region(region); available {
@@ -834,7 +836,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if !ok {
 		return Info{}, failure("verify_failed", "verify tunnel: no IPv4 address")
 	}
-	rtt, err := probeTunnel(runCtx, localIP, verify, 5*time.Second)
+	rtt, err := run.tunnel.probe(runCtx, localIP, verify, 5*time.Second)
 	if err != nil {
 		if runCtx.Err() != nil {
 			return Info{}, runCtx.Err()
@@ -1160,7 +1162,7 @@ func (r *Real) Probe(ctx context.Context) error {
 	}
 	probeIP, verify := run.probeIP, run.verify
 	r.mu.Unlock()
-	rtt, err := probeTunnel(ctx, probeIP, verify, 3*time.Second)
+	rtt, err := run.tunnel.probe(ctx, probeIP, verify, 3*time.Second)
 	if err != nil {
 		return err
 	}
@@ -1228,6 +1230,20 @@ func probeTunnel(ctx context.Context, localIP netip.Addr, verify string, timeout
 		lastErr = errors.New("no tunnel verification target")
 	}
 	return 0, lastErr
+}
+
+// probe is the tunnel check. With the forwarder it goes through the VPN's own exit (see gvisorBridge.reaches); the
+// plain adapter (AmneziaWG without its own stack) has nothing in between, so a connection from its address is honest.
+func (t *realTunnel) probe(ctx context.Context, localIP netip.Addr, verify string, timeout time.Duration) (time.Duration, error) {
+	t.mu.Lock()
+	bridge := t.bridge
+	t.mu.Unlock()
+	if bridge != nil {
+		if targets := bridge.probeTargets(verify); len(targets) > 0 {
+			return bridge.probe(ctx, targets, timeout)
+		}
+	}
+	return probeTunnel(ctx, localIP, verify, timeout)
 }
 
 func (t *realTunnel) setAdapter(adapter *netcfg.Adapter) bool {

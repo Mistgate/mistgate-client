@@ -181,8 +181,11 @@ func dnsAnswer(t *testing.T, question string, records []dnsRecord) []byte {
 			}
 			continue
 		}
-		if !record.address.Is4() {
-			t.Fatal("test A record is not IPv4")
+		if record.address.Is6() {
+			if err := builder.AAAAResource(header, dnsmessage.AAAAResource{AAAA: record.address.As16()}); err != nil {
+				t.Fatal(err)
+			}
+			continue
 		}
 		if err := builder.AResource(header, dnsmessage.AResource{A: record.address.As4()}); err != nil {
 			t.Fatal(err)
@@ -248,5 +251,36 @@ func TestDecisionTable(t *testing.T) {
 				t.Fatalf("directByRules = %t; want %t", got, test.want)
 			}
 		})
+	}
+}
+
+// An IPv6 flow with no name of its own (QUIC on [v6]:443, a port that is not read) gets one from the AAAA answer; without
+// it "selected" sends the flow direct although its site is on the VPN list.
+func TestDNSMemoryRemembersAAAAForSelectedRouting(t *testing.T) {
+	store, err := geo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.SetRules(geo.Rules{VPN: geo.Selection{Sites: []string{"vpn.example"}}}); err != nil {
+		t.Fatal(err)
+	}
+	rules := store.ActiveSiteRules()
+	v6 := netip.MustParseAddr("2001:db8::7")
+	memory := &dnsMemory{entries: make(map[netip.Addr]dnsEntry)}
+	if directByRules(v6, memory.lookup(v6), "selected", nil, rules) != true {
+		t.Fatal("a nameless flow should go direct (the premise of the test)")
+	}
+	memory.remember(dnsAnswer(t, "vpn.example", []dnsRecord{{owner: "vpn.example.", address: v6, ttl: 300}}))
+	if got := memory.lookup(v6); got != "vpn.example" {
+		t.Fatalf("AAAA name = %q; want vpn.example", got)
+	}
+	if directByRules(v6, memory.lookup(v6), "selected", nil, rules) {
+		t.Fatal("an IPv6 flow of a VPN-listed site went direct")
+	}
+	// a mapped IPv4 address in an AAAA answer is remembered as the IPv4 address the bridge looks up
+	mapped := netip.MustParseAddr("::ffff:192.0.2.9")
+	memory.remember(dnsAnswer(t, "vpn.example", []dnsRecord{{owner: "vpn.example.", address: mapped, ttl: 300}}))
+	if got := memory.lookup(netip.MustParseAddr("192.0.2.9")); got != "vpn.example" {
+		t.Fatalf("mapped AAAA name = %q", got)
 	}
 }

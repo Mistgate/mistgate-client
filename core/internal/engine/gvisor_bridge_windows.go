@@ -30,7 +30,12 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const hy2UDPIdleTimeout = 60 * time.Second
+// How long a UDP flow may stay silent. Windows sends every DNS question from a port of its own, so those flows are many
+// and one question each: they go sooner.
+var (
+	hy2UDPIdleTimeout = 60 * time.Second // variables for the test
+	dnsUDPIdleTimeout = 10 * time.Second
+)
 
 type gvisorBridge struct {
 	tun          tun.Device
@@ -141,18 +146,8 @@ func (b *gvisorBridge) checkVPN6() {
 	ctx, cancel := context.WithTimeout(b.ctx, 3*time.Second)
 	defer cancel()
 	answers := make(chan bool, len(vpn6Probes))
-	lazy := isVLESS(b.vpn)
 	for _, target := range vpn6Probes {
-		go func() {
-			conn, err := b.vpn.DialTCP(ctx, target)
-			if err == nil {
-				if lazy { // a VLESS dial is only a request in flight; a handshake that comes back proves the way
-					err = tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx)
-				}
-				_ = conn.Close()
-			}
-			answers <- err == nil
-		}()
+		go func() { answers <- b.reaches(ctx, target) == nil }()
 	}
 	for range vpn6Probes {
 		if <-answers {
@@ -162,6 +157,58 @@ func (b *gvisorBridge) checkVPN6() {
 	if b.ctx.Err() == nil {
 		b.noVPN6.Store(true)
 	}
+}
+
+// reaches dials target through the VPN itself and says whether it answered. A connection made from the adapter's
+// address would end in this bridge's own stack, which may accept it before anything is dialed (a flow is accepted first
+// to read its name; a VLESS dial is only a request in flight), so it would say nothing about the server.
+func (b *gvisorBridge) reaches(ctx context.Context, target netip.AddrPort) error {
+	conn, err := b.vpn.DialTCP(ctx, target)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if isVLESS(b.vpn) { // a handshake that comes back proves the way
+		return tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx)
+	}
+	return nil
+}
+
+// probeTargets are the tunnel check's addresses that can be dialed through the VPN: literal addresses only. A VLESS
+// check is a TLS handshake, so it needs a TLS port: any other verify target is replaced by the default ones.
+func (b *gvisorBridge) probeTargets(verify string) []netip.AddrPort {
+	if verify != "" && isVLESS(b.vpn) {
+		if target, err := netip.ParseAddrPort(verify); err != nil || target.Port() != 443 {
+			verify = ""
+		}
+	}
+	var targets []netip.AddrPort
+	for _, text := range probeTargets(verify) {
+		if target, err := netip.ParseAddrPort(text); err == nil {
+			targets = append(targets, target)
+		}
+	}
+	return targets
+}
+
+// probe is the tunnel check: the first of targets that answers through the VPN, each given timeout.
+func (b *gvisorBridge) probe(ctx context.Context, targets []netip.AddrPort, timeout time.Duration) (time.Duration, error) {
+	lastErr := errors.New("no tunnel verification target")
+	for _, target := range targets {
+		dialCtx, cancel := context.WithTimeout(ctx, timeout)
+		started := time.Now()
+		err := b.reaches(dialCtx, target)
+		rtt := time.Since(started)
+		cancel()
+		if err == nil {
+			return rtt, nil
+		}
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+		lastErr = err
+	}
+	return 0, lastErr
 }
 
 func (b *gvisorBridge) readTun() {
@@ -182,7 +229,7 @@ func (b *gvisorBridge) readTun() {
 			if size <= 0 || size > len(buffers[i]) {
 				continue
 			}
-			data := append([]byte(nil), buffers[i][:size]...)
+			data := buffers[i][:size] // MakeWithData copies it, so the read buffer is free for the next read
 			packet := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(data)})
 			switch data[0] >> 4 {
 			case 4:
@@ -418,35 +465,24 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 	target := netip.AddrPortFrom(address.Unmap(), id.LocalPort)
 	srcAddr, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
 	src := netip.AddrPortFrom(srcAddr.Unmap(), id.RemotePort)
+	// This runs on the packet pump (readTun), which must never wait: finding the owner of the socket may wait for a
+	// table snapshot, and the outbound's ListenUDP may redial a dead QUIC session for seconds. So the endpoint is made
+	// first (the flow's next packets queue on it instead of starting new requests) and the rest runs on the flow's goroutine.
 	app, ready := b.appQuick(true, src, target)
-	if !ready {
-		// Finding the owner of the socket may wait for a table snapshot, and this runs on the packet pump, which must not
-		// wait. The endpoint is made first so the flow's next packets queue on it instead of starting new requests.
-		var queue waiter.Queue
-		endpoint, err := req.CreateEndpoint(&queue)
-		if err != nil {
-			return
-		}
-		local := gonet.NewUDPConn(&queue, endpoint)
-		if !b.startForward(func() { b.runUDP(local, target, b.appResolve(true, src)) }) {
-			_ = local.Close()
-		}
-		return
-	}
-	flowCtx, cancel := context.WithCancel(b.ctx)
-	remote, dialErr := b.listenUDP(flowCtx, target, app)
-	if dialErr != nil {
-		cancel()
-		return
-	}
 	var queue waiter.Queue
 	endpoint, err := req.CreateEndpoint(&queue)
 	if err != nil {
-		_ = remote.Close()
-		cancel()
 		return
 	}
-	b.serveUDP(gonet.NewUDPConn(&queue, endpoint), remote, target, flowCtx, cancel)
+	local := gonet.NewUDPConn(&queue, endpoint)
+	if !b.startForward(func() {
+		if !ready {
+			app = b.appResolve(true, src)
+		}
+		b.runUDP(local, target, app)
+	}) {
+		_ = local.Close()
+	}
 }
 
 // runUDP gives an accepted flow its outbound once the program is known.
@@ -678,17 +714,8 @@ func (f *udpFlow) run() {
 	go func() {
 		buf := make([]byte, 65535)
 		for {
-			_ = f.local.SetReadDeadline(time.Now().Add(time.Second))
+			// No deadline: closing local (the idle timer, the context, the other side) wakes this read with an error.
 			n, err := f.local.Read(buf)
-			if timeoutErr, ok := err.(net.Error); ok && timeoutErr.Timeout() {
-				select {
-				case <-f.ctx.Done():
-					done <- struct{}{}
-					return
-				default:
-					continue
-				}
-			}
 			if err != nil {
 				done <- struct{}{}
 				return
@@ -725,8 +752,14 @@ func (f *udpFlow) run() {
 		}
 	}()
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	// One timer, moved to what is left of the idle time each time it fires: a flow that is silent wakes no one twice.
+	idleTimeout := hy2UDPIdleTimeout
+	if f.target.Port() == 53 {
+		idleTimeout = dnsUDPIdleTimeout
+	}
+	idle := time.NewTimer(idleTimeout)
+	defer idle.Stop()
+	idleC := idle.C
 	ctxDone := f.ctx.Done()
 	completed := 0
 	for completed < 2 {
@@ -734,14 +767,16 @@ func (f *udpFlow) run() {
 		case <-done:
 			completed++
 			f.close()
-			ctxDone = nil
+			ctxDone, idleC = nil, nil
 		case <-ctxDone:
 			f.close()
-			ctxDone = nil
-		case <-ticker.C:
-			if time.Since(time.Unix(0, f.lastActivity.Load())) >= hy2UDPIdleTimeout {
+			ctxDone, idleC = nil, nil
+		case <-idleC:
+			if rest := idleTimeout - time.Since(time.Unix(0, f.lastActivity.Load())); rest > 0 {
+				idle.Reset(rest)
+			} else {
 				f.close()
-				ctxDone = nil
+				ctxDone, idleC = nil, nil
 			}
 		}
 	}

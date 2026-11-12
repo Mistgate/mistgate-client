@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	maxFileBytes  = 8 << 20
-	minPrefixes   = 100
-	maxAge        = 24 * time.Hour
-	fetchTimeout  = 20 * time.Second
-	updateTimeout = time.Minute // routes.update: every list together
+	maxFileBytes    = 8 << 20
+	minPrefixes     = 100
+	maxAge          = 24 * time.Hour
+	staleCheckEvery = time.Minute
+	fetchTimeout    = 20 * time.Second
+	updateTimeout   = time.Minute // routes.update: every list together
 )
 
 // Error codes of a failed download, as routes.lists reports them (no URL, no server text).
@@ -172,6 +173,7 @@ type Store struct {
 	versions        map[string]uint64
 	loaded          map[string]bool
 	refreshing      map[string]bool
+	staleChecked    map[string]time.Time // when Region last looked at the file's age: every flow asks, the disk is asked once a minute
 	siteSets        map[string]*SiteSet
 	siteLoaded      map[string]bool
 	siteRefreshing  map[string]bool
@@ -205,6 +207,7 @@ func Open(dataDir string, options ...Options) (*Store, error) {
 		versions:        make(map[string]uint64),
 		loaded:          make(map[string]bool),
 		refreshing:      make(map[string]bool),
+		staleChecked:    make(map[string]time.Time),
 		siteSets:        make(map[string]*SiteSet),
 		siteLoaded:      make(map[string]bool),
 		siteRefreshing:  make(map[string]bool),
@@ -256,11 +259,15 @@ func (s *Store) Region(cc string) (*Set, bool) {
 		}
 	}
 	set := s.sets[cc]
-	info, statErr := os.Stat(filepath.Join(s.dir, cc+".list"))
-	stale := statErr != nil || time.Since(info.ModTime()) >= maxAge
-	if stale && !s.refreshing[cc] {
-		s.refreshing[cc] = true
-		go s.refresh(cc)
+	// A day-old list is refreshed, so the file's age is needed only now and then, not on every flow (a system call under
+	// the lock that all flows share).
+	if now := time.Now(); now.Sub(s.staleChecked[cc]) >= staleCheckEvery {
+		s.staleChecked[cc] = now
+		info, statErr := os.Stat(filepath.Join(s.dir, cc+".list"))
+		if (statErr != nil || time.Since(info.ModTime()) >= maxAge) && !s.refreshing[cc] {
+			s.refreshing[cc] = true
+			go s.refresh(cc)
+		}
 	}
 	s.mu.Unlock()
 	return set, set != nil

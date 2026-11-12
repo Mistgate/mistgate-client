@@ -149,6 +149,18 @@ func TestRegionRefreshSignalsAndAdvancesVersion(t *testing.T) {
 	if err := os.Chtimes(path, old, old); err != nil {
 		t.Fatal(err)
 	}
+	// the file's age is looked at once a minute; this was looked at a moment ago
+	if _, ok := store.Region("ru"); !ok {
+		t.Fatal("region was lost")
+	}
+	select {
+	case <-store.Changes():
+		t.Fatal("the file's age was asked again within a minute")
+	case <-time.After(100 * time.Millisecond):
+	}
+	store.mu.Lock()
+	clear(store.staleChecked)
+	store.mu.Unlock()
 	if _, ok := store.Region("ru"); !ok {
 		t.Fatal("stale region was not kept during refresh")
 	}

@@ -433,8 +433,15 @@ func (m *dnsMemory) rememberAt(message []byte, now time.Time) {
 		current = alias.name
 	}
 	for _, answer := range answers {
-		value, ok := answer.Body.(*dnsmessage.AResource)
-		if !ok {
+		// AAAA too: an IPv6 flow without a name (QUIC, a port that is not read) would otherwise be nameless, and in
+		// "selected" a nameless flow goes direct even when its site is on the VPN list.
+		var address netip.Addr
+		switch value := answer.Body.(type) {
+		case *dnsmessage.AResource:
+			address = netip.AddrFrom4(value.A)
+		case *dnsmessage.AAAAResource:
+			address = netip.AddrFrom16(value.AAAA).Unmap()
+		default:
 			continue
 		}
 		owner := normalizeFlowName(answer.Header.Name.String())
@@ -451,7 +458,7 @@ func (m *dnsMemory) rememberAt(message []byte, now time.Time) {
 		} else if ttl > 3600 {
 			ttl = 3600
 		}
-		m.rememberAddressAt(netip.AddrFrom4(value.A), questionName, time.Duration(ttl)*time.Second, now)
+		m.rememberAddressAt(address, questionName, time.Duration(ttl)*time.Second, now)
 	}
 }
 

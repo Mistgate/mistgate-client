@@ -299,6 +299,11 @@ rules of the name), private, loopback, link-local and multicast destinations (al
 when the machine has no IPv6 beside the tunnel (the VPN, or refused when it has none either), and the address of the
 tunnel check (always through the VPN). A flow decided by its program is not counted for the "Doesn't open?" suggestions.
 
+In `selected`, while some program is in `rules.vpn.apps`, the DNS questions of names that are not on the VPN list go
+through the VPN too, not to the regional resolver: the question is asked by the system's DNS service, so the program
+that causes it is not visible, and a question sent in the clear could give away the program's. The cost is that the DNS
+of names that go direct passes through the VPN; `rules.block` still answers a blocked name at once.
+
 The owner of a flow is found from the local port of the program's socket (the IP Helper owner tables for TCP and UDP,
 the process id, then its image path). It costs nothing while no program is named for the current mode: nothing is
 looked up. Otherwise a table is read at most once per 50 ms for all waiting connections, and the owner of a port is

@@ -128,6 +128,7 @@ type awgPacketFlow struct {
 	ready  chan struct{}
 	closed bool
 	once   sync.Once
+	buf    []byte // the read buffer: one reader per flow, made at the first read
 }
 
 func (f *awgPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error {
@@ -169,9 +170,12 @@ func (f *awgPacketFlow) ReadFrom() ([]byte, netip.AddrPort, error) {
 	if closed || conn == nil {
 		return nil, netip.AddrPort{}, net.ErrClosed
 	}
-	buffer := make([]byte, 65535)
-	n, err := conn.Read(buffer)
-	return buffer[:n], target, err
+	if f.buf == nil {
+		f.buf = make([]byte, 65535)
+	}
+	n, err := conn.Read(f.buf)
+	// A copy of the datagram's size: a 64 KiB buffer per datagram is what this replaces.
+	return append([]byte(nil), f.buf[:n]...), target, err
 }
 
 func (f *awgPacketFlow) Close() error {
@@ -293,7 +297,7 @@ func (f *vlessPacketFlow) Close() error {
 type directOutbound struct{}
 
 func (directOutbound) DialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
-	index, err := netcfg.PhysicalInterfaceIndexFor(target.Addr())
+	index, err := netcfg.CachedPhysicalInterfaceIndexFor(target.Addr())
 	if err != nil {
 		return nil, err
 	}
@@ -319,6 +323,7 @@ type directPacketFlow struct {
 	ready  chan struct{}
 	closed bool
 	once   sync.Once
+	buf    []byte // the read buffer: one reader per flow, made at the first read
 }
 
 func (f *directPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error {
@@ -328,7 +333,7 @@ func (f *directPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error 
 		return net.ErrClosed
 	}
 	if f.conn == nil {
-		index, err := netcfg.PhysicalInterfaceIndexFor(target.Addr())
+		index, err := netcfg.CachedPhysicalInterfaceIndexFor(target.Addr())
 		if err != nil {
 			f.mu.Unlock()
 			return err
@@ -371,9 +376,11 @@ func (f *directPacketFlow) ReadFrom() ([]byte, netip.AddrPort, error) {
 	if closed || conn == nil {
 		return nil, netip.AddrPort{}, net.ErrClosed
 	}
+	if f.buf == nil {
+		f.buf = make([]byte, 65535)
+	}
 	for {
-		buffer := make([]byte, 65535)
-		n, source, err := conn.ReadFrom(buffer)
+		n, source, err := conn.ReadFrom(f.buf)
 		if err != nil {
 			return nil, netip.AddrPort{}, err
 		}
@@ -385,7 +392,7 @@ func (f *directPacketFlow) ReadFrom() ([]byte, netip.AddrPort, error) {
 		if address != target {
 			continue
 		}
-		return buffer[:n], address, nil
+		return append([]byte(nil), f.buf[:n]...), address, nil
 	}
 }
 

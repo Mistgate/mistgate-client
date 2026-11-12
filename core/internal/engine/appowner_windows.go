@@ -371,7 +371,12 @@ func parseOwnerTable(rows []ownerRow, table []byte, udp, v6 bool) []ownerRow {
 		} else {
 			addr = netip.AddrFrom16([16]byte(row[addrAt:])).Unmap()
 		}
-		rows = append(rows, ownerRow{addr: addr, port: binary.BigEndian.Uint16(row[portAt:]), pid: binary.LittleEndian.Uint32(row[pidAt:])})
+		// pid 0 is no program: a TIME_WAIT leftover on a port Windows has handed out again must not hide the live socket.
+		pid := binary.LittleEndian.Uint32(row[pidAt:])
+		if pid == 0 {
+			continue
+		}
+		rows = append(rows, ownerRow{addr: addr, port: binary.BigEndian.Uint16(row[portAt:]), pid: pid})
 	}
 	return rows
 }

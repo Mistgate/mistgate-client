@@ -11,6 +11,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"golang.org/x/sys/windows"
@@ -298,12 +299,88 @@ func PhysicalInterfaceIndexFor(destination netip.Addr) (uint32, error) {
 	return iface.InterfaceIndex, nil
 }
 
+const routeCacheFor = 2 * time.Second
+
+// routeCache holds the routes of each family (0: IPv4, 1: IPv6), made by physicalCandidates, for the packet path.
+var routeCache struct {
+	sync.Mutex
+	at   [2]time.Time
+	rows [2][]routeCandidate
+}
+
+// InvalidateRoutes drops the cached routes: Windows has said that a route or an interface changed.
+func InvalidateRoutes() {
+	routeCache.Lock()
+	routeCache.at = [2]time.Time{}
+	routeCache.Unlock()
+}
+
+// CachedPhysicalInterfaceIndexFor is PhysicalInterfaceIndexFor for the packet path: every direct flow asks, and the
+// routing table is read at most once in 2 s per family (or after InvalidateRoutes). The destination is still matched
+// against every route, so two destinations with different routes get their own interfaces.
+func CachedPhysicalInterfaceIndexFor(destination netip.Addr) (uint32, error) {
+	slot, family := 0, winipcfg.AddressFamily(windows.AF_INET)
+	if destination.Is6() {
+		slot, family = 1, winipcfg.AddressFamily(windows.AF_INET6)
+	}
+	routeCache.Lock()
+	if time.Since(routeCache.at[slot]) >= routeCacheFor {
+		rows, err := physicalCandidates(family)
+		if err != nil {
+			routeCache.Unlock()
+			return 0, ErrNoRoute // not kept: the next flow asks again
+		}
+		routeCache.rows[slot], routeCache.at[slot] = rows, time.Now()
+	}
+	rows := routeCache.rows[slot]
+	routeCache.Unlock()
+	choice, ok := chooseRoute(destination, rows)
+	if !ok || choice.index == 0 {
+		return 0, ErrNoRoute
+	}
+	return choice.index, nil
+}
+
+// physicalCandidates are all routes of a family that do not lead into the tunnel, with the index of their interface.
+func physicalCandidates(family winipcfg.AddressFamily) ([]routeCandidate, error) {
+	rows, err := winipcfg.GetIPForwardTable2(family)
+	if err != nil {
+		return nil, err
+	}
+	tunnel, _ := winipcfg.LUIDFromGUID(&adapterGUID)
+	type interfaceInfo struct{ metric, index uint32 }
+	interfaces := make(map[winipcfg.LUID]interfaceInfo)
+	candidates := make([]routeCandidate, 0, len(rows))
+	for _, row := range rows {
+		if tunnel != 0 && row.InterfaceLUID == tunnel {
+			continue
+		}
+		prefix := row.DestinationPrefix.Prefix().Masked()
+		if !prefix.IsValid() {
+			continue
+		}
+		info, seen := interfaces[row.InterfaceLUID]
+		if !seen {
+			if iface, err := row.InterfaceLUID.IPInterface(family); err == nil {
+				info = interfaceInfo{iface.Metric, iface.InterfaceIndex}
+			}
+			interfaces[row.InterfaceLUID] = info
+		}
+		if info.index == 0 {
+			continue
+		}
+		candidates = append(candidates, routeCandidate{prefix: prefix, metric: row.Metric, interfaceMetric: info.metric, luid: row.InterfaceLUID, index: info.index})
+	}
+	return candidates, nil
+}
+
 type routeCandidate struct {
 	prefix          netip.Prefix
 	nextHop         netip.Addr
 	metric          uint32
 	interfaceMetric uint32
 	luid            winipcfg.LUID
+	index           uint32 // the interface's index; set by physicalCandidates only
 }
 
 func chooseRoute(destination netip.Addr, candidates []routeCandidate) (routeCandidate, bool) {

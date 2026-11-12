@@ -101,6 +101,17 @@ func TestParseOwnerTable(t *testing.T) {
 	if len(rows) != 1 || rows[0] != row("10.9.0.2", 50000, 1234) {
 		t.Fatalf("TCP IPv4 rows = %+v", rows)
 	}
+	// a TIME_WAIT leftover (pid 0) before the live socket of the same port does not hide it
+	tcp4 = cat(le(11), []byte{10, 9, 0, 2}, port(50001), []byte{1, 2, 3, 4}, port(443), le(0))
+	tcp4 = append(tcp4, cat(le(5), []byte{10, 9, 0, 2}, port(50001), []byte{1, 2, 3, 5}, port(443), le(4321))...)
+	rows = parseOwnerTable(nil, cat(le(2), tcp4), false, false)
+	if len(rows) != 1 || rows[0] != row("10.9.0.2", 50001, 4321) {
+		t.Fatalf("rows with a pid 0 leftover = %+v", rows)
+	}
+	snap := &snapshot{rows: rows}
+	if pid, ok := snap.find(src("10.9.0.2", 50001)); !ok || pid != 4321 {
+		t.Fatalf("find = %d, %t", pid, ok)
+	}
 	// UDP, IPv6: address, scope, port, pid
 	v6 := make([]byte, 16)
 	v6[15] = 1

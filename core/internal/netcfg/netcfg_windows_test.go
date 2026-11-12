@@ -228,3 +228,41 @@ func (f *fakeTun) Close() error {
 }
 
 func (f *fakeTun) BatchSize() int { return 1 }
+
+// Direct flows read the routes from a cache; a route change throws it away, and each destination still gets its own route.
+func TestCachedPhysicalInterfaceIndexUsesAndDropsTheCache(t *testing.T) {
+	defer InvalidateRoutes()
+	routeCache.Lock()
+	routeCache.rows[0] = []routeCandidate{
+		{prefix: netip.MustParsePrefix("0.0.0.0/0"), index: 7},
+		{prefix: netip.MustParsePrefix("203.0.113.0/24"), index: 9},
+	}
+	routeCache.at[0] = time.Now()
+	routeCache.Unlock()
+	for destination, want := range map[string]uint32{"1.1.1.1": 7, "203.0.113.5": 9} {
+		if got, err := CachedPhysicalInterfaceIndexFor(netip.MustParseAddr(destination)); err != nil || got != want {
+			t.Fatalf("index for %s = %d, %v; want %d", destination, got, err, want)
+		}
+	}
+	InvalidateRoutes()
+	routeCache.Lock()
+	dropped := routeCache.at[0].IsZero()
+	routeCache.Unlock()
+	if !dropped {
+		t.Fatal("InvalidateRoutes kept the cache")
+	}
+}
+
+// The cached answer is the uncached one (read-only: both only read the routing table).
+func TestCachedPhysicalInterfaceIndexAgreesWithTheTable(t *testing.T) {
+	defer InvalidateRoutes()
+	InvalidateRoutes()
+	for _, text := range []string{"1.1.1.1", "8.8.8.8", "2001:4860:4860::8888"} {
+		destination := netip.MustParseAddr(text)
+		want, wantErr := PhysicalInterfaceIndexFor(destination)
+		got, gotErr := CachedPhysicalInterfaceIndexFor(destination)
+		if (wantErr == nil) != (gotErr == nil) || got != want {
+			t.Fatalf("%s: cached %d, %v; table %d, %v", text, got, gotErr, want, wantErr)
+		}
+	}
+}
