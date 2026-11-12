@@ -7,6 +7,7 @@ import type { DCLogic } from './dc';
 import { version } from '../package.json';
 import type { Sub } from './live';
 import { words } from './live-i18n';
+import { notifyOn, setNotify, startNotify, type NotifyKey } from './live-notify';
 
 type Status = { state: string; server: string; server_id?: string; protocol?: string };
 // the local proxy as `proxy.get` reports it; the password goes to this window only and is never kept or logged here
@@ -41,6 +42,7 @@ function applyShell(changed?: 'auto' | 'min' | 'tray') {
 }
 export function startShell() {
   applyShell();
+  startNotify();
   void listen<string>('mg://nav', (e) => window.dispatchEvent(new CustomEvent('mg-nav', { detail: e.payload })));
   // "Subscription page" in the side bar of every screen: the design links its sample address. The page of the
   // subscription shown is opened in the browser; a subscription without a page (pasted servers, a config) has none.
@@ -172,7 +174,8 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
     apply(s: Settings) {
       this.setState((old: any) => ({
         ks: s.kill_switch, ksAsk: false, pr: PR_BACK[s.protocol] ?? 'auto',
-        on: Object.assign({}, old?.on, { lan: s.lan, game: s.game, auto: s.autoconnect, min: shellPrefs().min, tray: shellPrefs().tray }),
+        on: Object.assign({}, old?.on, { lan: s.lan, game: s.game, auto: s.autoconnect, min: shellPrefs().min, tray: shellPrefs().tray,
+          nt: notifyOn('nt'), n0: notifyOn('n0'), n1: notifyOn('n1'), n2: notifyOn('n2'), n3: notifyOn('n3'), n4: false }),
       }));
     }
     save(patch: Partial<Settings>) {
@@ -194,10 +197,18 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         this.setState((old: any) => ({ on: Object.assign({}, old?.on, { [key]: !shell[key] }) }));
       };
       v.tg.auto = () => { flip('auto'); this.save({ autoconnect: !shell.auto }); };
+      // notifications: the window's own switches (live-notify reads them when something happens)
+      for (const key of ['nt', 'n0', 'n1', 'n2', 'n3'] as NotifyKey[]) {
+        v.tg[key] = () => {
+          setNotify(key, !notifyOn(key));
+          this.setState((old: any) => ({ on: Object.assign({}, old?.on, { [key]: notifyOn(key) }) }));
+        };
+      }
+      v.tg.n4 = () => {}; // "update installed": there are no updates yet (dimmed in shell.css)
       v.tg.min = () => flip('min');
       v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
-      // Sections drawn for the finished product and not in this build (Privacy, Notifications, Updates, Local proxy;
+      // Sections drawn for the finished product and not in this build (Privacy, Updates; Local proxy on an older service;
       // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
       const u = this.sub();
       if (u) this.subVals(v, u);
@@ -210,7 +221,7 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         });
         if (p.error) v.pxSub = words().proxyBusy;
       }
-      const soon = new Set([...(u ? [] : [1]), 2, 4, 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
+      const soon = new Set([...(u ? [] : [1]), 2, 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
       v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
       v.ver = version;
       v.tmSet.dark = () => setTheme('dark');
