@@ -140,7 +140,7 @@ func TestStartVLESSMapsFailures(t *testing.T) {
 	}
 	dead := *p
 	dead.Port = xraytest.Port(t)
-	if _, err := startVLESS(ctx, &dead, server); !errors.Is(err, xray.ErrNoAnswer) {
+	if _, err := startVLESS(ctx, &dead, server); !errors.Is(err, errVLESSPort) {
 		t.Fatalf("closed port = %v", err)
 	}
 	cancelled, stop := context.WithCancel(ctx)

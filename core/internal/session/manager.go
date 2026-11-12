@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"sync"
 	"time"
@@ -376,6 +377,13 @@ func (m *Manager) run() {
 						state.runCancel = nil
 					}
 					code := engine.ErrorCode(request.err)
+					// the reason is the engine's own fixed wording; any other error may name an address
+					var failed *engine.Failure
+					reason := ""
+					if errors.As(request.err, &failed) {
+						reason = failed.Error()
+					}
+					slog.Warn("connect failed", "code", code, "reason", reason, "protocol", state.status.Protocol)
 					if m.currentSettings().KillSwitch == "always" {
 						if m.engine != nil && m.engine.Hold() {
 							state.status.State = "blocked"

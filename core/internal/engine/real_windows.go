@@ -687,6 +687,9 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
+			if errors.Is(err, errVLESSPort) {
+				return Info{}, failure("no_server_answers", "VLESS: the server's port does not answer")
+			}
 			if errors.Is(err, xray.ErrRejected) {
 				return Info{}, failure("auth_rejected", "VLESS handshake: server rejected the client")
 			}
@@ -1570,6 +1573,8 @@ func startHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort) (cli
 	}
 }
 
+var errVLESSPort = errors.New("VLESS port does not answer")
+
 // startVLESS starts Xray for p and proves the path with a whole handshake through the server before any adapter exists,
 // as the Hysteria2 client does by connecting: Xray itself connects only when the first stream is asked for. The
 // instance is closed on every failure.
@@ -1585,7 +1590,7 @@ func startVLESS(ctx context.Context, p *profile.VLESS, server netip.Addr) (*xray
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, xray.ErrNoAnswer
+		return nil, errVLESSPort
 	}
 	_ = probe.Close()
 	x, err := xray.Start(p, server, "")
