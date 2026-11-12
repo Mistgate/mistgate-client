@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import FLAGS from './design/flags.json';
+import { nodesOf, PROTO, sufOf, type Server } from './live';
 import { words } from './live-i18n';
 import { liveChip, pref } from './live-settings';
 
@@ -53,6 +54,7 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
   return class LiveDiag extends (liveChip(Base) as any) {
     diag: State = { state: 'idle', step: 0, pct: 0, error: '', result: null };
     log: LogEntry[] = [];
+    servers: Server[] = []; // the subscriptions' servers, to name a result row as Home names the server
 
     mounted() {
       S ??= samples(Base);
@@ -61,9 +63,18 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         listen<LogEntry>('mg://log', (e) => { this.log = [...this.log.slice(-499), e.payload]; if (!this.state?.paused) this.forceUpdate(); }),
       );
       rpc<State>('diag.get').then((s) => this.applyDiag(s), () => {});
+      rpc<{ subs: { servers: Server[] }[] }>('subs.list').then((r) => { this.servers = r.subs.flatMap((u) => u.servers); this.forceUpdate(); }, () => {});
       rpc<{ entries: LogEntry[] }>('log.get').then((r) => { this.log = r.entries; this.forceUpdate(); }, () => {});
       // a link subscription has no panel behind it: the design's "basic" variant, reports not offered
       this.setState({ md: 'basic', anonK: 'old', rep: 'closed' });
+    }
+    // "Checked 2 min ago" is plain markup in the design: say when this result was made
+    componentDidUpdate() {
+      super.componentDidUpdate?.();
+      const at = this.diag.result?.at_unix;
+      const line = document.querySelector('.ck-meta > span');
+      const text = line && [...line.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
+      if (text && at && text.nodeValue !== words().time(at)) text.nodeValue = words().time(at);
     }
     applyDiag(s: State) {
       this.diag = s;
@@ -82,10 +93,16 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         auth_rejected: I.srvRows[4].paths[0].m, bad_config: I.srvRows[4].paths[0].m, engine_error: I.srvRows[1].paths[2].m,
       };
       // "Mbps" as the design's samples write it in this language ("31 ms · 48.2 Mbps")
-      const unit = String(G.srvRows[0].paths[0].m).split(' · ')[1]?.replace(/[d.,s]+/, '') ?? 'Mbps';
+      const unit = String(G.srvRows[0].paths[0].m).split(' · ')[1]?.replace(/[\d.,\s]+/, '') ?? 'Mbps';
       const sp = r.speed && r.speed.verdict !== 'skipped' && r.speed.verdict !== 'failed' ? r.speed : null;
+      // a result row is named as Home names the server: the country with its number, then what the path adds
+      const named = new Map<string, { flag: string; text: string }>();
+      for (const node of nodesOf(this.servers)) for (const e of node.entries) {
+        const tail = e.label.slice((PROTO[e.s.protocol]?.[1] ?? '').length);
+        named.set(e.s.id, { flag: node.flag, text: node.name + sufOf(node) + tail });
+      }
       const servers = r.servers.map((n) => {
-        const { flag, text } = flagOf(n.name);
+        const { flag, text } = named.get(n.id) ?? flagOf(n.name);
         const fast = sp && (sp.server === n.id || sp.server === n.name) ? ` · ${sp.down_mbps.toFixed(1)} ${unit}` : ''; // the server the VPN is on
         const m = n.verdict === 'ok' ? `${n.rtt_ms} ms${fast}` : why[n.reason] ?? '';
         const meta = n.verdict === 'ok' ? `${way(n.protocol).split(' · ')[0]} · ${n.rtt_ms} ms${fast}` : n.verdict === 'down' ? I.srvRows[3].meta : n.verdict === 'config' ? I.srvRows[4].meta : m;
@@ -109,7 +126,7 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       const fz = r.freeze;
       const speedLine = sp ? [`↓ ${sp.down_mbps.toFixed(1)} · ↑ ${sp.up_mbps.toFixed(1)} ${unit}`] : [];
       if (sp?.verdict === 'throttled' && fz?.verdict !== 'freeze') row(I.netRows[5], { v: 'slow', alt: '', meta: w.throttled, lines: [`${sp.first_mbps.toFixed(1)} → ${sp.last_mbps.toFixed(1)} ${unit}`, ...speedLine] });
-      else if (fz?.verdict === 'ok' || sp && fz?.verdict !== 'freeze') row(I.netRows[5], { meta: sp ? G.netRows[5].meta : '', lines: speedLine });
+      else if (fz?.verdict === 'ok' || sp && fz?.verdict !== 'freeze') row(I.netRows[5], { meta: sp ? I.netRows[5].meta : '', lines: speedLine });
       else if (fz?.verdict === 'freeze') {
         const kb = String(Math.max(1, Math.round(Math.max(...fz.targets.filter((t) => t.verdict === 'freeze').map((t) => t.bytes)) / 1024)));
         row(I.netRows[5], { v: 'freeze', alt: '', meta: I.srvRows[2].meta.replace('64', kb), lines: [I.srvRows[2].paths[0].m.replace('64', kb)] });

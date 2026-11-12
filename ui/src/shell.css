@@ -23,3 +23,5 @@ html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: 
 .shell .sx-ni.soon { opacity: .45; pointer-events: none; }
 /* The server card: no load line when the panel did not say how busy the server is. */
 .shell .stip-l:has(.bar i[style*="width: 0%"]), .shell .stip-l:has(.bar i[style*="width:0%"]) { display: none; }
+/* Diag: the design's "full check again in 48 min" is a sample; this build has no such timer. */
+.shell .ck-go .cg-t small { display: none; }

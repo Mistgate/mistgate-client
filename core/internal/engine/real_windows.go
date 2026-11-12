@@ -1060,7 +1060,10 @@ func (r *Real) Probe(ctx context.Context) error {
 	if r.current != run {
 		return context.Canceled
 	}
-	run.rtt = rtt
+	// ponytail: the probe's time is not kept. With the forwarder its connection is answered inside this process
+	// before the server is asked (about a millisecond), so the number shown stays the one measured at connect; a
+	// live number needs the forwarder to time its dial.
+	_ = rtt
 	return nil
 }
 

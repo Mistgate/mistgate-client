@@ -12,7 +12,7 @@ import { pref } from './live-settings';
 type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
-type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string };
+export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string };
 type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
@@ -89,7 +89,7 @@ export function nodesOf(servers: Server[]): Node[] {
   return [...out.values()];
 }
 // a number follows the name; a city comes after the design's dot
-const sufOf = (n: Node) => (!n.extra ? '' : /^\d+$/.test(n.extra) ? ' ' + n.extra : ' · ' + n.extra);
+export const sufOf = (n: Node) => (!n.extra ? '' : /^\d+$/.test(n.extra) ? ' ' + n.extra : ' · ' + n.extra);
 // "DE" -> "Germany", in the window's language
 function countryName(cc: string) {
   if (!/^[a-z]{2}$/.test(cc)) return '';

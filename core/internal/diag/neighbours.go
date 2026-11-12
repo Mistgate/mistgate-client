@@ -26,7 +26,7 @@ var neighbourProcesses = map[string]string{
 var neighbourAdapters = []struct{ part, product string }{
 	{"teredo", ""}, // Windows' own
 	{"wireguard", "WireGuard"}, {"amnezia", "AmneziaVPN"}, {"openvpn", "OpenVPN"}, {"tap-windows", "TAP-Windows"},
-	{"sing-tun", "sing-box"}, {"wintun", "Wintun"}, {"tap-", "TAP-Windows"}, {"tunnel", "VPN adapter"},
+	{"sing-tun", "sing-box"}, {"tailscale", "Tailscale"}, {"wiresock", "WireSock"}, {"wintun", "Wintun"}, {"tap-", "TAP-Windows"}, {"tunnel", "VPN adapter"},
 }
 
 func processProduct(exe string) string {
