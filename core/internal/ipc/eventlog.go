@@ -34,6 +34,16 @@ func (s *LogStore) Entries() []LogEntry {
 	return entries
 }
 
+// Clear forgets every entry.
+func (s *LogStore) Clear() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.entries = nil
+	s.mu.Unlock()
+}
+
 type eventLogHandler struct {
 	inner   slog.Handler
 	publish func(any)

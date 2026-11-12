@@ -52,6 +52,9 @@ type Server struct {
 	Proxy     *proxy.Proxy
 	Logger    *slog.Logger
 	QueueSize int
+
+	debugMu   sync.Mutex
+	debugSnap *debugSnapshot // the bundle of the latest debug.preview
 }
 
 func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
@@ -141,7 +144,7 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 
 // slowMethods wait on the network for seconds.
 var slowMethods = map[string]bool{
-	"servers.ping": true, "servers.hosts": true, "subs.preview": true, "subs.add": true, "subs.refresh": true, "subs.remove": true, "apps.list": true,
+	"servers.ping": true, "servers.hosts": true, "subs.preview": true, "subs.add": true, "subs.refresh": true, "subs.remove": true, "apps.list": true, "debug.send": true, "debug.decline": true,
 }
 
 // dispatch answers one call; a panic in it is that call's error, not the end of the service.
@@ -426,6 +429,15 @@ func (s *Server) handle(ctx context.Context, request Request, trusted bool) (any
 			entries = s.Logs.Entries()
 		}
 		return map[string]any{"entries": entries}, nil, nil
+	case "log.clear":
+		if !emptyParams(request.Params) {
+			return nil, nil, badParams()
+		}
+		s.Logs.Clear()
+		return map[string]any{}, nil, nil
+	case "debug.preview", "debug.send", "debug.decline":
+		result, rpcError := s.handleDebug(ctx, request)
+		return result, nil, rpcError
 	case "subscribe":
 		var params struct {
 			Events []string `json:"events"`

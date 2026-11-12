@@ -104,6 +104,14 @@ export function liveChip(Base: typeof DCLogic): typeof DCLogic {
 const PR: Record<string, Settings['protocol']> = { auto: 'auto', h2: 'hysteria2', awg: 'awg', vless: 'vless' };
 const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'awg', vless: 'vless' };
 
+// the design's own words for a switch it shows switched off, in the window's language
+const repTexts = new Map<string, string>();
+function repText(Base: typeof DCLogic, sub: 'old' | 'basic') {
+  const key = document.documentElement.lang + '|' + sub;
+  if (!repTexts.has(key)) { const l: any = new (Base as any)({ sub }); l.state = {}; repTexts.set(key, l.renderVals().repSub); }
+  return repTexts.get(key)!;
+}
+
 export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
   return class LiveSettings extends (liveChip(Base) as any) {
     subs: Sub[] = [];
@@ -213,9 +221,17 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       v.tg.min = () => flip('min');
       v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
-      // Sections drawn for the finished product and not in this build (Privacy, Updates; Local proxy on an older service;
-      // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
+      // Privacy. Block reports wait for the panel's next report format: the switch is shown as the design shows a panel
+      // that does not take them. The log is the service's.
       const u = this.sub();
+      const link = !!u && !u.managed;
+      Object.assign(v, {
+        repCls: 'dis', repLs: 'hide', repSub: repText(Base, link ? 'basic' : 'old'),
+        clearLog: () => void rpc('log.clear').then(() => this.setState({ logCleared: true }), () => {}),
+      });
+      v.tg.rep = () => {};
+      // Sections drawn for the finished product and not in this build (Updates; Local proxy on an older service;
+      // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
       if (u) this.subVals(v, u);
       const p = this.proxy;
       if (p) {
@@ -226,7 +242,7 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         });
         if (p.error) v.pxSub = words().proxyBusy;
       }
-      const soon = new Set([...(u ? [] : [1]), 2, 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
+      const soon = new Set([...(u ? [] : [1]), 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
       v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
       v.ver = version;
       v.tmSet.dark = () => setTheme('dark');

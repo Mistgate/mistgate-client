@@ -47,7 +47,8 @@ A basic fetch with `X-HWID` already makes a device in the panel; enrolling repla
 | `GET <base>/sync` | device key | the subscription in the Mistgate format; `If-None-Match` -> `304` |
 | `POST <base>/leave` | device key | this device removes itself |
 | `POST <link>/probe` | the token (as today) | the detectors' report, v1, announced by `Probe-Report: 1` |
-| `POST <base>/debug` | device key | a debug report (later; VPS edition only) |
+| `POST <base>/debug` | device key | a debug report, only when `sync` says `debug.intake` (VPS edition only) |
+| `POST <base>/debug/decline` | device key | the person declines support's request |
 
 `base` is an absolute URL the panel returns from `enrol` (v1: `<subscription prefix>/client`, no token in it). The
 client never builds it. Reasons: rotating the link replaces the token but keeps devices; per-token fetch budgets are
@@ -230,11 +231,31 @@ check ran through the VPN (`vpn`, `direct_checked`). Verdicts are v1's: `ok`, `f
 A v2 with the client's wider check (route hops, UDP and NAT, DNS, foreign sites, the client's verdict names) is
 **deferred**: the panel has no storage or admin view for it.
 
-### debug (later)
+### debug
 
-Not a zip: NDJSON lines with a fixed schema, about 1 MiB at most, so the panel can scrub them again on intake.
-Offered only when `sync` says `debug.intake: true`; otherwise the client offers "save as file". The edge edition of
-the panel does not take debug reports.
+`sync` carries `"debug": {"intake": true, "unasked": true, "request": {"id": "dbr_…", "level": "info|debug", "note": "…", "expires_unix": 0}}`.
+`unasked` is present only when the person may send on their own; `request` only while support's request is open. The
+edge edition answers `{"intake": false}` and takes nothing. The client offers nothing without `intake`.
+
+`POST <base>/debug`: `Authorization: Bearer <device key>`, `Content-Type: application/x-ndjson`,
+`Content-Encoding: gzip` (required), and `X-Mistgate-Debug-Request: dbr_…` when it answers a request (absent: the
+person's own send). The body is one JSON object per line: `{"ts": <unix ms>, "lvl": "debug|info|warn|error",
+"src": "<^[a-z][a-z0-9_-]{0,31}$>", "msg": "…", "kv": {"k": "v"}}`. `ts`, `lvl`, `src` and `msg` are required; `kv` is
+optional, string values only, at most 16 keys; an unknown top-level field is a `400`. The panel keeps a line of at most
+8192 bytes, `msg` up to 1024 bytes, and of `kv` only `path`, `server`, `protocol`, `via`, `engine`, `phase`, `state`,
+`reason`, `code`, `err`, `mode`, `version`, `count`, `ms`, `bytes`, `attempt`, `net`, `event`, `status`, `http` (values
+up to 160 characters). Limits: 1 MiB on the wire, 4 MiB and 20000 lines unpacked, `ts` within now-30 days..now+1 day.
+The client builds the bundle (`system`, `checks` and `log` parts and the person's note), scrubs it again, and shows it
+to the person before sending.
+
+Answers: `200 {"id": "dbr_…", "lines": N, "dropped_kv": M}` (`200` again for a request already answered); a decoy for
+an unknown key; `429 too_many_requests`; `401 device_removed|device_blocked|link_changed`; `403 cross_origin`;
+`403 debug_off`; `415`; `413 too_large`; `409 no_request|user_inactive|app_disabled`; `429` with `Retry-After` (an own
+send more often than once per 10 minutes, a delivery in progress, or too many attempts); `503 debug_full`; `503` with
+`Retry-After: 30`; `400 bad_request`. Error bodies are the usual `{"error": "<code>"}`.
+
+`POST <base>/debug/decline` with the same `Authorization` and request header and no body: `200 {"id": "dbr_…",
+"declined": true}` or `409 no_request`.
 
 ## What changes in the client meanwhile
 

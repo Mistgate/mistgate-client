@@ -51,6 +51,7 @@ type Subscription struct {
 	Telegram     []Telegram `json:"telegram,omitempty"`
 	DevicesUsed  int        `json:"devices_used,omitempty"`
 	DevicesLimit int        `json:"devices_limit,omitempty"`
+	Debug        *Debug     `json:"debug,omitempty"` // nil: the panel did not say (a link subscription, an old panel)
 }
 
 // Telegram is one MTProto proxy of the subscription, as a link Telegram opens. Twins of one server share Node.
@@ -836,6 +837,13 @@ func (s *Store) changed() {
 }
 
 func publicCopy(sub Subscription) Subscription {
+	if sub.Debug != nil { // a copy of its own; a request past its time is not shown
+		d := *sub.Debug
+		if d.Request != nil && d.Request.ExpiresUnix <= time.Now().Unix() {
+			d.Request = nil
+		}
+		sub.Debug = &d
+	}
 	sub.Servers = append([]Server(nil), sub.Servers...)
 	if sub.Servers == nil {
 		sub.Servers = []Server{}

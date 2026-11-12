@@ -36,6 +36,8 @@ type Words = {
   // the Routes test line, in the design's own words: the three verdicts, then why (%s: the rule's name)
   // Windows notifications, after the design's samples: a title and a text each
   notify: { lost: [string, string]; backup: [string, (way: string) => string]; ends: [(days: string, n: number) => string, (name: string, date: string) => string]; removed: [string, (name: string) => string] };
+  // Diagnostics, the "ask for help" sheet: why the diagnostics were not sent
+  dbg: { wait: (min: number) => string; offline: string; gone: string; full: string; fail: string };
   proxyBusy: string; // Settings, Local proxy: it could not listen
   synced: (time: string) => string; // Settings, Subscription: when it was last taken from the provider
   chk: [vpn: string, direct: string, blocked: string, all: string, on: string, notSelected: string, goesDirect: string, notException: string];
@@ -61,6 +63,7 @@ const WORDS: Record<string, Words> = {
     off: 'off',
     modes: ['Only selected', 'Everything', 'Smart'],
     notify: { lost: ['Connection lost', 'No answer for 30 seconds. Mistgate keeps trying.'], backup: ['Switched to a backup way', (way) => `The previous way stopped answering, so Mistgate moved you to ${way}.`], ends: [(days) => `Subscription ends in ${days}`, (name, date) => `${name} ends on ${date}. Renew it to keep VPN working.`], removed: ['This PC was removed', (name) => `It’s no longer in ${name}, so VPN can’t connect.`] },
+    dbg: { wait: (min) => `You can send again in ${min} min`, offline: 'No connection to your admin’s server. Try again later', gone: 'Your admin no longer waits for these diagnostics', full: 'Your admin’s storage for diagnostics is full. Tell them directly', fail: 'Couldn’t send. Try again later' },
     proxyBusy: 'Couldn’t start · port 1080 or 8080 is used by another program',
     synced: (t) => `Updated ${t}`,
     chk: ['VPN', 'Direct', 'Blocked', 'Rule: Everything mode', 'Rule: “%s” is on', 'Rule: not in your selection', 'Rule: “%s” goes direct', 'Rule: not an exception'],
@@ -80,6 +83,7 @@ const WORDS: Record<string, Words> = {
     off: 'выключен',
     modes: ['Только выбранное', 'Всё', 'Умный'],
     notify: { lost: ['Связь потеряна', 'Нет ответа 30 секунд. Mistgate пробует снова.'], backup: ['Перешли на резервный путь', (way) => `Прежний путь перестал отвечать, поэтому Mistgate перевёл вас на ${way}.`], ends: [(days) => `Подписка заканчивается через ${days}`, (name, date) => `«${name}» заканчивается ${date}. Продлите её, чтобы VPN продолжал работать.`], removed: ['Этот ПК удалён', (name) => `Компьютера больше нет в подписке «${name}» — VPN не подключится.`] },
+    dbg: { wait: (min) => `Отправить снова можно через ${min} мин`, offline: 'Нет связи с сервером администратора. Попробуйте позже', gone: 'Администратор больше не ждёт эту диагностику', full: 'У администратора закончилось место для диагностики. Сообщите ему напрямую', fail: 'Не удалось отправить. Попробуйте позже' },
     proxyBusy: 'Не удалось запустить · порт 1080 или 8080 занят другой программой',
     synced: (t) => `Обновлено ${t}`,
     chk: ['VPN', 'Напрямую', 'Заблокирован', 'Правило: режим «Всё»', 'Правило: «%s» включено', 'Правило: нет в вашем выборе', 'Правило: «%s» идёт напрямую', 'Правило: не исключение'],
@@ -99,6 +103,7 @@ const WORDS: Record<string, Words> = {
     off: 'kapalı',
     modes: ['Yalnızca seçilenler', 'Her şey', 'Akıllı'],
     notify: { lost: ['Bağlantı koptu', '30 saniyedir yanıt yok. Mistgate denemeyi sürdürüyor.'], backup: ['Yedek yola geçildi', (way) => `Önceki yol yanıt vermeyi bıraktı; Mistgate sizi ${way} yoluna geçirdi.`], ends: [(_days, n) => `Abonelik ${n} gün sonra bitiyor`, (name, date) => `“${name}” ${date} tarihinde bitiyor. VPN’in çalışması için yenileyin.`], removed: ['Bu bilgisayar kaldırıldı', (name) => `Artık “${name}” içinde değil, bu yüzden VPN bağlanamıyor.`] },
+    dbg: { wait: (min) => `${min} dk sonra yeniden gönderebilirsiniz`, offline: 'Yöneticinizin sunucusuna bağlanılamadı. Daha sonra deneyin', gone: 'Yöneticiniz artık bu tanılama verisini beklemiyor', full: 'Yöneticinizin tanılama deposu dolu. Ona doğrudan bildirin', fail: 'Gönderilemedi. Daha sonra deneyin' },
     proxyBusy: 'Başlatılamadı · 1080 veya 8080 portu başka bir program tarafından kullanılıyor',
     synced: (t) => `Güncellendi: ${t}`,
     chk: ['VPN', 'Doğrudan', 'Engelli', 'Kural: “Her şey” modu', 'Kural: “%s” açık', 'Kural: seçiminizde yok', 'Kural: “%s” doğrudan gider', 'Kural: istisna değil'],
@@ -118,6 +123,7 @@ const WORDS: Record<string, Words> = {
     off: '已关闭',
     modes: ['仅所选', '全部', '智能'],
     notify: { lost: ['连接已断开', '30 秒无响应。Mistgate 正在重试。'], backup: ['已切换到备用线路', (way) => `原线路不再响应，Mistgate 已将您切换到 ${way}。`], ends: [(_days, n) => `订阅将在 ${n} 天后到期`, (name, date) => `“${name}”将于 ${date} 到期。续订后 VPN 才能继续使用。`], removed: ['这台电脑已被移除', (name) => `这台电脑已不在“${name}”中，VPN 无法连接。`] },
+    dbg: { wait: (min) => `${min} 分钟后可再次发送`, offline: '无法连接管理员的服务器，请稍后再试', gone: '管理员已不再等待这份诊断', full: '管理员的诊断存储已满，请直接告知对方', fail: '发送失败，请稍后再试' },
     proxyBusy: '无法启动 · 端口 1080 或 8080 已被其他程序占用',
     synced: (t) => `更新于 ${t}`,
     chk: ['VPN', '直连', '已拦截', '规则：“全部”模式', '规则：“%s”已开启', '规则：不在您的选择中', '规则：“%s”直连', '规则：不在例外中'],
@@ -137,6 +143,7 @@ const WORDS: Record<string, Words> = {
     off: 'خاموش',
     modes: ['فقط انتخابی‌ها', 'همه‌چیز', 'هوشمند'],
     notify: { lost: ['اتصال قطع شد', '30 ثانیه پاسخی نیامد. Mistgate دوباره تلاش می‌کند.'], backup: ['به مسیر پشتیبان جابه‌جا شد', (way) => `مسیر قبلی دیگر پاسخ نمی‌داد؛ Mistgate شما را به ${way} منتقل کرد.`], ends: [(_days, n) => `اشتراک ${n} روز دیگر تمام می‌شود`, (name, date) => `«${name}» ${date} تمام می‌شود. برای ادامه کار VPN آن را تمدید کنید.`], removed: ['این رایانه حذف شده', (name) => `این رایانه دیگر در «${name}» نیست و VPN وصل نمی‌شود.`] },
+    dbg: { wait: (min) => `${min} دقیقهٔ دیگر می‌توانید دوباره بفرستید`, offline: 'اتصال به سرور مدیر برقرار نشد. بعداً دوباره تلاش کنید', gone: 'مدیر دیگر منتظر این عیب‌یابی نیست', full: 'فضای عیب‌یابی مدیر پر شده است. مستقیم به او بگویید', fail: 'ارسال نشد. بعداً دوباره تلاش کنید' },
     proxyBusy: 'راه‌اندازی نشد · درگاه 1080 یا 8080 را برنامهٔ دیگری گرفته است',
     synced: (t) => `به‌روزرسانی ${t}`,
     chk: ['VPN', 'مستقیم', 'مسدود', 'قاعده: حالت «همه‌چیز»', 'قاعده: «%s» روشن است', 'قاعده: در انتخاب شما نیست', 'قاعده: «%s» مستقیم می‌رود', 'قاعده: استثنا نیست'],

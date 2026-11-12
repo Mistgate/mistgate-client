@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -44,6 +45,18 @@ type fakePanel struct {
 	leaves      int
 	leaveStatus int
 	leaveAuth   []string
+
+	debugStatus int // 0 = 200 with an answer for the call
+	debugBody   string
+	debugRetry  string
+	debugCalls  []debugCall
+}
+
+type debugCall struct {
+	path    string
+	header  http.Header
+	body    []byte
+	hadBody bool
 }
 
 func newPanel(t *testing.T, discover bool) *fakePanel {
@@ -115,6 +128,22 @@ func (p *fakePanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("ETag", p.etag)
 		}
 		_, _ = w.Write([]byte(p.syncBody))
+	case strings.HasSuffix(r.URL.Path, "/client/debug"), strings.HasSuffix(r.URL.Path, "/client/debug/decline"):
+		body, _ := io.ReadAll(r.Body)
+		p.debugCalls = append(p.debugCalls, debugCall{r.URL.Path, r.Header.Clone(), body, len(body) > 0})
+		if p.debugStatus != 0 {
+			if p.debugRetry != "" {
+				w.Header().Set("Retry-After", p.debugRetry)
+			}
+			w.WriteHeader(p.debugStatus)
+			_, _ = w.Write([]byte(p.debugBody))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/decline") {
+			_, _ = w.Write([]byte(`{"id":"dbr_abc","declined":true}`))
+		} else {
+			_, _ = w.Write([]byte(`{"id":"dbr_abc","lines":3,"dropped_kv":1}`))
+		}
 	case strings.HasSuffix(r.URL.Path, "/client/leave"):
 		p.leaves++
 		p.leaveAuth = append(p.leaveAuth, r.Header.Get("Authorization"))

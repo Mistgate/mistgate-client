@@ -25,6 +25,8 @@ html.shell-tray .ty-fly { left: 8px; right: 8px; bottom: 8px; top: auto; width: 
 .shell .dr.open .dr-b:hover { background: none; }
 /* Settings: sections that are not in this build yet. */
 .shell .sx-ni.soon { opacity: .45; pointer-events: none; }
+/* Diagnostics, "Show contents": the lines that will be sent (the design draws the button, not the list). */
+.shell .sheet .mg-lines { max-height: 150px; margin: 0; padding: 10px 12px; overflow: auto; border-radius: 12px; background: color-mix(in oklab, var(--text) 6%, transparent); font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; user-select: text; }
 /* Notifications: "update installed" waits for updates to exist. */
 .shell .sx-nl .sx-row.nr:nth-child(5) { opacity: .45; pointer-events: none; }
 /* Subscription: the panel gives no support address yet, and leaving a subscription is on Home's menu until its

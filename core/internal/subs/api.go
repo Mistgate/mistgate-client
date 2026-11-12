@@ -89,20 +89,33 @@ type syncBody struct {
 		Used  int `json:"used"`
 		Limit int `json:"limit"`
 	} `json:"devices"`
+	Debug *struct {
+		Intake  bool `json:"intake"`
+		Unasked bool `json:"unasked"`
+		Request *struct {
+			ID          string `json:"id"`
+			Level       string `json:"level"`
+			Note        string `json:"note"`
+			ExpiresUnix int64  `json:"expires_unix"`
+		} `json:"request"`
+	} `json:"debug"`
 }
 
 const maxTelegram = 64
 
 // shortText keeps a name the panel's owner typed: one line, no control characters, at most 64 characters.
-func shortText(text string) string {
+func shortText(text string) string { return shortTextN(text, 64) }
+
+// shortTextN is shortText with another limit.
+func shortTextN(text string, limit int) string {
 	text = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
 			return ' '
 		}
 		return r
 	}, text)), " ")
-	if runes := []rune(text); len(runes) > 64 {
-		text = string(runes[:64])
+	if runes := []rune(text); len(runes) > limit {
+		text = string(runes[:limit])
 	}
 	return text
 }
@@ -238,7 +251,7 @@ type reply struct {
 }
 
 // call makes one API request. A redirect is never followed: it would carry the device key elsewhere.
-func (s *Store) call(ctx context.Context, method, target, bearer string, body []byte, timeout time.Duration, etag string) (reply, error) {
+func (s *Store) call(ctx context.Context, method, target, bearer string, body []byte, timeout time.Duration, etag string, headers ...string) (reply, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
@@ -255,6 +268,9 @@ func (s *Store) call(ctx context.Context, method, target, bearer string, body []
 	}
 	if etag != "" {
 		request.Header.Set("If-None-Match", etag)
+	}
+	for i := 0; i+1 < len(headers); i += 2 { // name, value pairs
+		request.Header.Set(headers[i], headers[i+1])
 	}
 	client := *s.client
 	client.Timeout = timeout
@@ -443,6 +459,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.DNS, st.DNSSplit = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
 	st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
+	st.Debug = panelDebug(b.Debug)
 	if b.Devices != nil && b.Devices.Used >= 0 && b.Devices.Limit >= 1 && b.Devices.Limit <= 1000 {
 		st.DevicesUsed, st.DevicesLimit = min(b.Devices.Used, 1000), b.Devices.Limit
 	}

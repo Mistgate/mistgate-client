@@ -25,6 +25,15 @@ type Result = {
 };
 type State = { state: 'idle' | 'running' | 'done' | 'failed'; step: number; pct: number; error: string; result: Result | null };
 type LogEntry = { t_unix_ms: number; level: string; src?: string; msg: string };
+// what a Mistgate panel says about diagnostics: it takes them, the person may send unasked, support asked for them
+type Ask = { id: string; level: string; note?: string; expires_unix: number };
+type DSub = { id: string; name: string; host: string; servers: Server[]; debug?: { intake: boolean; unasked?: boolean; request?: Ask } };
+type Line = { ts: number; lvl: string; src: string; msg: string; kv?: Record<string, string> };
+// the lines the service made and keeps: exactly these are sent
+type Snap = { key: string; at: number; id: string; bytes: number; count: number; lines: Line[] };
+// the design's six parts by position; this build has data for three of them
+// ponytail: Timeline, Paths and Network come with the data for them
+const PART: Record<number, string> = { 0: 'system', 3: 'checks', 5: 'log' };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
 const nums = (text: string, ...values: number[]) => { let i = 0; return text.replace(/\d+/g, (d) => (i < values.length ? String(values[i++]) : d)); };
@@ -57,6 +66,11 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
     logFrame = 0;
     bySub = new Map<string, Server[]>();
     servers: Server[] = []; // the subscriptions' servers, to name a result row as Home names the server
+    subs: DSub[] = [];
+    snap: Snap | null = null;
+    answered = new Set<string>(); // requests answered in this visit: the panel says so only at its next sync
+    busy = false;
+    sentId = '';
 
     mounted() {
       S ??= samples(Base);
@@ -70,11 +84,16 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         }),
       );
       rpc<State>('diag.get').then((s) => this.applyDiag(s), () => {});
-      const subs = (list: { id: string; servers: Server[] }[]) => { this.bySub = new Map(list.map((u) => [u.id, u.servers])); this.servers = list.flatMap((u) => u.servers); this.forceUpdate(); };
-      this.off.push(listen<{ subs: { id: string; servers: Server[] }[] }>('mg://subs', (e) => subs(e.payload.subs)));
-      rpc<{ subs: { id: string; servers: Server[] }[] }>('subs.list').then((r) => subs(r.subs), () => {});
+      const subs = (list: DSub[]) => {
+        this.subs = list; this.bySub = new Map(list.map((u) => [u.id, u.servers])); this.servers = list.flatMap((u) => u.servers);
+        // only a panel that takes diagnostics gets the design's full variant; a link subscription has nobody to send to
+        this.setState({ md: this.cur()?.debug?.intake ? 'mg' : 'basic' });
+      };
+      this.off.push(listen<{ subs: DSub[] }>('mg://subs', (e) => subs(e.payload.subs)));
+      rpc<{ subs: DSub[] }>('subs.list').then((r) => subs(r.subs), () => {});
+      document.addEventListener('click', this.onShow);
       rpc<{ entries: LogEntry[] }>('log.get').then((r) => { this.log = r.entries; this.forceUpdate(); }, () => {});
-      // a link subscription has no panel behind it: the design's "basic" variant, reports not offered
+      // until the subscriptions are read: the design's "basic" variant; block reports are not offered in this build
       this.setState({ md: 'basic', anonK: 'old', rep: 'closed' });
     }
     // "Checked 2 min ago" is plain markup in the design: say when this result was made
@@ -84,6 +103,85 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       const line = document.querySelector('.ck-meta > span');
       const text = line && [...line.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
       if (text && at && text.nodeValue !== words().time(at)) text.nodeValue = words().time(at);
+      this.paintHelp();
+    }
+    componentWillUnmount() {
+      document.removeEventListener('click', this.onShow);
+      super.componentWillUnmount();
+    }
+
+    // ---- "Ask your admin for help": the service makes the lines, the person can read them, then they are sent
+    cur() { return this.subs.find((u) => u.id === pref.get('sub')) ?? this.subs[0]; }
+    // support's open request for this PC, if any
+    ask() { const q = this.cur()?.debug?.request; return q && !this.answered.has(q.id) && q.expires_unix * 1000 > Date.now() ? q : undefined; }
+    want() {
+      const poff = this.state?.poff ?? {};
+      const note = (document.querySelector<HTMLTextAreaElement>('.sheet .ta textarea')?.value ?? '').trim().slice(0, 1000);
+      const q = this.ask();
+      return { sub: this.cur()?.id ?? '', parts: Object.keys(PART).filter((i) => !poff[i]).map((i) => PART[Number(i)]), note, ...(q ? { request: q.id } : {}) };
+    }
+    // the lines for what is ticked now; made again only when the choice or the note changed (the service keeps them 10 min)
+    async take() {
+      const want = this.want(), key = JSON.stringify(want);
+      if (this.snap?.key === key && Date.now() - this.snap.at < 9 * 60_000) return this.snap;
+      const r = await rpc<Omit<Snap, 'key' | 'at'>>('debug.preview', want);
+      return (this.snap = { ...r, key, at: Date.now() });
+    }
+    resize = () => void this.take().then(() => this.forceUpdate(), () => {});
+    async send() {
+      if (this.busy) return;
+      this.busy = true;
+      this.setState({ dbgErr: '' });
+      const w = words().dbg;
+      try {
+        const r = await rpc<{ ok: boolean; id?: string; code?: string; retry_s?: number }>('debug.send', { id: (await this.take()).id });
+        if (r.ok) {
+          const q = this.ask();
+          if (q) this.answered.add(q.id);
+          this.sentId = r.id ?? '';
+          this.snap = null;
+          this.setState({ rep: 'sent', copied: false, showC: false });
+        } else {
+          if (r.code === 'expired') this.snap = null;
+          const why = r.retry_s ? w.wait(Math.max(1, Math.ceil(r.retry_s / 60))) : r.code === 'offline' ? w.offline : r.code === 'no_request' ? w.gone : r.code === 'debug_full' ? w.full : w.fail;
+          if (r.code === 'no_request') { const q = this.ask(); if (q) this.answered.add(q.id); }
+          this.setState({ dbgErr: why });
+        }
+      } catch {
+        this.setState({ dbgErr: w.fail });
+      } finally {
+        this.busy = false;
+      }
+    }
+    // "Show contents" is plain markup in the design
+    onShow = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.sheet .lnk2')) return;
+      this.setState({ showC: !this.state?.showC });
+      this.resize();
+    };
+    // What the design draws as samples or not at all: the request's note, the lines to be sent, why a send failed, the
+    // code of what was sent.
+    paintHelp() {
+      const set = (node: Element | null | undefined, text: string) => { if (node && text && node.textContent !== text) node.textContent = text; };
+      set(document.querySelector('.ask .tx span'), this.ask()?.note ?? '');
+      const sheet = document.querySelector('.sheet');
+      if (!sheet) return;
+      set(sheet.querySelector('.sent .code > span'), this.sentId);
+      const warn = sheet.querySelector('.sh-warn');
+      const text = warn && [...warn.childNodes].reverse().find((n) => n.nodeType === Node.TEXT_NODE);
+      if (text && this.state?.dbgErr && text.nodeValue !== this.state.dbgErr) text.nodeValue = this.state.dbgErr;
+      let box = sheet.querySelector<HTMLElement>('.mg-lines');
+      const snap = this.state?.showC && this.state?.rep === 'open' ? this.snap : null;
+      if (!snap) { box?.remove(); return; }
+      if (!box) {
+        box = document.createElement('pre');
+        box.className = 'mg-lines';
+        box.tabIndex = 0;
+        sheet.querySelector('.sh-f')?.after(box);
+      }
+      const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 8);
+      const lines = snap.lines.map((l) => `${clock(l.ts)} ${l.lvl} ${l.src} ${l.msg}${l.kv ? ' ' + Object.entries(l.kv).map(([k, x]) => `${k}=${x}`).join(' ') : ''}`).join('\n');
+      if (box.textContent !== lines) box.textContent = lines;
     }
     applyDiag(s: State) {
       this.diag = s;
@@ -156,7 +254,19 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
 
       v.start = () => void rpc<State>('diag.run', { sub: pref.get('sub') }).then((s) => this.applyDiag(s), () => {});
       v.cancel = () => void rpc<State>('diag.cancel').then((s) => this.applyDiag(s), () => {});
-      Object.assign(v, { showHelp: false, asked: false, bestCls: 'hide' });
+      // help from the admin: only where the panel takes diagnostics, and unasked only where it lets the person
+      const u = this.cur(), q = this.ask(), rep = this.state?.rep ?? 'closed';
+      const can = !!u?.debug?.intake && (!!q || !!u.debug.unasked);
+      Object.assign(v, {
+        showHelp: v.showHelp && can && !q, asked: can && !!q && rep === 'closed', bestCls: 'hide',
+        shSub: String(v.shSub).replace('vpn.example.com', u?.host || u?.name || ''),
+        parts: v.parts.filter((_: any, i: number) => PART[i]).map((p: any) => ({ ...p, flip: () => { p.flip(); setTimeout(this.resize); } })),
+        repSize: this.snap ? nums(v.repSize, Math.max(1, Math.round(this.snap.bytes / 1024))) : '',
+        openRep: () => { this.setState({ rep: 'open', dbgErr: '', showC: false }); setTimeout(this.resize); },
+        sendRep: () => void this.send(),
+        offWarn: rep === 'open' && !!this.state?.dbgErr,
+        copy: () => { void navigator.clipboard?.writeText(this.sentId).catch(() => {}); this.setState({ copied: true }); },
+      });
 
       // a check that could not start (no subscription, no network) says so where the results would be
       const fail = d.state === 'failed' && !r ? words().diagFail[d.error] : undefined;

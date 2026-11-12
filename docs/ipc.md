@@ -71,6 +71,10 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `diag.get` | none | Diagnostic State |
 | `diag.cancel` | none | Diagnostic State |
 | `log.get` | none | `{"entries": [LogEntry...]}`; at most the latest 500 entries |
+| `log.clear` | none | `{}`; the log ring is emptied |
+| `debug.preview` | `{"sub": "<subscription id>", "parts": ["system", "checks", "log"], "note": "…", "request": "dbr_…"}` (`note`, `request` optional) | `{"id": "<snapshot id>", "count": N, "bytes": N, "lines": [{"ts": 0, "lvl": "info", "src": "…", "msg": "…", "kv": {…}}]}`, see "Debug logs" |
+| `debug.send` | `{"id": "<snapshot id>"}` | `{"ok": true, "id": "dbr_…", "lines": N}` or `{"ok": false, "code": "<code>", "retry_s": N}` |
+| `debug.decline` | `{"sub": "<subscription id>", "request": "dbr_…"}` | `{"ok": true}` or `{"ok": false, "code": "<code>", "retry_s": N}` |
 
 Status:
 
@@ -235,6 +239,33 @@ An unknown site is decided by address alone: smart uses the region list, while s
 to port 53 uses the VPN, except the questions of regional DNS below. Private, loopback, link-local, multicast, and
 unspecified destinations always use the VPN. Existing flows keep their chosen path; rule updates and list refreshes
 affect new flows immediately.
+
+### Debug logs
+
+A managed subscription carries `"debug": {"intake": true, "unasked": true, "request": {"id": "dbr_…", "level": "info", "note": "…", "expires_unix": 0}}`
+in `subs.list` and the `subs` event. `intake` says the panel takes debug logs; `unasked` that the person may send on
+their own (always present, false without `intake`); `request` is support's open request (`level` is `info` or `debug`,
+`note` at most 300 characters) and is left out when there is none or it has expired. The whole `debug` key is left out
+for a subscription that is not managed.
+
+`debug.preview` builds the bundle and shows it, line for line, before anything leaves the machine. `parts`: `system`
+(one line: version, Windows build, architecture, route mode, session state, protocol), `checks` (the last finished
+network check: one line per verdict and per server path, with the panel's path id, never a host), `log` (the log ring,
+last 24 hours). A `note` adds one line. Every text goes through a second scrub (addresses, links, e-mail addresses,
+`\Users\<name>` paths, MAC addresses and long tokens become `[removed]`) and the panel's limits are kept (a line 8 KiB,
+a message 1 KiB, 16 allowed `kv` keys of 160 characters, 20000 lines, 1 MiB gzipped; the oldest log lines go first).
+`request`, when given, must be the open request of that subscription (`no_request`), and the bundle then answers it.
+The service keeps only the latest preview (the gzip bytes, the subscription and the request) for 10 minutes.
+Errors: `bad_params` (also an unknown part or no line at all), `not_found` (no such subscription), `debug_off` (the
+subscription has no intake), `no_request`, `too_large`.
+
+`debug.send` sends exactly the stored bytes and drops them after a success. The result is never an RPC error: `code`
+is the panel's (`too_many_requests`, `device_removed`, `device_blocked`, `link_changed`, `cross_origin`, `debug_off`,
+`too_large`, `no_request`, `user_inactive`, `app_disabled`, `debug_full`, `retry`, `bad_request`, …) or `offline`,
+`decoy` (the panel answered like a normal page), `no_device` (the subscription is not enrolled), `expired` (no such preview, or it is older than 10 minutes). `retry_s`
+is the panel's `Retry-After`, 0 when it sent none. After a success the service syncs the subscription, so the request
+goes away. `debug.decline` tells the panel the person will not answer a request; a request that is not the open one
+gives `{"ok": false, "code": "no_request"}` without a call.
 
 ### Regional DNS
 
