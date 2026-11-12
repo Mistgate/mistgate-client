@@ -109,7 +109,7 @@ func TestParseVLESSBad(t *testing.T) {
 		"path with a fragment":    {realityXHTTP(), map[string]any{"path": "/x#y"}},
 		"path too long":           {realityXHTTP(), map[string]any{"path": "/" + strings.Repeat("a", 300)}},
 		"host header with a CRLF": {realityXHTTP(), map[string]any{"host": "a.example\r\nX: y"}},
-		"unknown mode":            {realityXHTTP(), map[string]any{"mode": "stream-one"}},
+		"unknown mode":            {realityXHTTP(), map[string]any{"mode": "burst"}},
 		"padding zero":            {realityXHTTP(), map[string]any{"x_padding_bytes": 0}},
 		"padding reversed":        {realityXHTTP(), map[string]any{"x_padding_bytes": "900-100"}},
 		"padding text":            {realityXHTTP(), map[string]any{"x_padding_bytes": "many"}},

@@ -20,7 +20,7 @@ type VLESS struct {
 	Transport string // "raw", "xhttp" or "ws"
 	Path      string // xhttp and ws; starts with "/"
 	HTTPHost  string // xhttp and ws; the Host header when it differs from the SNI
-	Mode      string // xhttp: "auto", "packet-up" or "stream-up"
+	Mode      string // xhttp: "auto", "packet-up", "stream-up" or "stream-one"
 	XPadding  [2]int32
 	Security  string // "reality" or "tls"
 	SNI       string
@@ -94,7 +94,7 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 		switch out.Mode = s.Mode; out.Mode {
 		case "":
 			out.Mode = "auto"
-		case "auto", "packet-up", "stream-up":
+		case "auto", "packet-up", "stream-up", "stream-one":
 		default:
 			return nil, errors.New("unsupported VLESS xhttp mode")
 		}

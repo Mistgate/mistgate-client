@@ -1548,6 +1548,17 @@ func startVLESS(ctx context.Context, p *profile.VLESS, server netip.Addr) (*xray
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// A closed or filtered port first: over xhttp Xray reports it only in its own log, which is off, and the check
+	// below would call it a rejected key.
+	dialer := net.Dialer{Timeout: 3 * time.Second}
+	probe, err := dialer.DialContext(ctx, "tcp", netip.AddrPortFrom(server, uint16(p.Port)).String())
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, xray.ErrNoAnswer
+	}
+	_ = probe.Close()
 	x, err := xray.Start(p, server, "")
 	if err != nil {
 		return nil, err

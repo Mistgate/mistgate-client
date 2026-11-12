@@ -202,7 +202,7 @@ The body (stable key order; the client ignores fields it does not know):
   no `awg` paths are given.
 
 - `vless` (Xray): `{ "server": "host", "port": 443, "uuid": "…", "flow": "xtls-rprx-vision", "transport": "raw|xhttp|ws",
-  "path": "/…", "host": "…", "mode": "auto|packet-up|stream-up", "x_padding_bytes": "100-1000", "security": "reality|tls",
+  "path": "/…", "host": "…", "mode": "auto|packet-up|stream-up|stream-one", "x_padding_bytes": "100-1000", "security": "reality|tls",
   "sni": "…", "fingerprint": "chrome", "public_key": "…", "short_id": "…", "spider_x": "/", "alpn": ["h2"] }`.
   `flow` only with `raw` and `reality`; `path` and `host` (only when set) with `xhttp` and `ws`; `mode` and
   `x_padding_bytes` with `xhttp` only; `public_key`, `short_id`, `spider_x` with `reality`; `alpn` with `tls`, which is
