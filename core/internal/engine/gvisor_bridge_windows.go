@@ -632,8 +632,23 @@ func (f *udpFlow) askDirect(payload []byte, end int, resolver netip.AddrPort) bo
 	if f.pending == nil {
 		f.pending = make(map[uint16]*dnsAsk)
 	}
+	old := f.pending[id]
+	var oldTimer *time.Timer
+	if old != nil {
+		oldTimer = old.timer
+	}
 	f.pending[id] = ask
 	f.mu.Unlock()
+	if old != nil {
+		if oldTimer != nil {
+			oldTimer.Stop()
+		}
+		// The same id again before an answer: a repeat of the same question simply takes its place; another
+		// question would leave the first with no answer from either side, so that one goes through the VPN.
+		if !bytes.Equal(old.payload[2:old.end], payload[2:end]) {
+			_ = f.send(old.payload)
+		}
+	}
 	if err := flow.WriteTo(payload, resolver); err != nil {
 		f.settle(id, ask)
 		f.down.Store(time.Now().Add(dnsDirectPause).UnixNano())

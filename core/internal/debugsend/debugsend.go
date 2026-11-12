@@ -88,7 +88,7 @@ var (
 	// neither, and a method or file name lost to this costs less than a site name sent
 	// A path may hold spaces (a person's name, "Program Files"), so it runs to the end of the text or to a quote.
 	rePath    = regexp.MustCompile(`(?i)(?:\b[a-z]:[\\/]|\\\\|\\device\\)[^"'<>|]*`)
-	reHost    = regexp.MustCompile(`(?:[\p{L}0-9-]+\.)+\p{L}{2,}`)
+	reHost    = regexp.MustCompile(`(?:[\p{L}0-9_-]+\.)+\p{L}{2,}`)
 	scrubbers = []*regexp.Regexp{reLink, reEmail, reUser, rePath, reMAC, reHost}
 )
 

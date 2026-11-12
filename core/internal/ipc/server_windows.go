@@ -53,32 +53,34 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			}
 			return acceptErr
 		}
-		pid, imagePath, callerSignature, inspectErr := inspectPipeCaller(conn)
-		facts := CallerFacts{
-			PID:                     pid,
-			ServicePath:             servicePath,
-			CallerPath:              imagePath,
-			ServiceSigned:           serviceSignature.Signed,
-			ServiceSignatureValid:   serviceSignature.Valid,
-			ServiceSignerThumbprint: serviceSignature.Thumbprint,
-			CallerSigned:            callerSignature.Signed,
-			CallerSignatureValid:    callerSignature.Valid,
-			CallerSignerThumbprint:  callerSignature.Thumbprint,
-		}
-		if !serviceSignature.Signed {
-			facts.DevelopmentClientPath = developmentClientPath()
-		}
-		trusted := inspectErr == nil && IsCallerTrusted(facts)
-		if inspectErr != nil {
-			logger.Warn("IPC caller check failed", "pid", pid, "image", imagePath, "trusted", false, "error", inspectErr)
-		} else {
-			logger.Info("IPC caller checked", "pid", pid, "image", imagePath, "trusted", trusted)
-		}
 		clients.Add(1)
-		go func(conn net.Conn, trusted bool) {
+		// The caller is checked beside the accept loop: reading a caller's file (it may sit on a slow share) must not
+		// keep the window from connecting.
+		go func(conn net.Conn) {
 			defer clients.Done()
+			pid, imagePath, callerSignature, inspectErr := inspectPipeCaller(conn)
+			facts := CallerFacts{
+				PID:                     pid,
+				ServicePath:             servicePath,
+				CallerPath:              imagePath,
+				ServiceSigned:           serviceSignature.Signed,
+				ServiceSignatureValid:   serviceSignature.Valid,
+				ServiceSignerThumbprint: serviceSignature.Thumbprint,
+				CallerSigned:            callerSignature.Signed,
+				CallerSignatureValid:    callerSignature.Valid,
+				CallerSignerThumbprint:  callerSignature.Thumbprint,
+			}
+			if !serviceSignature.Signed {
+				facts.DevelopmentClientPath = developmentClientPath()
+			}
+			trusted := inspectErr == nil && IsCallerTrusted(facts)
+			if inspectErr != nil {
+				logger.Warn("IPC caller check failed", "pid", pid, "image", imagePath, "trusted", false, "error", inspectErr)
+			} else {
+				logger.Info("IPC caller checked", "pid", pid, "image", imagePath, "trusted", trusted)
+			}
 			server.ServeConn(ctx, conn, trusted)
-		}(conn, trusted)
+		}(conn)
 	}
 }
 
