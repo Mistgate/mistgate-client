@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"io"
 	"log/slog"
 	"net"
@@ -143,7 +144,18 @@ var slowMethods = map[string]bool{
 	"servers.ping": true, "servers.hosts": true, "subs.preview": true, "subs.add": true, "subs.refresh": true, "subs.remove": true, "apps.list": true,
 }
 
-func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (any, *session.Subscription, *RPCError) {
+// dispatch answers one call; a panic in it is that call's error, not the end of the service.
+func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (result any, sub *session.Subscription, rpcError *RPCError) {
+	defer func() {
+		if r := recover(); r != nil {
+			safe.Report("call "+request.Method, r)
+			result, sub, rpcError = nil, nil, &RPCError{Code: "service_error", Message: "the call failed"}
+		}
+	}()
+	return s.handle(ctx, request, trusted)
+}
+
+func (s *Server) handle(ctx context.Context, request Request, trusted bool) (any, *session.Subscription, *RPCError) {
 	if !trusted && request.Method != "status" {
 		return nil, nil, &RPCError{Code: "not_trusted", Message: "caller is not trusted"}
 	}

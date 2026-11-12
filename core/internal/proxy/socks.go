@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"io"
 	"net"
 	"net/netip"
@@ -32,7 +33,10 @@ func (p *Proxy) acceptSocks(l *admitListener) {
 			time.Sleep(50 * time.Millisecond) // a temporary failure (out of handles): do not spin
 			continue
 		}
-		go p.serveSocks(conn.(*session))
+		go func() {
+			defer safe.Recover("socks") // one connection, not the service
+			p.serveSocks(conn.(*session))
+		}()
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"io"
 	"net"
 	"net/netip"
@@ -267,6 +268,7 @@ func (b *gvisorBridge) startForward(fn func()) bool {
 	b.mu.Unlock()
 	go func() {
 		defer b.wg.Done()
+		defer safe.Recover("flow") // one flow, not the service
 		fn()
 	}()
 	return true
@@ -711,7 +713,15 @@ func (f *udpFlow) readDirect(flow packetFlow, resolver netip.AddrPort) {
 func (f *udpFlow) run() {
 	defer f.close()
 	done := make(chan struct{}, 2)
+	// a panic in either half (the DNS reader takes what any program sent) ends this flow only
+	failed := func(r any) {
+		if r != nil {
+			safe.Report("udp flow", r)
+			done <- struct{}{}
+		}
+	}
 	go func() {
+		defer func() { failed(recover()) }()
 		buf := make([]byte, 65535)
 		for {
 			// No deadline: closing local (the idle timer, the context, the other side) wakes this read with an error.
@@ -732,6 +742,7 @@ func (f *udpFlow) run() {
 		}
 	}()
 	go func() {
+		defer func() { failed(recover()) }()
 		for {
 			payload, source, err := f.remote.ReadFrom()
 			if err != nil {

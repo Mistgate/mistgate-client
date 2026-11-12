@@ -85,7 +85,7 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     wait = 0; // the update's own timers
 
     mounted() {
-      this.off.push(listen<Routes>('mg://routes', (e) => { this.applyRoutes(e.payload); if (this.state?.upd === 'busy') this.updated('done'); }));
+      this.off.push(listen<Routes>('mg://routes', (e) => { if (!this.pending) this.applyRoutes(e.payload); if (this.state?.upd === 'busy') this.updated('done'); }));
       // the kill switch tile says the design's "on": only true when the setting is not off
       const ks = (s: { kill_switch: string }) => this.setState({ ksOff: s.kill_switch === 'off' });
       this.off.push(listen<{ kill_switch: string }>('mg://settings', (e) => ks(e.payload)));
@@ -121,12 +121,15 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       this.setState({ xapps: { ...this.state?.xapps, [m]: on ? [...new Set([...cur, path])] : cur.filter((x) => x !== path) } });
     }
     // "Add .exe": Windows' own file dialog; the program is switched on and stays in the list
+    picking = false; // one file dialog at a time
     pickApp() {
+      if (this.picking) return;
+      this.picking = true;
       void invoke<string>('pick_exe').then((path) => {
         if (!path) return;
         this.flipApp(path.toLowerCase(), true);
         window.setTimeout(this.loadApps, 600); // once the rules are saved, the service lists it
-      }, () => {});
+      }, () => {}).finally(() => { this.picking = false; });
     }
     loadLists() {
       rpc<Lists>('routes.lists').then((x) => { this.lists = x; x.lists.forEach((l) => this.seen.set(l.id, l)); this.forceUpdate(); }, () => {});
@@ -188,7 +191,11 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
     };
     addSites(row: Element | null) {
       const input = row?.querySelector('input') as HTMLInputElement | null;
-      const names = (input?.value ?? '').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+      // What was pasted may hold links and junk. The service refuses the whole set for one bad name, so only names it
+      // takes are kept (its own rule: letters, digits and hyphens in labels of up to 63, 253 in all).
+      const names = (input?.value ?? '').split(/[\s,;]+/)
+        .map((x) => x.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/[/?#].*$/, '').replace(/^[^@]*@/, '').replace(/:\d*$/, '').replace(/\.$/, ''))
+        .filter((x) => x.length <= 253 && /^(?:(?!-)[\p{L}0-9-]{1,63}(?<!-)\.)*(?!-)[\p{L}0-9-]{1,63}(?<!-)$/u.test(x));
       if (!names.length) return;
       input!.value = '';
       this.addNames(names);
@@ -197,7 +204,8 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       const m = this.state?.mode === 'only' ? 'only' : 'except';
       const cur: string[][] = this.state?.sites?.[m] ?? [];
       const have = new Set(cur.map((x) => x[0]));
-      this.setState({ sites: { ...this.state?.sites, [m]: cur.concat(names.filter((n) => !have.has(n)).map((n) => [n, ''])) } });
+      const fresh = [...new Set(names)].filter((n) => !have.has(n)).slice(0, Math.max(0, 500 - cur.length)); // the service's cap
+      this.setState({ sites: { ...this.state?.sites, [m]: cur.concat(fresh.map((n) => [n, ''])) } });
     }
 
     // The service's rules as the design's switches: every tile explicitly on or off.
@@ -226,6 +234,8 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
         block: { collections: [...others, ...(state.sel?.[m]?.ads ? [ADS] : [])].sort(), sites: this.routes?.rules?.block?.sites ?? [] },
       };
     }
+    setSeq = 0;
+    pending = 0; // routes.set calls not answered yet
     applyRoutes(r: Routes) {
       this.routes = r;
       const next = this.switches(r);
@@ -257,7 +267,10 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       if (key !== this.sent) {
         // the user flipped a tile or changed the sites
         this.sent = key;
-        void rpc<Routes>('routes.set', want).then((x) => this.applyRoutes(x), () => rpc<Routes>('routes.get').then((x) => this.applyRoutes(x), () => {}));
+        // only the answer to the newest request is shown: an older one would flip the tiles back for a moment
+        this.pending++;
+        const seq = ++this.setSeq, newest = (x: Routes) => { if (seq === this.setSeq) this.applyRoutes(x); };
+        void rpc<Routes>('routes.set', want).then(newest, () => rpc<Routes>('routes.get').then(newest, () => {})).finally(() => { this.pending--; });
         return;
       }
       // a tile without a list behind it, or one of the two that follow the mode, was flipped: put it back

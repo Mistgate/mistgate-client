@@ -1341,7 +1341,9 @@ func (t *realTunnel) Close() {
 		awg.Close()
 	}
 	if hclient != nil {
-		_ = hclient.Close()
+		// Beside, not in line: while the client reconnects it holds its lock through the whole handshake, and a
+		// disconnect must not wait seconds for a server that is not answering.
+		go func() { _ = hclient.Close() }()
 	}
 	if vless != nil {
 		_ = vless.Close()
