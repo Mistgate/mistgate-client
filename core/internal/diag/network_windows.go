@@ -30,6 +30,7 @@ import (
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/xray"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
@@ -184,6 +185,8 @@ func attemptProfile(ctx context.Context, p profile.Profile, endpoint netip.AddrP
 	switch p.Protocol {
 	case "hysteria2":
 		return attemptHy2(ctx, p.Hy2, endpoint, physical)
+	case "vless":
+		return attemptVLESS(ctx, p.VLESS, endpoint, physical)
 	case "awg":
 		if LiveAWG != nil {
 			if id, rtt := LiveAWG(); id != "" && id == p.ID {
@@ -360,6 +363,38 @@ func attemptHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort, ph
 		factory.close()
 		return 0, errNoAnswer
 	}
+}
+
+// attemptVLESS: the round trip is the TCP connect to the server's port, one circle, measured by itself; "works" is a
+// whole handshake through the server (the transport's security, the user, and the server's way out), made by the
+// same Xray the tunnel uses, outside any tunnel on the physical interface.
+func attemptVLESS(ctx context.Context, p *profile.VLESS, endpoint netip.AddrPort, physical interfaceInfo) (time.Duration, error) {
+	if p == nil || ctx.Err() != nil {
+		return 0, errNoAnswer
+	}
+	started := time.Now()
+	conn, err := dialBound(ctx, "tcp4", endpoint.String(), physical)
+	if err != nil {
+		return 0, errNoAnswer
+	}
+	rtt := time.Since(started)
+	_ = conn.Close()
+	iface, err := net.InterfaceByIndex(int(physical.Index))
+	if err != nil {
+		return 0, errNoAnswer
+	}
+	x, err := xray.Start(p, endpoint.Addr(), iface.Name)
+	if err != nil {
+		return 0, errBadConfig
+	}
+	defer x.Close()
+	switch err := x.CheckAny(ctx); {
+	case err == nil:
+		return max(rtt, time.Microsecond), nil
+	case errors.Is(err, xray.ErrRejected):
+		return 0, errAuthRejected
+	}
+	return 0, errNoAnswer
 }
 
 func attemptAWG(ctx context.Context, p *profile.AWG, endpoint netip.AddrPort, physical interfaceInfo, timeout time.Duration) (time.Duration, error) {

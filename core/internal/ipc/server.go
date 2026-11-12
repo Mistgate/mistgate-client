@@ -168,7 +168,7 @@ func (s *Server) dispatch(ctx context.Context, request Request, trusted bool) (a
 				return nil, nil, badParams()
 			}
 			switch protocol {
-			case "auto", "hysteria2", "awg":
+			case "auto", "hysteria2", "awg", "vless":
 				target.Protocol = protocol
 			default:
 				return nil, nil, badParams()
@@ -541,6 +541,8 @@ func (s *Server) serverHosts(ctx context.Context, sub string) (map[string]Server
 			host = p.Hy2.Host
 		case p.AWG != nil:
 			host = p.AWG.EndpointHost
+		case p.VLESS != nil:
+			host = p.VLESS.Host
 		}
 		if host == "" {
 			continue

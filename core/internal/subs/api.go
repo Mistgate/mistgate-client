@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	capsHeader         = "v=1; hysteria2=2; gecko=1; awg=2.0,3.1"
+	capsHeader         = "v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1"
 	apiUserAgent       = "Mistgate/0.0.1 (Windows)"
 	minSyncSeconds     = 600
 	defaultSyncSeconds = 3600
@@ -405,7 +405,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	for number, server := range b.Servers {
 		for _, path := range server.Paths {
 			raw, err := json.Marshal(path)
-			if _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" {
+			if _, _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" {
 				st.Unsupported++
 				continue
 			}
@@ -519,12 +519,16 @@ func (s *Store) pendingKey(link string) (string, error) {
 	return key, s.remember(func(d *diskState) { d.Pending[link] = key })
 }
 
-// pathProfile turns a stored path (the panel's JSON) into a profile through the Mihomo proxy parsers, so that one
-// place knows the profiles and the UAPI.
-func pathProfile(raw string) (*profile.Hy2, *profile.AWG, error) {
+// pathProfile turns a stored path (the panel's JSON) into a profile: Hysteria2 and AmneziaWG through the Mihomo proxy
+// parsers, so that one place knows the profiles and the UAPI; VLESS through its own settings parser.
+func pathProfile(raw string) (*profile.Hy2, *profile.AWG, *profile.VLESS, error) {
 	var path syncPath
 	if json.Unmarshal([]byte(raw), &path) != nil {
-		return nil, nil, errors.New("invalid stored path")
+		return nil, nil, nil, errors.New("invalid stored path")
+	}
+	if path.Protocol == "vless" {
+		vless, err := profile.ParseVLESS(path.Settings)
+		return nil, nil, vless, err
 	}
 	var proxy map[string]any
 	var err error
@@ -537,10 +541,10 @@ func pathProfile(raw string) (*profile.Hy2, *profile.AWG, error) {
 		err = errors.New("unsupported path protocol")
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	_, hy2, awg, err := parseProxyProfile(proxy)
-	return hy2, awg, err
+	return hy2, awg, nil, err
 }
 
 func hy2Proxy(settings json.RawMessage) (map[string]any, error) {

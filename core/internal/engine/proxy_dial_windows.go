@@ -84,6 +84,14 @@ func hy2Dialer(o hy2Outbound) vpnDialer {
 	}
 }
 
+// vlessDialer hands the name to the server too. The server's answer comes after the proxy has told its client that
+// the connection is made; a target that does not answer then shows as a closed connection.
+func vlessDialer(o vlessOutbound) vpnDialer {
+	return func(ctx context.Context, host string, port uint16) (net.Conn, error) {
+		return o.x.DialTCP(ctx, host, port)
+	}
+}
+
 func awgStackDialer(tnet *netstack.Net, allow func(netip.Addr) bool) vpnDialer {
 	return func(ctx context.Context, host string, port uint16) (net.Conn, error) {
 		if tnet == nil {

@@ -22,7 +22,7 @@ const rpc = <T = Status>(method: string, params: object = {}) => invoke<T>('rpc'
 // The design words four steps; its second ("UDP looks blocked") is a detector's line, not a step of ours.
 const STEP: Record<string, number> = { resolve: 0, handshake: 2, tunnel: 3, verify: 3 };
 export const PROTO: Record<string, [fam: string, label: string, full: string]> = {
-  hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'],
+  hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'], vless: ['vless', 'VLESS', 'VLESS'],
 };
 // the design's flags, and Turkey's, which the canvas does not have yet (drawn for the region list)
 // ponytail: a country outside this table has no picture; the canvas needs the rest of the flags
@@ -454,7 +454,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           },
           key: n.key, id: n.name, country: n.name, suf: sufOf(n), mark: viaOf(n), mkc: viaOf(n) ? '' : 'hide', flag: n.flag, via: viaOf(n), hasVia: !!viaOf(n),
           now: !!on && n.entries.some((e) => inUse(e)),
-          h2: fams.has('h2'), vless: false, awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
+          h2: fams.has('h2'), vless: fams.has('vless'), awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
           vd: '', vt: '', vi: 'check', vc: 'hide', vo: 0, vrow: '', pisC: '',
           sigX: best === Infinity ? 'nov' : '', sig: (best === Infinity ? '' : quality(best)) + (busy ? ' busy' : '') + (ids.some((id) => flash[id]) ? ' flash' : ''), ping: () => this.ping(ids), ms: best === Infinity ? '—' : String(best),
@@ -487,14 +487,14 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const picked = this.st().prof === 'h2' && sel !== 'auto';
         Object.assign(v.cur, {
           country: node.name, suf: sufOf(node), title: node.name, flag: node.flag, fam: entry.fam, label: entry.label,
-          isH2: entry.fam === 'h2', isAwg: entry.fam === 'awg', isVless: false,
+          isH2: entry.fam === 'h2', isAwg: entry.fam === 'awg', isVless: entry.fam === 'vless',
           // the design says "direct" after the dot; a node reached through another says so in the subscription's words
           srvSub: viaOf(node) ? String(v.cur.srvSub).split(' · ')[0] + ' · ' + viaOf(node) : v.cur.srvSub,
         });
         if (!on || !this.traffic) v.msTxt.cur = v.cur.ms = '—';
         Object.assign(v, {
           profs: node.entries.map((e) => ({
-            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: through(e.s) ? e.full.replace('relay', through(e.s)) : e.full, isH2: e.fam === 'h2', isVless: false, isAwg: e.fam === 'awg',
+            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: through(e.s) ? e.full.replace('relay', through(e.s)) : e.full, isH2: e.fam === 'h2', isVless: e.fam === 'vless', isAwg: e.fam === 'awg',
             cls: picked && e.s.id === sel ? 'on' : '', on: picked && e.s.id === sel ? 'true' : 'false', pick: () => this.choose(e.s.id, true),
           })),
           profAuto: !picked, poAutoCls: picked ? '' : 'on',

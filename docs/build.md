@@ -16,6 +16,17 @@ pnpm bundle
 wintun.net once and checked against a pinned SHA-256), then builds the window and the installer:
 `ui/src-tauri/target/release/bundle/nsis/Mistgate_<version>_x64-setup.exe`.
 
+## The service links Xray
+
+VLESS runs on `github.com/xtls/xray-core` as a library, in the service's own process: no second executable. Only what
+a VLESS client needs is imported (`internal/xray`: the vless outbound and the tcp, splithttp, websocket, tls and reality
+transports; no routing, DNS, stats, commander or config loaders), which makes the service about 7 MB larger (16.1 MB
+to 23.1 MB with the flags above). Xray's releases are tagged `v26.x.y`, which Go cannot take as a module version, so
+`go.mod` carries the pseudo-version of the release's commit (`v1.260327.1-0.20261109052709-676eaf66f8f0` is v26.11.9);
+to update, `go get github.com/xtls/xray-core@<release commit>`. Xray needs a newer gVisor than the forwarder was written
+against (`go.mod` is at the version Xray asks for) and newer `x/net`, `x/sys`, `x/crypto` and uTLS. Xray-core and
+`xtls/reality` are MPL-2.0 (a notice of components, if one is shipped, lists them).
+
 ## What the installer does
 
 - Installs for the machine (asks for elevation once) into `Program Files\Mistgate`: `mistgate.exe` (the window),

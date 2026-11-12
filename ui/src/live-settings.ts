@@ -11,7 +11,7 @@ import { words } from './live-i18n';
 type Status = { state: string; server: string; server_id?: string; protocol?: string };
 // the local proxy as `proxy.get` reports it; the password goes to this window only and is never kept or logged here
 type Proxy = { on: boolean; lan: boolean; host: string; socks_port: number; http_port: number; user: string; password: string; error: string };
-type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg'; game: boolean; autoconnect: boolean };
+type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg' | 'vless'; game: boolean; autoconnect: boolean };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
 
@@ -95,8 +95,8 @@ export function liveChip(Base: typeof DCLogic): typeof DCLogic {
   } as unknown as typeof DCLogic;
 }
 
-const PR: Record<string, Settings['protocol']> = { auto: 'auto', h2: 'hysteria2', awg: 'awg' };
-const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'awg' };
+const PR: Record<string, Settings['protocol']> = { auto: 'auto', h2: 'hysteria2', awg: 'awg', vless: 'vless' };
+const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'awg', vless: 'vless' };
 
 export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
   return class LiveSettings extends (liveChip(Base) as any) {
@@ -194,7 +194,6 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       v.tg.min = () => flip('min');
       v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
-      v.prSet.vless = () => {}; // drawn for the finished product; not in this build
       // Sections drawn for the finished product and not in this build (Privacy, Notifications, Updates, Local proxy;
       // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
       const u = this.sub();

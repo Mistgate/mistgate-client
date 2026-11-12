@@ -35,6 +35,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/stun"
+	"github.com/mistgate/mistgate-client/core/internal/xray"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
@@ -90,6 +91,7 @@ type realTunnel struct {
 	closed  bool
 	adapter *netcfg.Adapter
 	client  client.Client
+	vless   *xray.Instance
 	bridge  *gvisorBridge
 	awg     *device.Device
 }
@@ -637,6 +639,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	var awgNet *netstack.Net
 	var awgStack bool // AmneziaWG runs its own stack behind the forwarder, not on the adapter itself
 	var hy2Client client.Client
+	var vlessOut vlessOutbound
 	var awgDNS []netip.Addr
 	// The settings read here are the ones this attempt uses; a change makes the manager start a new attempt.
 	customDNS, customMTU := configured.DNSAddrs(), configured.MTU
@@ -665,6 +668,24 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if !run.tunnel.setClient(hy2Client) {
 			return Info{}, context.Canceled
 		}
+	} else if selected.Protocol == "vless" {
+		x, err := startVLESS(runCtx, selected.VLESS, serverIP)
+		if err != nil {
+			if runCtx.Err() != nil {
+				return Info{}, runCtx.Err()
+			}
+			if errors.Is(err, xray.ErrRejected) {
+				return Info{}, failure("auth_rejected", "VLESS handshake: server rejected the client")
+			}
+			if !errors.Is(err, xray.ErrNoAnswer) {
+				return Info{}, failure("tunnel_failed", "VLESS configuration")
+			}
+			return Info{}, failure("no_server_answers", "VLESS handshake")
+		}
+		if !run.tunnel.setVLESS(x) {
+			return Info{}, context.Canceled
+		}
+		vlessOut = vlessOutbound{x: x}
 	} else {
 		adapter, err := netcfg.Create(awgMTU)
 		if err != nil {
@@ -705,14 +726,19 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		return Info{}, err
 	}
 	adapter := run.tunnel.adapterSnapshot()
-	if selected.Protocol == "hysteria2" {
+	if selected.Protocol == "hysteria2" || selected.Protocol == "vless" {
+		// both carry the traffic in this process: the adapter is only a door to the forwarder
+		name, via := "Hysteria2", outbound(hy2Outbound{client: hy2Client})
+		if selected.Protocol == "vless" {
+			name, via = "VLESS", vlessOut
+		}
 		mtu := 1500
 		if customMTU != 0 {
 			mtu = customMTU
 		}
 		adapter, err = netcfg.Create(mtu)
 		if err != nil {
-			return Info{}, failure("tunnel_failed", "Hysteria2 tunnel: create adapter")
+			return Info{}, failure("tunnel_failed", name+" tunnel: create adapter")
 		}
 		if !run.tunnel.setAdapter(adapter) {
 			return Info{}, context.Canceled
@@ -737,18 +763,18 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				return Info{}, runCtx.Err()
 			}
 			if errors.Is(err, netcfg.ErrNoRoute) {
-				return Info{}, failure("offline", "Hysteria2 tunnel: no bypass route")
+				return Info{}, failure("offline", name+" tunnel: no bypass route")
 			}
-			return Info{}, failure("tunnel_failed", "Hysteria2 tunnel configuration")
+			return Info{}, failure("tunnel_failed", name+" tunnel configuration")
 		}
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, hy2Outbound{client: hy2Client}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute); err != nil {
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, via, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
-			return Info{}, failure("tunnel_failed", "Hysteria2 tunnel bridge")
+			return Info{}, failure("tunnel_failed", name+" tunnel bridge")
 		}
 	} else {
 		if adapter == nil {
@@ -817,6 +843,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	switch {
 	case selected.Protocol == "hysteria2":
 		proxyDial = hy2Dialer(hy2Outbound{client: hy2Client})
+	case selected.Protocol == "vless":
+		proxyDial = vlessDialer(vlessOut)
 	case awgStack:
 		proxyDial = awgStackDialer(awgNet, r.AllowDest)
 	default:
@@ -851,7 +879,7 @@ func (r *Real) keepLatency(ctx context.Context, run *realRun, p profile.Profile)
 	ticker := time.NewTicker(latencyEvery)
 	defer ticker.Stop()
 	for {
-		if rtt, err := diag.Handshake(ctx, p, fastestTimeout); err == nil {
+		if rtt, err := diag.Latency(ctx, p, fastestTimeout); err == nil {
 			r.mu.Lock()
 			if r.current == run {
 				run.rtt = rtt
@@ -1215,6 +1243,18 @@ func (t *realTunnel) setClient(hclient client.Client) bool {
 	return false
 }
 
+func (t *realTunnel) setVLESS(x *xray.Instance) bool {
+	t.mu.Lock()
+	if !t.closed {
+		t.vless = x
+		t.mu.Unlock()
+		return true
+	}
+	t.mu.Unlock()
+	_ = x.Close()
+	return false
+}
+
 func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort)) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -1264,8 +1304,8 @@ func (t *realTunnel) Close() {
 		return
 	}
 	t.closed = true
-	bridge, awg, hclient, adapter := t.bridge, t.awg, t.client, t.adapter
-	t.bridge, t.awg, t.client, t.adapter = nil, nil, nil, nil
+	bridge, awg, hclient, adapter, vless := t.bridge, t.awg, t.client, t.adapter, t.vless
+	t.bridge, t.awg, t.client, t.adapter, t.vless = nil, nil, nil, nil, nil
 	t.mu.Unlock()
 	if bridge != nil {
 		bridge.Close()
@@ -1275,6 +1315,9 @@ func (t *realTunnel) Close() {
 	}
 	if hclient != nil {
 		_ = hclient.Close()
+	}
+	if vless != nil {
+		_ = vless.Close()
 	}
 	if adapter != nil {
 		_ = adapter.Close()
@@ -1293,6 +1336,11 @@ func profileEndpoint(p profile.Profile) (string, uint16, error) {
 			return "", 0, errors.New("missing AmneziaWG endpoint")
 		}
 		return p.AWG.EndpointHost, p.AWG.EndpointPort, nil
+	case "vless":
+		if p.VLESS == nil || p.VLESS.Host == "" || p.VLESS.Port == 0 {
+			return "", 0, errors.New("missing VLESS endpoint")
+		}
+		return p.VLESS.Host, p.VLESS.Port, nil
 	default:
 		return "", 0, errors.New("unsupported profile protocol")
 	}
@@ -1491,6 +1539,26 @@ func startHy2(ctx context.Context, p *profile.Hy2, endpoint netip.AddrPort) (cli
 		}()
 		return nil, connectCtx.Err()
 	}
+}
+
+// startVLESS starts Xray for p and proves the path with a whole handshake through the server before any adapter exists,
+// as the Hysteria2 client does by connecting: Xray itself connects only when the first stream is asked for. The
+// instance is closed on every failure.
+func startVLESS(ctx context.Context, p *profile.VLESS, server netip.Addr) (*xray.Instance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	x, err := xray.Start(p, server, "")
+	if err != nil {
+		return nil, err
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := x.CheckAny(checkCtx); err != nil {
+		_ = x.Close()
+		return nil, err
+	}
+	return x, nil
 }
 
 func startAWGHandshake(ctx context.Context, tunDevice tun.Device, p *profile.AWG, endpoint netip.AddrPort, tunnel *realTunnel) error {

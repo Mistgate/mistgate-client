@@ -87,7 +87,7 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
     findings(r: Result) {
       const { I, G } = S!;
       const w = words();
-      const way = (protocol: string) => (protocol === 'awg' ? I.srvRows[1].paths[2].n : I.srvRows[0].paths[2].n); // "AmneziaWG · direct" / "Hysteria2 · direct"
+      const way = (protocol: string) => (protocol === 'awg' ? I.srvRows[1].paths[2].n : protocol === 'vless' ? I.srvRows[0].paths[0].n : I.srvRows[0].paths[2].n); // "AmneziaWG · direct" / "VLESS · TCP · direct" / "Hysteria2 · direct"
       const why: Record<string, string> = {
         udp_no_answer: I.srvRows[0].paths[2].m, no_answer: I.srvRows[3].paths[0].m, not_found: I.srvRows[3].paths[0].m,
         auth_rejected: I.srvRows[4].paths[0].m, bad_config: I.srvRows[4].paths[0].m, engine_error: I.srvRows[1].paths[2].m,

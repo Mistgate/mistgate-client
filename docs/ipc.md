@@ -45,7 +45,7 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 |---|---|---|
 | `hello` | `{"client": "0.0.1"}` | `{"service": "0.0.1", "trusted": true, "api": 0}` |
 | `status` | — | Status |
-| `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg", "sub": "<subscription id>"}` (all optional) | Status |
+| `connect` | `{"server": "auto" \| "<server id>", "protocol": "auto" \| "hysteria2" \| "awg" \| "vless", "sub": "<subscription id>"}` (all optional) | Status |
 | `disconnect` | — | Status |
 | `subscribe` | `{"events": ["status", "traffic", "log", "subs", "settings", "diag", "routes"]}` | `{}`; the events then arrive on this connection |
 | `subs.list` | — | `{"subs": [Subscription…]}` |
@@ -78,7 +78,16 @@ soonest (the first of the list when none answers). `server_id` is the id of the 
 repeat, ids do not.
 
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
-protocol that are actually in use.
+protocol that are actually in use (`hysteria2`, `awg` or `vless`; a window that only knows the first two must show an
+unknown value as plain text, not guess).
+
+VLESS runs on an embedded Xray-core (REALITY or TLS; raw, xhttp or ws transport; Vision flow), only from a panel's
+client API. Its handshake is a whole session through the server (the transport's security, the user, and the server's own
+way out), made before the adapter exists. A failed one ends the connect with `auth_rejected` when the server answered
+but would not take the client (an unknown user, a REALITY key or short id it does not know), `tunnel_failed` for a profile
+Xray cannot use, and `no_server_answers` otherwise. Xray's own log is off and nothing it could write reaches the log of the
+service. VLESS has no answer to a connection before the target speaks, so a target that cannot be reached shows to
+the application as a connection that closes right after it opens.
 
 ```json
 {"state": "off", "step": "", "since_unix": 0, "server": "", "server_id": "", "protocol": "", "route": "", "error": ""}
@@ -117,7 +126,7 @@ means the user's original choice, not the one the retries moved to).
 
 Settings are saved as plain JSON in `<data directory>\settings.json`; a missing or broken file starts with defaults.
 `kill_switch` is `off`, `while`, or `always` (default `while`); `lan` allows private and link-local addresses through
-the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, or `awg` (default `auto`); `game` prefers AWG
+the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, `awg`, or `vless` (default `auto`); `game` prefers AWG
 when protocol selection is automatic (default `false`); `route_mode` is `all`, `smart`, or `selected` (default `all`), and
 `route_region` is `auto`, `none`, or a two-letter lower-case country code (default `auto`). `settings.set` accepts only these keys, updates only the keys
 provided, and returns `bad_params` for an unknown key or invalid value. Changes apply immediately to the active
@@ -138,8 +147,8 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 
 `dns` takes one or two valid IPv4 or IPv6 addresses (no port, not unspecified, not loopback); a value is stored
 normalised (`netip.Addr` text, joined with `,`), and anything else is `bad_params`. The servers are reached through the
-tunnel like any other destination, in both protocols and every route mode; they are the adapter's DNS and the only DNS
-the kill switch lets out. `mtu` replaces the adapter's value in both protocols (Hysteria2 otherwise uses 1500). For
+tunnel like any other destination, in every protocol and every route mode; they are the adapter's DNS and the only DNS
+the kill switch lets out. `mtu` replaces the adapter's value in every protocol (Hysteria2 and VLESS otherwise use 1500). For
 AmneziaWG the adapter gets the smaller of `mtu` and the profile's own MTU (1280 when the profile has none), because
 a size above the one the server expects only breaks packets. Changing `dns` or `mtu` while connecting, connected or
 reconnecting restarts the attempt with the network held, like a change of the AmneziaWG path (the status goes
@@ -339,7 +348,9 @@ no secrets. URL fetches send `User-Agent: mihomo/1.19.33 Mistgate/0.0.1 (Windows
 panels that recognize Mihomo return their full client profile. A URL body may be the usual plain or base64 link list,
 or a Mihomo YAML profile with a top-level `proxies` list. Only `proxies` is used; groups, rules and DNS are ignored
 because Mistgate applies its own routing. Supported proxies are Hysteria2 and WireGuard with or without
-`amnezia-wg-option`; other types are counted as unsupported.
+`amnezia-wg-option`; other types are counted as unsupported. VLESS does not come this way: only a panel's client API
+(`docs/client-api.md`) hands it out, and a path with a transport, security or flow the client does not know is counted as
+unsupported like any other unknown protocol.
 
 A server of a panel's client API also carries its place in the panel's structure: `node` (the paths of one node share
 it), `country` (code), `city`, `via` (`direct`, `relay` or `warp`), `ipv6`, `load` (`low`, `medium`, `high`, or absent) and, for AmneziaWG, `version`
@@ -451,7 +462,11 @@ A completed `result` has this shape:
 The physical network kind is `wifi`, `ethernet`, `mobile`, or `other`. `servers` contains one entry per profile in
 the selected subscription. Server verdicts are `ok`, `blocked`, `down`, `config`, or `app`; reasons are
 `udp_no_answer`, `no_answer`, `not_found`, `auth_rejected`, `bad_config`, and `engine_error`. `rtt_ms` is populated
-for successful handshakes.
+for successful handshakes. For VLESS (all TCP) `rtt_ms` is the time of one TCP connect to the server's port, and "ok" means
+a whole handshake through the server succeeded (the transport's security, the user, and the server's way out to a public
+TLS server), made with the same Xray as the tunnel, on the physical interface. A server that answers TCP but fails that
+handshake is `blocked` with `no_answer`, never `udp_no_answer`; `auth_rejected` is a user or REALITY key the server does
+not know (VLESS gives no reason, so a server whose own way out is shut looks the same).
 
 `udp.verdict` is `ok` when STUN or a UDP server answered, `blocked` when neither answered but a TCP check or a server
 host check succeeded, and `unknown` otherwise. `nat.verdict` is `open` when both STUN servers report the same mapped
@@ -493,7 +508,7 @@ product's name as a user knows it; a product appears once, at most 10 entries, t
 found and on non-Windows builds. It carries no paths, process ids or command lines. It is read when the run starts.
 
 “Outside the tunnel” means each diagnostic socket selects the physical IPv4 default-route interface, even while a
-VPN tunnel is active. AmneziaWG handshake sockets use the same interface. The check does not add tunnel routes; the
+VPN tunnel is active. AmneziaWG handshake sockets and the sockets of a VLESS check use the same interface. The check does not add tunnel routes; the
 service's existing kill-switch allowance for its own sockets lets these probes leave beside the tunnel.
 
 Diagnostic results and logs contain verdicts, counters, and timings only. They do not include authentication values,
@@ -571,7 +586,7 @@ tunnel. Names are resolved on the tunnel's side, never by this machine's DNS. De
 unspecified, multicast, link-local, private, carrier-grade NAT (100.64/10) or other reserved addresses are refused
 (SOCKS5 `0x02`, HTTP `403`), and so is a name that cannot be a public one (no dot, `.local`, `.lan`, `.internal`, a
 numeric spelling of an address and the like). A name's addresses are checked after it resolves for AmneziaWG; over
-Hysteria2 the server resolves it and the check is the name's shape only.
+Hysteria2 and VLESS the server resolves it and the check is the name's shape only.
 
 What it does. SOCKS5: the CONNECT command with IPv4, IPv6 and name addresses; UDP ASSOCIATE and BIND are answered
 "command not supported". HTTP: `CONNECT host:port` (a tunnel) and requests with an absolute `http://` URL, forwarded

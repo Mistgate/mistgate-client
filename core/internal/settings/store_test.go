@@ -43,6 +43,12 @@ func TestStoreRoundTripAndChanges(t *testing.T) {
 	if got, err := reopened.Set(map[string]json.RawMessage{"route_mode": json.RawMessage(`"selected"`)}); err != nil || got.RouteMode != "selected" {
 		t.Fatalf("selected route mode = %#v, %v", got, err)
 	}
+	if got, err := reopened.Set(map[string]json.RawMessage{"protocol": json.RawMessage(`"vless"`)}); err != nil || got.Protocol != "vless" {
+		t.Fatalf("vless protocol = %#v, %v", got, err)
+	}
+	if _, err := reopened.Set(map[string]json.RawMessage{"protocol": json.RawMessage(`"vmess"`)}); err != ErrBadParams {
+		t.Fatalf("unknown protocol error = %v, want ErrBadParams", err)
+	}
 }
 
 func TestStoreDefaultsOnBrokenFile(t *testing.T) {

@@ -18,7 +18,7 @@ const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { metho
 const view = (s: Status | null) =>
   !s ? 'off' : s.state === 'connected' ? 'on' : s.state === 'connecting' || s.state === 'reconnecting' ? 'ing'
     : s.state === 'blocked' ? 'ks' : s.state === 'error' ? 'error' : 'off';
-const LABEL: Record<string, string> = { hysteria2: 'HY2', awg: 'AWG 3.1' };
+const LABEL: Record<string, string> = { hysteria2: 'HY2', awg: 'AWG 3.1', vless: 'VLESS' };
 
 function flagOf(name: string) {
   const m = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);

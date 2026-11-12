@@ -401,7 +401,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 			var err error
 			switch {
 			case strings.HasPrefix(entry.Raw, "{"):
-				p.Hy2, p.AWG, err = pathProfile(entry.Raw)
+				p.Hy2, p.AWG, p.VLESS, err = pathProfile(entry.Raw)
 			case entry.Server.Protocol == "hysteria2":
 				if strings.Contains(entry.Raw, "://") {
 					p.Hy2, err = profile.ParseHy2(entry.Raw)

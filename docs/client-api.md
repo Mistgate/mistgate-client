@@ -26,10 +26,10 @@ panel branches, not released yet). Nothing is built in the client.
 
 ## Capabilities
 
-`X-Mistgate-Caps: v=1; hysteria2=2; gecko=1; awg=2.0,3.1; probe=1`
+`X-Mistgate-Caps: v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1; probe=1`
 
 A list of `name=version`. The panel does not hand out what is not listed (Gecko obfuscation only to clients that
-announce it, the AmneziaWG version by what is listed), so a new protocol or feature appears without a new format
+announce it, the AmneziaWG version by what is listed, VLESS paths only to `vless=1`), so a new protocol or feature appears without a new format
 version. `v` is this API's version.
 
 ## Discovery
@@ -155,7 +155,7 @@ The body (stable key order; the client ignores fields it does not know):
   "servers": [
     { "id": "srv_…", "country": "DE", "city": "Frankfurt", "load": "low|medium|high",
       "paths": [
-        { "id": "pth_…", "protocol": "hysteria2|awg", "via": "direct|relay|warp", "ipv6": false, "settings": { } }
+        { "id": "pth_…", "protocol": "hysteria2|awg|vless", "via": "direct|relay|warp", "ipv6": false, "settings": { } }
       ] }
   ]
 }
@@ -200,6 +200,17 @@ The body (stable key order; the client ignores fields it does not know):
   `reject_after_time`, `keepalive_timeout`, `max_handshake_attempts`.
   A version is given only when caps list it (`awg=2.0,3.1`). When the operator switched AmneziaWG off for link apps,
   no `awg` paths are given.
+
+- `vless` (Xray): `{ "server": "host", "port": 443, "uuid": "…", "flow": "xtls-rprx-vision", "transport": "raw|xhttp|ws",
+  "path": "/…", "host": "…", "mode": "auto|packet-up|stream-up", "x_padding_bytes": "100-1000", "security": "reality|tls",
+  "sni": "…", "fingerprint": "chrome", "public_key": "…", "short_id": "…", "spider_x": "/", "alpn": ["h2"] }`.
+  `flow` only with `raw` and `reality`; `path` and `host` (only when set) with `xhttp` and `ws`; `mode` and
+  `x_padding_bytes` with `xhttp` only; `public_key`, `short_id`, `spider_x` with `reality`; `alpn` with `tls`, which is
+  the ordinary certificate check (no pin, never skipped). No gRPC, no mux. The client reads these fields in one place
+  (`profile.ParseVLESS`) and checks them: port, UUID form, `public_key` as 32 bytes of base64url, `short_id` as at most
+  8 bytes of hex, paths starting with `/` and free of spaces and control characters, names of DNS characters only. A
+  transport, security, flow, mode or fingerprint it does not know makes the path unsupported (counted, not an error of
+  the sync). The client gives Xray the server's address, never its name; `sni` and `host` are separate fields.
 
 **AmneziaWG keys.** The panel generates the device's key pairs and delivers them in `sync` (the owner's ruling). A
 key the client makes itself would be a later capability.

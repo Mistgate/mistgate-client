@@ -61,7 +61,8 @@ func TestParseRequestAndDispatchErrors(t *testing.T) {
 		wantResult bool
 	}{
 		{name: "unknown method", line: `{"id":7,"method":"unknown","params":{}}`, trusted: true, wantCode: "unknown_method"},
-		{name: "bad connect params", line: `{"id":8,"method":"connect","params":{"protocol":"vless"}}`, trusted: true, wantCode: "bad_params"},
+		{name: "bad connect params", line: `{"id":8,"method":"connect","params":{"protocol":"wireguard"}}`, trusted: true, wantCode: "bad_params"},
+		{name: "connect with vless", line: `{"id":14,"method":"connect","params":{"protocol":"vless"}}`, trusted: true, wantResult: true},
 		{name: "null connect value", line: `{"id":13,"method":"connect","params":{"server":null}}`, trusted: true, wantCode: "bad_params"},
 		{name: "bad JSON params", line: `{"id":9,"method":"hello","params":{"client":7}}`, trusted: true, wantCode: "bad_params"},
 		{name: "untrusted connect", line: `{"id":10,"method":"connect","params":{}}`, trusted: false, wantCode: "not_trusted"},

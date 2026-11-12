@@ -525,3 +525,64 @@ func TestClientAPIStoreSurvivesReopen(t *testing.T) {
 		t.Fatalf("managed refresh after reopen = %#v, %v", got, err)
 	}
 }
+
+func vlessPathSettings(change map[string]any) map[string]any {
+	settings := map[string]any{
+		"server": "vless.example", "port": 443, "uuid": "5783a3e7-e373-51cd-8642-c83782b807c5", "flow": "xtls-rprx-vision", "transport": "raw",
+		"security": "reality", "sni": "www.example.com", "fingerprint": "chrome", "spider_x": "/",
+		"public_key": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM", "short_id": "0123456789abcdef",
+	}
+	for k, v := range change {
+		if v == nil {
+			delete(settings, k)
+		} else {
+			settings[k] = v
+		}
+	}
+	return settings
+}
+
+func TestClientAPIVLESSPaths(t *testing.T) {
+	if !strings.Contains(capsHeader, "vless=1") {
+		t.Fatalf("caps %q do not announce vless", capsHeader)
+	}
+	panel, store, sub := managedStore(t)
+	panel.set(func() {
+		panel.syncBody = syncDoc("active",
+			apiServer("Berlin", "DE",
+				apiPath("pth_vless_raw", "vless", "direct", false, vlessPathSettings(nil)),
+				apiPath("pth_vless_xhttp", "vless", "relay", false, vlessPathSettings(map[string]any{"flow": nil, "transport": "xhttp", "path": "/xh", "mode": "packet-up", "x_padding_bytes": "100-1000"})),
+				apiPath("pth_vless_grpc", "vless", "direct", false, vlessPathSettings(map[string]any{"flow": nil, "transport": "grpc"})),
+				apiPath("pth_vless_flow", "vless", "direct", false, vlessPathSettings(map[string]any{"flow": "xtls-rprx-direct"})),
+				apiPath("pth_vless_sec", "vless", "direct", false, vlessPathSettings(map[string]any{"security": "none"})),
+				apiPath("pth_vless_port", "vless", "direct", false, vlessPathSettings(map[string]any{"port": 70000})),
+				apiPath("pth_other", "shadowsocks", "direct", false, map[string]any{"server": "x"}),
+			))
+	})
+	got, err := store.Refresh(context.Background(), sub.ID)
+	if err != nil || got.Error != "" || len(got.Servers) != 2 || got.Unsupported != 5 {
+		t.Fatalf("refresh = %#v, %v (unknown transport, flow, security, port and protocol are unsupported paths, not errors)", got, err)
+	}
+	if got.Servers[0].ID != "pth_vless_raw" || got.Servers[0].Protocol != "vless" || got.Servers[1].Name != "Berlin · relay" {
+		t.Fatalf("servers = %#v", got.Servers)
+	}
+	profiles, err := store.Profiles()
+	if err != nil || len(profiles) != 2 {
+		t.Fatalf("profiles = %d, %v", len(profiles), err)
+	}
+	raw, xhttp := profiles[0], profiles[1]
+	if raw.Protocol != "vless" || raw.VLESS == nil || raw.Hy2 != nil || raw.AWG != nil || raw.VLESS.Host != "vless.example" ||
+		raw.VLESS.Flow != "xtls-rprx-vision" || raw.VLESS.Security != "reality" {
+		t.Fatalf("raw profile = %#v", raw)
+	}
+	if xhttp.VLESS == nil || xhttp.VLESS.Transport != "xhttp" || xhttp.VLESS.Mode != "packet-up" || xhttp.Via != "relay" {
+		t.Fatalf("xhttp profile = %#v", xhttp)
+	}
+	// nothing the window or a log could show carries the user, the key or the server
+	encoded, _ := json.Marshal(store.List())
+	for _, secret := range []string{"5783a3e7", "E59Wjnv", "0123456789abcdef", "vless.example", "www.example.com"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Errorf("List JSON leaked %q", secret)
+		}
+	}
+}

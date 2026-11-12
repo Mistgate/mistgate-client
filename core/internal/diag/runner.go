@@ -464,6 +464,9 @@ func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo
 	// ponytail: a dead service on a live host can look blocked; upgrade = combine with panel node health.
 	if alive {
 		server.Verdict, server.Reason = "blocked", "udp_no_answer"
+		if p.Protocol == "vless" { // TCP all the way: UDP has nothing to do with it
+			server.Reason = "no_answer"
+		}
 		return server, true
 	}
 	server.Verdict, server.Reason = "down", "no_answer"
@@ -479,21 +482,53 @@ var LiveAWG func() (id string, rtt time.Duration)
 // Handshake is one handshake attempt to p's server outside the tunnel, on the physical interface, resolve included,
 // in timeout at most. It returns the round trip. The engine uses it to find the quickest server.
 func Handshake(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error) {
-	host, port, err := profileEndpoint(p)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	endpoint, physical, err := resolveProfile(ctx, p)
 	if err != nil {
 		return 0, err
 	}
-	physical, err := physicalNetwork()
-	if err != nil {
-		return 0, err
+	return attemptProfile(ctx, p, endpoint, physical, Config{AWGTimeout: timeout})
+}
+
+// Latency is the round trip to p's server, for a number on the screen. It is Handshake's, except that VLESS needs no
+// handshake for it: one TCP connect to the server's port is the same circle, without a session through the server
+// every time the number is asked for.
+func Latency(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error) {
+	if p.Protocol != "vless" {
+		return Handshake(ctx, p, timeout)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ip, err := resolveHost(ctx, host, physical, Config{})
+	endpoint, physical, err := resolveProfile(ctx, p)
 	if err != nil {
 		return 0, err
 	}
-	return attemptProfile(ctx, p, netip.AddrPortFrom(ip, port), interfaceFor(ip, physical), Config{AWGTimeout: timeout})
+	started := time.Now()
+	conn, err := dialBound(ctx, "tcp4", endpoint.String(), physical)
+	if err != nil {
+		return 0, errNoAnswer
+	}
+	rtt := time.Since(started)
+	_ = conn.Close()
+	return rtt, nil
+}
+
+// resolveProfile is p's server as an address, and the physical interface that reaches it.
+func resolveProfile(ctx context.Context, p profile.Profile) (netip.AddrPort, interfaceInfo, error) {
+	host, port, err := profileEndpoint(p)
+	if err != nil {
+		return netip.AddrPort{}, interfaceInfo{}, err
+	}
+	physical, err := physicalNetwork()
+	if err != nil {
+		return netip.AddrPort{}, interfaceInfo{}, err
+	}
+	ip, err := resolveHost(ctx, host, physical, Config{})
+	if err != nil {
+		return netip.AddrPort{}, interfaceInfo{}, err
+	}
+	return netip.AddrPortFrom(ip, port), interfaceFor(ip, physical), nil
 }
 
 func serverForProfile(p profile.Profile) Server {
@@ -512,6 +547,11 @@ func profileEndpoint(p profile.Profile) (string, uint16, error) {
 			return "", 0, errors.New("invalid profile")
 		}
 		return p.AWG.EndpointHost, p.AWG.EndpointPort, nil
+	case "vless":
+		if p.VLESS == nil || p.VLESS.Host == "" || p.VLESS.Port == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		return p.VLESS.Host, p.VLESS.Port, nil
 	default:
 		return "", 0, errors.New("invalid profile")
 	}

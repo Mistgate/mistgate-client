@@ -12,6 +12,7 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun/netstack"
 	"github.com/apernet/hysteria/core/v2/client"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
+	"github.com/mistgate/mistgate-client/core/internal/xray"
 )
 
 type outbound interface {
@@ -182,6 +183,110 @@ func (f *awgPacketFlow) Close() error {
 	if conn != nil {
 		return conn.Close()
 	}
+	return nil
+}
+
+// vlessOutbound is a run's Xray instance. A name is left to the server to resolve.
+type vlessOutbound struct{ x *xray.Instance }
+
+// DialTCP returns at once: VLESS gets no answer before the target speaks, so an unreachable target shows as a closed
+// connection after it, not as an error here.
+func (o vlessOutbound) DialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
+	return o.x.DialTCP(ctx, target.Addr().String(), target.Port())
+}
+
+func (o vlessOutbound) ListenUDP(ctx context.Context) (packetFlow, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &vlessPacketFlow{ctx: ctx, x: o.x, conns: make(map[netip.AddrPort]net.Conn), in: make(chan vlessDatagram, 16), done: make(chan struct{})}, nil
+}
+
+// vlessPacketFlow keeps one Xray UDP stream per destination: a stream names its destination once, so a flow that
+// writes to several gets several streams, and what any of them returns is read from one place. The engine's flows
+// have one destination each. ponytail: one stream that ends (idle, refused) ends the whole flow; per-destination
+// recovery if a flow ever needs more than one.
+type vlessPacketFlow struct {
+	ctx   context.Context
+	x     *xray.Instance
+	mu    sync.Mutex
+	conns map[netip.AddrPort]net.Conn
+	in    chan vlessDatagram
+	done  chan struct{}
+	once  sync.Once
+	err   error
+}
+
+type vlessDatagram struct {
+	payload []byte
+	from    netip.AddrPort
+}
+
+func (f *vlessPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error {
+	f.mu.Lock()
+	select {
+	case <-f.done:
+		f.mu.Unlock()
+		return net.ErrClosed
+	default:
+	}
+	conn := f.conns[target]
+	if conn == nil {
+		var err error
+		if conn, err = f.x.DialUDP(f.ctx, target); err != nil {
+			f.mu.Unlock()
+			return err
+		}
+		f.conns[target] = conn
+		go f.pump(conn, target)
+	}
+	f.mu.Unlock()
+	_, err := conn.Write(payload)
+	return err
+}
+
+func (f *vlessPacketFlow) pump(conn net.Conn, target netip.AddrPort) {
+	buffer := make([]byte, 65535)
+	for {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			f.end(err)
+			return
+		}
+		select {
+		case f.in <- vlessDatagram{append([]byte(nil), buffer[:n]...), target}:
+		case <-f.done:
+			return
+		}
+	}
+}
+
+func (f *vlessPacketFlow) ReadFrom() ([]byte, netip.AddrPort, error) {
+	select {
+	case d := <-f.in:
+		return d.payload, d.from, nil
+	case <-f.done:
+		return nil, netip.AddrPort{}, f.err
+	case <-f.ctx.Done():
+		return nil, netip.AddrPort{}, f.ctx.Err()
+	}
+}
+
+// end closes the flow; the first reason stays.
+func (f *vlessPacketFlow) end(reason error) {
+	f.once.Do(func() {
+		f.mu.Lock()
+		f.err = reason
+		close(f.done) // under the lock: a write that comes after sees it and dials nothing
+		for _, conn := range f.conns {
+			_ = conn.Close()
+		}
+		f.mu.Unlock()
+	})
+}
+
+func (f *vlessPacketFlow) Close() error {
+	f.end(net.ErrClosed)
 	return nil
 }
 

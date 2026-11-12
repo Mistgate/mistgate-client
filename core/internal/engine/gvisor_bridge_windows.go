@@ -5,6 +5,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -108,7 +109,10 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 		flows:        make(map[*udpFlow]struct{}),
 	}
 	tcpForwarder := tcp.NewForwarder(st, 0, 1024, bridge.forwardTCP)
-	udpForwarder := udp.NewForwarder(st, bridge.forwardUDP)
+	udpForwarder := udp.NewForwarder(st, func(req *udp.ForwarderRequest) bool {
+		bridge.forwardUDP(req)
+		return true // every UDP flow is ours; an unhandled one would get an ICMP unreachable
+	})
 	st.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 	st.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
@@ -123,14 +127,26 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 // vpn6Probes are public IPv6 resolvers' HTTPS ports: one answer through the VPN means IPv6 works there.
 var vpn6Probes = []netip.AddrPort{netip.MustParseAddrPort("[2606:4700:4700::1111]:443"), netip.MustParseAddrPort("[2001:4860:4860::8888]:443")}
 
+func isVLESS(o outbound) bool {
+	if counted, ok := o.(countedOutbound); ok {
+		o = counted.outbound
+	}
+	_, ok := o.(vlessOutbound)
+	return ok
+}
+
 func (b *gvisorBridge) checkVPN6() {
 	ctx, cancel := context.WithTimeout(b.ctx, 3*time.Second)
 	defer cancel()
 	answers := make(chan bool, len(vpn6Probes))
+	lazy := isVLESS(b.vpn)
 	for _, target := range vpn6Probes {
 		go func() {
 			conn, err := b.vpn.DialTCP(ctx, target)
 			if err == nil {
+				if lazy { // a VLESS dial is only a request in flight; a handshake that comes back proves the way
+					err = tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx)
+				}
 				_ = conn.Close()
 			}
 			answers <- err == nil
@@ -181,7 +197,7 @@ func (b *gvisorBridge) writeTun() {
 	defer b.wg.Done()
 	for {
 		packet := b.link.ReadContext(b.ctx)
-		if packet.IsNil() {
+		if packet == nil {
 			return
 		}
 		view := packet.ToView()
@@ -394,7 +410,7 @@ func (b *gvisorBridge) forwardUDP(req *udp.ForwarderRequest) {
 		cancel()
 		return
 	}
-	local := gonet.NewUDPConn(b.stack, &queue, endpoint)
+	local := gonet.NewUDPConn(&queue, endpoint)
 	flow := &udpFlow{
 		local:  local,
 		remote: remote,
