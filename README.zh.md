@@ -9,7 +9,7 @@ Hysteria2、AmneziaWG 和 VLESS 集于一个窗口。适用于 <a href="https://
 
 <p>
 <img alt="beta" src="https://img.shields.io/badge/status-beta-f2c46b">
-<a href="https://github.com/Mistgate/mistgate-client/releases/latest"><img alt="0.1.0" src="https://img.shields.io/badge/version-0.1.0-b8acf2"></a>
+<a href="https://github.com/Mistgate/mistgate-client/releases/latest"><img alt="0.1.0" src="https://img.shields.io/github/v/release/Mistgate/mistgate-client?sort=semver&color=b8acf2"></a>
 <a href="LICENSE"><img alt="AGPL-3.0" src="https://img.shields.io/github/license/Mistgate/mistgate-client?color=b8acf2"></a>
 <img alt="Windows 10, 11 x64" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-8ec8ea">
 <a href="core/go.mod"><img alt="Go" src="https://img.shields.io/github/go-mod/go-version/Mistgate/mistgate-client?filename=core%2Fgo.mod"></a>
