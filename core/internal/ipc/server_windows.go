@@ -75,9 +75,9 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			}
 			trusted := inspectErr == nil && IsCallerTrusted(facts)
 			if inspectErr != nil {
-				logger.Warn("IPC caller check failed", "pid", pid, "image", imagePath, "trusted", false, "error", inspectErr)
+				logger.Warn("IPC caller check failed", "pid", pid, "trusted", false) // no path, no error text: both name the Windows user
 			} else {
-				logger.Info("IPC caller checked", "pid", pid, "image", imagePath, "trusted", trusted)
+				logger.Info("IPC caller checked", "pid", pid, "trusted", trusted)
 			}
 			server.ServeConn(ctx, conn, trusted)
 		}(conn)

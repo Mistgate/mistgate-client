@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime"
 	"runtime/debug"
 )
 
@@ -24,6 +25,12 @@ func Recover(what string) {
 // Report writes the panic and its stack where a crash would have gone; the log the window shows gets the place only,
 // as the value may name a host.
 func Report(what string, r any) {
-	fmt.Fprintf(Out, "panic in %s: %v\n%s\n", what, r, debug.Stack())
+	// crash.log stays on the disk: only the runtime's own words go there (an index out of range, a nil map), which
+	// name no host; any other value is written as its kind
+	value := fmt.Sprintf("%T", r)
+	if e, ok := r.(runtime.Error); ok {
+		value = e.Error()
+	}
+	fmt.Fprintf(Out, "panic in %s: %s\n%s\n", what, value, debug.Stack())
 	slog.Error("a task failed and was dropped: " + what) // in the text: the log keeps no attributes
 }
