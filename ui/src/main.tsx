@@ -47,6 +47,14 @@ for (const ev of ['focus', 'blur']) window.addEventListener(ev, rest);
 document.addEventListener('visibilitychange', rest);
 rest();
 
+// The engine lets a fresh window pile up about a gigabyte of dropped styles before its first full collection, and
+// on a 144 Hz screen the design's motion drops some 10 MB of them a second: a few connections after the start took
+// the window past a gigabyte, once to its death. So the window collects by its own hand, 4 s after the first of a run of changes: after
+// the start and after every change of the connection. (gc is there because the windows start with --expose-gc.)
+let tidy = 0;
+const collect = () => { tidy ||= window.setTimeout(() => { tidy = 0; (window as { gc?: () => void }).gc?.(); }, 4000); };
+if (inApp && !inSetup) { collect(); void import('@tauri-apps/api/event').then(({ listen }) => listen('mg://status', collect)); }
+
 void Promise.all([loadScreens(lang), live, inSetup ? import('./live-setup') : null]).then(([screens, l, setup]) => {
   if (setup) screens.Setup = setup.liveSetup(screens.Setup);
   if (l) {

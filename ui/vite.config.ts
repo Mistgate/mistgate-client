@@ -6,8 +6,7 @@ export default defineConfig({
   clearScreen: false,
   server: { host: '127.0.0.1', port: 5183, strictPort: true },
   build: {
-    // The flags stay files. Vite would put a small picture into the script as a data: address, and the window then
-    // decoded every flag again on each redraw of the server list, keeping the memory: hundreds of megabytes in minutes.
+    // The flags stay files: some 250 small pictures as data: addresses would only swell the script.
     assetsInlineLimit: (file) => (file.includes('country-flag-icons') ? false : undefined),
   },
 });
