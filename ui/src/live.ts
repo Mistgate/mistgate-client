@@ -121,6 +121,16 @@ const quality = (ms: number) => (ms <= 50 ? 'q3' : ms <= 90 ? 'q2' : 'q1'); // t
 
 // Latency numbers outlive the screen: Home is built again on every visit, the numbers stay until the window closes.
 const PINGS: Record<string, number> = {};
+// The one path that is measured for a node's number: the row shows a round trip to the node, and every path of it
+// would give the same. A path that reaches the node itself before one through a relay; VLESS first (one TCP connect),
+// then Hysteria2, AmneziaWG last: its handshake is a burst of junk packets under the device's key, and one per path
+// of every node on each start of the window looks like a flood from this address.
+const PROBE_ORDER = ['vless', 'hysteria2', 'awg'];
+const probe = (n: { entries: { s: Server }[] }): string[] => {
+  const rank = (s: Server) => (!s.via || s.via === 'direct' ? 0 : 10) + (PROBE_ORDER.indexOf(s.protocol) + 1 || 9);
+  const first = [...n.entries].sort((a, b) => rank(a.s) - rank(b.s))[0];
+  return first ? [first.s.id] : [];
+};
 // where each server is (its name and addresses), for the hint on a row: two nodes of one country look the same
 const HOSTS: Record<string, { host: string; ips: string[] }> = {};
 let hostsFor = '';
@@ -332,7 +342,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     }
     // node by node, as the design staggers it: the numbers arrive down the list
     pingNodes(servers: Server[]) {
-      nodesOf(servers).forEach((n, i) => setTimeout(() => this.ping(n.entries.map((e) => e.s.id)), i * 140));
+      nodesOf(servers).forEach((n, i) => setTimeout(() => this.ping(probe(n)), i * 140));
     }
     // latency to the given servers, measured by the service outside the tunnel
     ping(ids: string[]) {
@@ -545,7 +555,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           h2: fams.has('h2'), vless: fams.has('vless'), awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
           vd: '', vt: '', vi: 'check', vc: 'hide', vo: 0, vrow: '', pisC: '',
-          sigX: best === Infinity ? 'nov' : '', sig: (best === Infinity ? '' : quality(best)) + (busy ? ' busy' : '') + (ids.some((id) => flash[id]) ? ' flash' : ''), ping: () => this.ping(ids), ms: best === Infinity ? '—' : String(best),
+          sigX: best === Infinity ? 'nov' : '', sig: (best === Infinity ? '' : quality(best)) + (busy ? ' busy' : '') + (ids.some((id) => flash[id]) ? ' flash' : ''), ping: () => this.ping(probe(n)), ms: best === Infinity ? '—' : String(best),
         };
       };
       // the search: a country, a city, the panel's own wording, or a piece of the address

@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import BRANDS from '../tools/brands.json';
+const ICONS = new Map<string, string>(); // a program's icon as a picture address, by its path; '' while asked or when it has none
 import './brands.css';
 import type { DCLogic } from './dc';
 import { flagOf, PROTO } from './live';
@@ -257,9 +258,40 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
       img.style.display = this.server && !flag ? 'none' : '';
       glyph.style.display = this.server && !flag ? 'block' : '';
     }
+    // The programs' own icons on their tiles, in place of the design's one symbol for all. Asked for one by one, the
+    // first time a tile is on screen, and kept for the session.
+    shown: string[] = [];
+    paintIcons() {
+      document.querySelectorAll('.grid.apps > .tile').forEach((tile, i) => {
+        const path = this.shown[i], mono = tile.querySelector('.mono');
+        if (!path || !mono) return;
+        const url = ICONS.get(path);
+        let img = mono.querySelector<HTMLImageElement>('img.mg-appic');
+        if (url) {
+          if (!img) { img = document.createElement('img'); img.className = 'mg-appic'; img.alt = ''; mono.prepend(img); }
+          if (img.src !== url) img.src = url;
+        } else img?.remove();
+        mono.classList.toggle('mg-has-ic', !!url);
+        if (url === undefined) {
+          ICONS.set(path, ''); // asked: not again
+          void invoke<ArrayBuffer>('app_icon', { path }).then((raw) => {
+            const b = new Uint8Array(raw);
+            if (b.length < 8) return;
+            const w = b[0] | (b[1] << 8), h = b[2] | (b[3] << 8);
+            if (!w || !h || b.length !== 4 + w * h * 4) return;
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(b.buffer, b.byteOffset + 4, w * h * 4), w, h), 0, 0);
+            ICONS.set(path, c.toDataURL());
+            this.paintIcons();
+          }, () => {});
+        }
+      });
+    }
     componentDidUpdate() {
       super.componentDidUpdate?.();
       this.paintServer();
+      if (this.state?.view === 'apps') this.paintIcons();
       const r = this.routes;
       if (!r || !this.state?.sel) return;
       const want = this.wanted(this.state);
@@ -323,7 +355,9 @@ export function liveRoutes(Base: typeof DCLogic): typeof DCLogic {
           flip: () => this.flipApp(a.path, !on),
         };
       });
-      Object.assign(v, { appCnt: chosen.size, appTotal: this.apps.length, hasApps: this.apps.length > 0, noApps: this.apps.length === 0 });
+      this.shown = this.apps.filter((a) => !q || a.name.toLowerCase().includes(q) || a.path.includes(q)).map((a) => a.path);
+      // the design scrolls its own sample list by its own count; here the count is the real one
+      Object.assign(v, { appCnt: chosen.size, appTotal: this.apps.length, hasApps: this.apps.length > 0, noApps: this.apps.length === 0, appScroll: v.apps.length > 15 ? 'scroll' : '' });
       const openApps = v.vPick.apps;
       // the search field is made anew with its tab: its filter must not outlive it
       const tabs = v.vPick;

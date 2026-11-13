@@ -152,7 +152,8 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	var check func(string) geo.Check
 	var dialVPN func(context.Context, string, uint16) (net.Conn, error)
 	var homeAddr func() string
-	ping := ipc.PingFunc(diag.Handshake)
+	// the list's numbers: a round trip, not a session (VLESS: one TCP connect)
+	ping := ipc.PingFunc(diag.Latency)
 	if useFake {
 		fake := engine.NewFake(engine.FakeConfig{StepDelay: 300 * time.Millisecond})
 		eng = fake
