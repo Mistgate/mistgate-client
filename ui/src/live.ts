@@ -120,6 +120,29 @@ function countryName(cc: string) {
 const quality = (ms: number) => (ms <= 50 ? 'q3' : ms <= 90 ? 'q2' : 'q1'); // the design's three bars
 
 // Latency numbers outlive the screen: Home is built again on every visit, the numbers stay until the window closes.
+// How Telegram proxies are switched on, for the empty Telegram tab. The names in quotes are the panel's own.
+const TG_HELP: Record<string, { head: string; steps: string[]; open: string }> = {
+  en: { head: 'How to turn them on', open: 'Open subscription page', steps: [
+    'Whoever runs your server opens the Mistgate panel: “Profiles” → “New profile” → “MTProto”, puts the profile on servers and adds it to your group',
+    'In “Users”, on your card, they switch “Telegram Proxy” on',
+    'The proxies appear here after the next update of the subscription' ] },
+  ru: { head: 'Как их включить', open: 'Открыть страницу подписки', steps: [
+    'Тот, кто держит ваш сервер, открывает панель Mistgate: «Profiles» → «New profile» → «MTProto», ставит профиль на серверы и добавляет его в вашу группу',
+    'В «Users», в вашей карточке, включает «Telegram-прокси»',
+    'Прокси появятся здесь после следующего обновления подписки' ] },
+  zh: { head: '如何开启', open: '打开订阅页面', steps: [
+    '由管理您服务器的人打开 Mistgate 面板：“Profiles” → “New profile” → “MTProto”，把配置放到服务器上并加入您的分组',
+    '在“Users”中您的卡片里打开“Telegram Proxy”',
+    '订阅下次更新后，代理会显示在这里' ] },
+  fa: { head: 'چطور روشن می‌شوند', open: 'باز کردن صفحهٔ اشتراک', steps: [
+    'کسی که سرور شما را اداره می‌کند پنل Mistgate را باز می‌کند: «Profiles» ← «New profile» ← «MTProto»، پروفایل را روی سرورها می‌گذارد و به گروه شما اضافه می‌کند',
+    'در «Users»، در کارت شما، «Telegram Proxy» را روشن می‌کند',
+    'پس از به‌روزرسانی بعدی اشتراک، پروکسی‌ها اینجا دیده می‌شوند' ] },
+  tr: { head: 'Nasıl açılır', open: 'Abonelik sayfasını aç', steps: [
+    'Sunucunuzu yöneten kişi Mistgate panelini açar: “Profiles” → “New profile” → “MTProto”, profili sunuculara koyar ve grubunuza ekler',
+    '“Users” içinde, kartınızda “Telegram Proxy” anahtarını açar',
+    'Vekiller, aboneliğin bir sonraki güncellemesinden sonra burada görünür' ] },
+};
 const PINGS: Record<string, number> = {};
 // The one path that is measured for a node's number: the row shows a round trip to the node, and every path of it
 // would give the same. A path that reaches the node itself before one through a relay; VLESS first (one TCP connect),
@@ -228,11 +251,33 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
-      this.paintTg();
+      this.paintTg(); this.paintTgHelp();
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
 
+    // The Telegram tab with no proxies, on a Mistgate panel's subscription: under the design's empty state, how they
+    // are switched on in the panel (the panel's own menu and control names, which it shows in English) and a button to
+    // the person's page on that panel. The app cannot tell the server's owner from anyone else, nor a panel that has
+    // none from one too old to send them, so the words fit all of them.
+    // ponytail: the button opens the subscription page; the panel's admin address is not in what the panel sends.
+    paintTgHelp() {
+      const empty = document.querySelector('.empty.srv-e:has(> .e-ic path[d^="M21 3"])');
+      const sub = this.sub();
+      const old = empty?.querySelector('.mg-tg-help');
+      if (!empty || !sub?.managed || (sub.telegram?.length ?? 0) > 0) return void old?.remove();
+      if (old) return;
+      const w = TG_HELP[document.documentElement.lang] ?? TG_HELP.en;
+      const box = document.createElement('div');
+      box.className = 'mg-tg-help';
+      const head = Object.assign(document.createElement('b'), { textContent: w.head });
+      const list = document.createElement('ol');
+      for (const step of w.steps) list.append(Object.assign(document.createElement('li'), { textContent: step }));
+      const open = Object.assign(document.createElement('button'), { className: 'lsb', textContent: w.open });
+      open.onclick = () => void rpc<{ url: string }>('subs.link', { id: sub.id }).then((r) => invoke('open_url', { url: r.url }), () => {});
+      box.append(head, list, open);
+      empty.append(box);
+    }
     // The Telegram tab: the design draws three sample rows as plain markup. They are filled with the subscription's
     // proxies; more proxies than rows get copies of the first row, fewer hide the rest. No latency: nothing measures it yet.
     viaWord = 'via';
