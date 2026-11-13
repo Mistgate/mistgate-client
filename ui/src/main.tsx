@@ -34,6 +34,8 @@ if (inApp || shell !== undefined) document.documentElement.classList.add('shell'
 const inTray = label === 'tray';
 if (inTray) document.documentElement.classList.add('shell-tray');
 if (inApp && !inTray) void import('./shell').then((m) => m.attachWindow());
+// the main window looks for a new version a little after the start, then four times a day; quietly
+if (inApp && !inTray && !inSetup) void import('./updates').then(({ updates }) => { setTimeout(() => void updates.check(true), 15000); setInterval(() => void updates.check(true), 6 * 3600 * 1000); });
 // In the app window Home talks to the service; in a browser it stays the design's mock.
 const live = inApp && !inSetup ? Promise.all([import('./live'), import('./live-settings'), import('./live-tray'), import('./live-diag'), import('./live-routes')]) : null;
 

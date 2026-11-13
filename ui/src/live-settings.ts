@@ -1,6 +1,7 @@
 // The other screens on the real service: the VPN chip in their title bar, and Settings itself.
 // As on Home, the design's logic stays as generated; these subclasses feed it the service's state and send its
 // choices to the service. What the service has no setting for yet stays the design's local switch.
+import { updates } from './updates';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
@@ -112,6 +113,16 @@ function repText(Base: typeof DCLogic, sub: 'old' | 'basic') {
   return repTexts.get(key)!;
 }
 
+// The design's words for each state of the update card, in the window's language. Its sample numbers are replaced
+// by the real ones where the card is drawn.
+const upTexts = new Map<string, any>();
+function upText(Base: typeof DCLogic, up: string) {
+  const key = document.documentElement.lang + '|' + up;
+  if (!upTexts.has(key)) { const l: any = new (Base as any)({}); l.state = { up, upP: 0 }; upTexts.set(key, { ...l.renderVals().U }); }
+  return upTexts.get(key);
+}
+const mb = (bytes: number) => (bytes / 2 ** 20).toFixed(1);
+
 export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
   return class LiveSettings extends (liveChip(Base) as any) {
     subs: Sub[] = [];
@@ -129,7 +140,12 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       this.off.push(listen<Settings>('mg://settings', (e) => this.apply(e.payload)));
       rpc<Settings>('settings.get').then((s) => this.apply(s), () => {});
       this.setState({ lg: document.documentElement.lang || 'en' });
+      // the update card follows the app's one updater
+      const up = () => this.setState({ up: updates.get().up, upP: updates.get().pct });
+      this.off.push(Promise.resolve(updates.on(up)));
+      up();
     }
+    runUpd() { /* the design plays an update here; the real one is in updates.ts */ }
     componentWillUnmount() {
       super.componentWillUnmount();
       document.removeEventListener('click', this.onPage, true);
@@ -141,6 +157,23 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       if (text?.textContent?.includes('MIT')) {
         if (document.documentElement.lang === 'fa') text.classList.add('mo'); // "mo" keeps the Persian digit pass off the licence's name
         text.textContent = text.textContent.replace('MIT', 'AGPL-3.0');
+      }
+      // Updates: "What's new" lists the design's sample lines; here it is the release's own notes
+      const news = document.querySelector('.sx-upd .up-new');
+      if (news) {
+        const u = updates.get(), head = news.querySelector('p.h'), list = news.querySelector('ul');
+        news.classList.toggle('hide', !u.notes.length || !(u.up === 'available' || u.up === 'ready'));
+        // the heading keeps the design's sentence; its sample version gives way to the real one each time
+        const title = head?.firstChild;
+        if (head && title?.nodeType === 3) {
+          if (!head.hasAttribute('data-t')) head.setAttribute('data-t', title.textContent ?? '');
+          const text = (head.getAttribute('data-t') ?? '').replace('1.5.0', u.version);
+          if (title.textContent !== text) title.textContent = text;
+        }
+        if (list && list.getAttribute('data-for') !== u.version + '|' + u.notes.length) {
+          list.setAttribute('data-for', u.version + '|' + u.notes.length);
+          list.replaceChildren(...u.notes.map((line) => Object.assign(document.createElement('li'), { textContent: line })));
+        }
       }
     }
     onPage = (e: MouseEvent) => {
@@ -256,9 +289,45 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         });
         if (p.error) v.pxSub = words().proxyBusy;
       }
-      const soon = new Set([...(u ? [] : [1]), 5, ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
+      const soon = new Set([...(u ? [] : [1]), ...(p ? [] : [6])]); // the design's order: conn, sub, priv, look, notif, upd, proxy, about
       v.nav = v.nav.map((n: any, i: number) => (soon.has(i) ? { ...n, c: 'soon', b: '', bc: 'hide', go: () => {} } : n));
       v.ver = version;
+      // Updates: the design's card and words, the updater's state and numbers
+      const us = updates.get(), U = { ...v.U, ...upText(Base, us.up) }, cut = (text: string) => text.split(' · ')[0];
+      const named = (text: string) => String(text ?? '').replace('1.5.0', us.version).replace('1.4.2', version);
+      U.t = named(U.t);
+      U.s = named(U.s);
+      if (us.up === 'latest') {
+        const at = us.checked ? new Date(us.checked) : null;
+        U.s = at ? U.s.replace(/\d{1,2}[:.]\d{2}/, String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0')) : cut(U.s);
+        U.do = () => void updates.check();
+      } else if (us.up === 'available') {
+        const day = us.date ? new Date(us.date).toLocaleDateString(document.documentElement.lang || 'en', { month: 'short', day: 'numeric' }) : '';
+        U.s = [us.size ? cut(U.s).replace(/[\d.,]+/, mb(us.size)) : '', day].filter(Boolean).join(' · ');
+        U.do = () => void updates.download();
+      } else if (us.up === 'downloading') {
+        // the design's line with its two sample sizes; its guess of the seconds left is not made here
+        let n = 0;
+        const sample = cut(String(v.U.s ?? ''));
+        U.s = us.size ? sample.replace(/[\d.,]+/g, () => (n++ ? mb(us.size) : mb((us.size * us.pct) / 100))) : '';
+        U.bc = 'lsb dis'; // the download cannot be stopped half-way
+        U.do = () => {};
+      } else if (us.up === 'ready') {
+        U.do = () => void updates.install();
+        U.do2 = () => {};
+        U.b2 = ''; // "Later" is leaving the page: the button stays ready
+      } else if (us.up === 'failed' || us.up === 'badsig') {
+        U.do = () => void updates.download();
+      } else U.do = () => {};
+      U.p = us.pct + '%';
+      U.barC = us.up === 'downloading' ? '' : 'hide';
+      U.newC = (us.up === 'available' || us.up === 'ready') && us.notes.length ? '' : 'hide';
+      U.b2c = U.b2 ? '' : 'hide';
+      U.logo = v.U.logo;
+      v.U = U;
+      v.tg.au = () => { updates.setAuto(!updates.auto()); this.setState((old: any) => ({ on: Object.assign({}, old?.on, { au: updates.auto() }) })); };
+      v.T.au = updates.auto() ? 'on' : '';
+      v.A.au = updates.auto() ? 'true' : 'false';
       v.copyVer = () => { void navigator.clipboard?.writeText('Mistgate ' + version).catch(() => {}); this.setState({ verCopied: true }); };
       v.excCls = 'hide'; // "Allowed while blocked" lists the design's sample addresses; the service has the LAN switch only
       v.tmSet.dark = () => setTheme('dark');

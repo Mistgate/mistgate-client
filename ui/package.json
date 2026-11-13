@@ -1,7 +1,7 @@
 {
   "name": "mistgate-ui",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "design": "node tools/dc-import.mjs",
@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "bundle": "node tools/prepare-bundle.mjs && tauri build && node tools/setup-build.mjs"
+    "bundle": "node tools/prepare-bundle.mjs && node tools/tauri-bundle.mjs && node tools/setup-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "^5.3.1",
@@ -17,6 +17,7 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/onest": "^5.3.1",
     "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

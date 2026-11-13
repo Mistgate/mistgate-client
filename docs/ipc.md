@@ -652,7 +652,7 @@ never logged and never in a `settings` event):
 
 ```json
 {"on": true, "lan": false, "host": "192.168.1.5", "socks_port": 1080, "http_port": 8080, "user": "mistgate",
- "password": "k7Hq2mWpXe9RtZ4v", "error": "", "error_port": 0, "clients": 3}
+ "password": "<16 characters>", "error": "", "error_port": 0, "clients": 3}
 ```
 
 `on` and `lan` are the settings in force (`lan` is `proxy_lan` and `proxy`). `host` is this machine's IPv4 address on the

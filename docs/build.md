@@ -48,3 +48,20 @@ each other by sitting in the same directory (see `docs/ipc.md`), not by a signat
 
 For development the window's debug binary and a console service are enough: see "Running it by hand" in
 `docs/ipc.md`.
+
+## Updates of the installed app
+
+The app looks for a new version in the GitHub releases of this repository (`releases/latest/download/latest.json`),
+a little after its start and four times a day, and from Settings > Updates. It installs only an installer whose
+signature matches the public key in `ui/src-tauri/tauri.conf.json` (`plugins.updater.pubkey`): a file changed on the
+way, or one built by somebody else, is refused and the installed version stays.
+
+`pnpm bundle` signs the installer when it finds the private key (`TAURI_SIGNING_PRIVATE_KEY`, the key or a path to it,
+else `~/.mistgate/client-updater.key`) and writes `latest.json` beside it; `MG_RELEASE_NOTES` becomes the "What's new"
+list, one line each. Without the key the build is the same app with an installer no installed copy will take as an
+update. A fork that wants its own updates makes its own key (`pnpm tauri signer generate`) and puts its public half and
+its own release address into `tauri.conf.json`.
+
+A release is the tag `v<version>` with three files: `Mistgate_<version>_x64-setup.exe`, its `.sig`, and `latest.json`
+(plus `MistgateSetup_<version>_x64.exe` for a first install). The version is set in `ui/package.json`,
+`ui/src-tauri/tauri.conf.json`, `ui/src-tauri/Cargo.toml` and `ServiceVersion` in `core/internal/ipc/server.go`.

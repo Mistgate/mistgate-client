@@ -89,7 +89,8 @@ fn quit_app(app: &AppHandle) {
     });
 }
 
-// The subscription page, in the user's browser. Only an https address: the window passes what the service keeps.
+// The subscription page, in the user's browser, and a Telegram proxy link. Only an https address: the window passes
+// what the service keeps.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://") || url.len() > 4096 || url.chars().any(|c| c.is_control() || c == '"') {
@@ -100,8 +101,16 @@ fn open_url(url: String) -> Result<(), String> {
         use windows_sys::Win32::UI::Shell::ShellExecuteW;
         use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
         let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
-        let (verb, target) = (wide("open"), wide(&url));
-        ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+        let verb = wide("open");
+        let open = |address: &str| ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), wide(address).as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) as usize > 32;
+        // A Telegram proxy link goes to Telegram itself, which then offers to connect; as a web address it is only a
+        // page with a button. No Telegram on this PC: the page, as before.
+        if let Some(proxy) = url.strip_prefix("https://t.me/proxy?") {
+            if open(&format!("tg://proxy?{proxy}")) {
+                return Ok(());
+            }
+        }
+        open(&url);
     }
     Ok(())
 }
@@ -345,6 +354,7 @@ fn main() {
         return;
     }
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Shell {
             close_to_tray: AtomicBool::new(true),
             anchor: Mutex::new((0.0, 0.0)),

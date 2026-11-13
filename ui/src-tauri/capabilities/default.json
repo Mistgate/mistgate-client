@@ -1,12 +1,17 @@
 {
   "identifier": "default",
-  "description": "What the windows may ask of the shell: the main one (and the setup program's) moves, minimizes and closes itself; the app's two listen to the service's events.",
-  "windows": ["main", "tray", "setup"],
+  "description": "What the windows may ask of the shell: the main one (and the setup program's) moves, minimizes and closes itself; the app's two listen to the service's events. The main window also asks the updater to look for a signed new version and install it.",
+  "windows": [
+    "main",
+    "tray",
+    "setup"
+  ],
   "permissions": [
     "core:default",
     "core:event:allow-listen",
     "core:window:allow-start-dragging",
     "core:window:allow-minimize",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "updater:default"
   ]
 }
