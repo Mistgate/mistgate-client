@@ -29,8 +29,11 @@ function flagOf(name: string) {
 
 // ---- the icon: lives in the main window, which is always there (hidden when closed to the tray)
 async function glyph(state: string, size: number) {
-  // the glyphs take the text colour in the design; on the taskbar that is white, or dark on a light taskbar
-  const ink = matchMedia('(prefers-color-scheme: light)').matches ? '#1b1b22' : '#ffffff';
+  // the glyphs take the text colour in the design; on the taskbar that is white, or dark on a light taskbar.
+  // Connected is green, a failure red and the kill switch's hold amber (the owner's wish: the design's icon changes
+  // its shape only, and at 16 px that is not seen at a glance); the darker ones are for a light taskbar.
+  const light = matchMedia('(prefers-color-scheme: light)').matches;
+  const ink = ({ on: ['#7dd3a0', '#178a4c'], error: ['#ff7a7a', '#c62f2f'], ks: ['#febc2e', '#a86a00'] }[state] ?? ['#ffffff', '#1b1b22'])[light ? 1 : 0];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="${ink}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><style>.f,.d{fill:${ink};stroke:none}.dash{stroke-dasharray:2.6 3.4}</style>${(GLYPHS as Record<string, string>)[state] ?? GLYPHS.off}</svg>`;
   const img = new Image();
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
