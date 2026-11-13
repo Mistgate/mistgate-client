@@ -693,6 +693,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       });
       const tipRow = (v.rows as any[]).find((x) => x.key === this.st().tipId);
       if (tipRow) this.tipLast = tipRow.tipD;
+      // a row that went away under the pointer (its subscription removed, the list redrawn) never says "pointer left":
+      // without this its card stayed on screen, empty
+      else v.tipC = '';
       v.tip = this.tipLast ?? v.rows[0]?.tipD ?? { pl: [] };
       // the Auto row carries the best number of the list (the design keys it to its sample node "de")
       v.sigCls.de = bestAll === Infinity ? 'nov' : quality(bestAll);
