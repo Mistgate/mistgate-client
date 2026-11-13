@@ -176,6 +176,13 @@ let hostsFor = '';
 // "via RU" for each relay path whose entry is a server of the list, as Home words it: Diagnostics names its rows
 // the same way. ponytail: filled when Home draws (it is the first screen); empty before that, the row says "relay".
 export const VIA: Record<string, string> = {};
+// The route mode in the design's words; `sample` is its own line for Smart ("all except RU sites").
+export function routeWords(r: { mode: string; effective: string }, sample: string) {
+  const [only, all, smart] = words().modes;
+  // Smart without a region has no "except … sites": the mode's own name
+  const region = /^[a-z]{2}$/.test(r.effective) ? r.effective.toUpperCase() : '';
+  return r.mode === 'smart' ? (region ? sample.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
+}
 let pingedAtStart = false; // the first list of the session is measured without being asked
 
 export function liveHome(Base: typeof DCLogic): typeof DCLogic {
@@ -269,10 +276,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const t = [...a.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
         if (!t || !r) return;
         a.dataset.smart ??= t.nodeValue ?? '';
-        const [only, all, smart] = words().modes;
-        // Smart without a region has no "except … sites": the mode's own name
-        const region = /^[a-z]{2}$/.test(r.effective) ? r.effective.toUpperCase() : '';
-        const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
+        const text = routeWords(r, a.dataset.smart);
         if (t.nodeValue !== text) t.nodeValue = text;
       });
       this.paintTg(); this.paintTgHelp(); this.paintAddBack(); this.paintWhere(); this.paintUnread();
@@ -422,6 +426,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       rpc<{ rtt: Record<string, number> }>('servers.ping', { sub: sub.id, servers: ids }).then((r) => r.rtt, () => ({} as Record<string, number>)).then((rtt) => {
         // a server that did not answer keeps no number
         Object.assign(PINGS, Object.fromEntries(ids.map((id) => [id, rtt[id] ?? 0])));
+        pref.set('pings', JSON.stringify(PINGS)); // the quick panel is another window: it reads the numbers from here
         // from the state as it is then: two answers in one tick must not undo each other
         this.setState((old: any) => ({ pings: { ...PINGS }, checking: { ...old?.checking, ...mark(false) }, flash: { ...old?.flash, ...mark(true) } }));
         setTimeout(() => this.setState((old: any) => ({ flash: { ...old?.flash, ...mark(false) } })), 750); // the design's flash on a fresh number

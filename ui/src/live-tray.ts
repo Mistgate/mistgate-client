@@ -6,11 +6,11 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import GLYPHS from './design/tray-icons.json';
 import { words } from './live-i18n';
+import { nodesOf, routeWords, sufOf, type Server } from './live';
 import { pref } from './live-settings';
 
-type Status = { state: string; step: string; since_unix: number; server: string; protocol: string; error: string };
+type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
-type Server = { id: string; name: string; protocol: string };
 type Sub = { id: string; name: string; servers: Server[] };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
@@ -74,6 +74,8 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
     subs: Sub[] = [];
     clock = 0;
     height = 0;
+    route: { mode: string; effective: string } | null = null;
+    pings: Record<string, number> = {}; // measured by the main window, kept where both windows read
 
     componentDidMount() {
       super.componentDidMount?.();
@@ -82,6 +84,7 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
         listen<Traffic>('mg://traffic', (e) => { this.traffic = e.payload; this.paintSpeed(); }),
         listen<{ subs: Sub[] }>('mg://subs', (e) => { this.subs = e.payload.subs; this.forceUpdate(); }),
         listen<{ up: boolean }>('mg://service', () => this.sync()),
+        listen<{ mode: string; effective: string }>('mg://routes', (e) => { this.route = e.payload; this.paintRoute(); }),
       ];
       // the panel's two plain buttons have no handler in the design
       document.addEventListener('click', this.onClick);
@@ -97,7 +100,7 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       window.removeEventListener('focus', this.sync);
       clearInterval(this.clock);
     }
-    componentDidUpdate() { this.paintSpeed(); this.fit(); }
+    componentDidUpdate() { this.paintSpeed(); this.paintRoute(); this.fit(); }
 
     onClick = (e: MouseEvent) => {
       const t = e.target as Element;
@@ -108,6 +111,8 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
     sync = () => {
       rpc<Status>('status').then((s) => this.apply(s), () => this.apply({ state: 'off', step: '', since_unix: 0, server: '', protocol: '', error: '' }));
       rpc<{ subs: Sub[] }>('subs.list').then((r) => { this.subs = r.subs; this.forceUpdate(); }, () => {});
+      rpc<{ mode: string; effective: string }>('routes.get').then((r) => { this.route = r; this.paintRoute(); }, () => {});
+      try { this.pings = JSON.parse(pref.get('pings') || '{}'); } catch { this.pings = {}; }
       // the choice is kept beside the design's own "sel": its logic only knows its sample servers
       this.setState({ liveSel: pref.get('server') || 'auto', theme: pref.get('theme') || undefined });
     };
@@ -136,6 +141,16 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       put(cells[1], t ? (t.tx_bps / 1e6).toFixed(1) : '0.0');
       put(cells[2], t ? String(t.rtt_ms) : '—');
     }
+    // the route line is plain text in the design (always "all except RU sites"): the real mode is written into it
+    paintRoute() {
+      const line = document.querySelector<HTMLElement>('.fy-hint'), r = this.route;
+      const text = line && [...line.childNodes].find((n) => n.nodeType === 3 && n.textContent!.trim());
+      if (!line || !text || !r) return;
+      line.dataset.smart ??= text.textContent ?? '';
+      const head = line.dataset.smart.split(':')[0]; // "Routes"
+      const mode = routeWords(r, line.dataset.smart), say = mode.startsWith(head) ? mode : head + ': ' + mode.toLowerCase();
+      if (text.textContent !== say) text.textContent = say;
+    }
     fit() {
       const h = (document.querySelector('.ty-fly') as HTMLElement | null)?.offsetHeight ?? 0;
       if (h && h !== this.height) { this.height = h; void invoke('tray_fit', { height: h + 16 }); }
@@ -147,6 +162,7 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       const state = view(s);
       const sub = this.sub();
       const servers = sub?.servers ?? [];
+      const nodes = nodesOf(servers); // one row per node, as in the main window's list
       const sel: string = this.state?.liveSel || 'auto';
       const sample: string = v.rows?.[1]?.n ?? ''; // the design's sample server inside its own texts
       const target = s && s.state === 'connected' ? s.server : (servers.find((n) => n.id === sel) ?? servers[0])?.name ?? '';
@@ -168,11 +184,13 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       const auto = v.rows?.[0];
       v.rows = [
         ...(auto ? [{ ...auto, ms: '—', c: sel === 'auto' ? 'on' : '', on: sel === 'auto' ? 'true' : 'false', nowC: 'hide', go: () => this.pick('auto') }] : []),
-        ...servers.slice(0, 5).map((n) => {
-          const { flag, text } = flagOf(n.name);
+        // ponytail: the first five nodes, as the design's panel has room for; the full list is one press away
+        ...nodes.slice(0, 5).map((n) => {
+          const mine = n.entries.some((e) => e.s.id === sel);
+          const best = Math.min(...n.entries.map((e) => this.pings[e.s.id] || Infinity));
           return {
-            n: text, suf: '', ms: '—', flag, c: sel === n.id ? 'on' : '', on: sel === n.id ? 'true' : 'false', fgC: '', imC: '', auC: 'hide', v: '', vC: 'hide',
-            nowC: state === 'on' && (sel === n.id || (sel === 'auto' && s!.server === n.name)) ? '' : 'hide', go: () => this.pick(n.id),
+            n: n.name, suf: sufOf(n), ms: best === Infinity ? '—' : String(best), flag: n.flag, c: mine ? 'on' : '', on: mine ? 'true' : 'false', fgC: '', imC: n.flag ? '' : 'hide', auC: 'hide', v: '', vC: 'hide',
+            nowC: state === 'on' && n.entries.some((e) => (s!.server_id ? e.s.id === s!.server_id : e.s.name === s!.server)) ? '' : 'hide', go: () => this.pick(n.entries[0].s.id),
           };
         }),
       ];
