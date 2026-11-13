@@ -407,7 +407,20 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         setTimeout(() => this.setState((old: any) => ({ flash: { ...old?.flash, ...mark(false) } })), 750); // the design's flash on a fresh number
       });
     }
-    takeLink() { void invoke<string>('take_link').then((url) => { if (url) this.startAdd(url); }, () => {}); }
+    // A link the app already has is not added again (the panel would refuse this device's second enrolment, and the
+    // sheet would call a good link a bad one): its subscription is simply chosen.
+    takeLink() {
+      void invoke<string>('take_link').then(async (url) => {
+        if (!url) return;
+        // on a cold start the list may not be here yet
+        const list = this.subsList ?? (await rpc<{ subs: Sub[] }>('subs.list').then((r) => r.subs, () => [] as Sub[]));
+        for (const u of list) {
+          const have = await rpc<{ url: string }>('subs.link', { id: u.id }).then((r) => r.url, () => '');
+          if (have && have.trim() === url.trim()) { pref.set('sub', u.id); return this.setState({ liveSub: u.id, add: 'none', subsPop: false }, () => this.applySubs(this.subsList ?? [])); }
+        }
+        this.startAdd(url);
+      }, () => {});
+    }
     // preview first: nothing is added until the user presses the button on the sheet
     addSeq = 0;
     startAdd(text: string) {
