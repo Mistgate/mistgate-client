@@ -100,6 +100,7 @@ type Runner struct {
 	mu       sync.Mutex
 	state    State
 	cancel   context.CancelFunc
+	next     *string // a start asked for while a cancelled run is still winding down: its subscription
 	pending  []State
 	dispatch bool
 }
@@ -143,8 +144,18 @@ func setDuration(value *time.Duration, fallback time.Duration) {
 func (r *Runner) Start(sub string) State {
 	r.mu.Lock()
 	if r.cancel != nil {
+		// A cancelled run has not left yet: the new one starts when it does (see run), and shows as running now.
+		flush := false
+		if r.state.State == "failed" && r.state.Error == "cancelled" {
+			r.next = &sub
+			r.state.State, r.state.Step, r.state.Pct, r.state.Error = "running", 0, 0, ""
+			flush = r.queueLocked()
+		}
 		state := cloneState(r.state)
 		r.mu.Unlock()
+		if flush {
+			r.flush()
+		}
 		return state
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -164,6 +175,7 @@ func (r *Runner) Cancel() State {
 	r.mu.Lock()
 	cancel := r.cancel
 	changed := cancel != nil && r.state.State == "running"
+	r.next = nil
 	if changed {
 		r.state.State, r.state.Error = "failed", "cancelled"
 	}
@@ -190,6 +202,14 @@ func (r *Runner) Get() State {
 func (r *Runner) run(ctx context.Context, sub string) {
 	result, err := r.check(ctx, sub)
 	r.mu.Lock()
+	if r.next != nil { // cancelled, and a new run is waiting for this one to leave
+		sub, r.next = *r.next, nil
+		ctx, cancel := context.WithCancel(context.Background())
+		r.cancel = cancel
+		r.mu.Unlock()
+		go r.run(ctx, sub)
+		return
+	}
 	if r.state.State == "failed" && r.state.Error == "cancelled" {
 		r.cancel = nil
 		r.mu.Unlock()
@@ -327,7 +347,7 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 
 func (r *Runner) advance(step, pct int) {
 	r.mu.Lock()
-	if r.state.State != "running" || step <= r.state.Step {
+	if r.state.State != "running" || step <= r.state.Step || r.next != nil { // next: the caller is the cancelled run
 		r.mu.Unlock()
 		return
 	}

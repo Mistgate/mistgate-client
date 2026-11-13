@@ -89,6 +89,7 @@ type realRun struct {
 type realTunnel struct {
 	mu      sync.Mutex
 	closed  bool
+	noIPv6  bool // the panel's word for this path, set before the bridge exists
 	adapter *netcfg.Adapter
 	client  client.Client
 	vless   *xray.Instance
@@ -550,19 +551,17 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	}
 	split := selected.PanelSplit
 	r.panelSplit.Store(&split)
+	run.tunnel.mu.Lock()
+	run.tunnel.noIPv6 = selected.NoIPv6
+	run.tunnel.mu.Unlock()
 	host, port, err := profileEndpoint(selected)
 	if err != nil {
 		return Info{}, failure("no_subscription", "read profile endpoint")
 	}
 
-	// AmneziaWG: the round trip is measured now, before the tunnel takes the key (see diag.LiveAWG)
+	// AmneziaWG: the round trip is the tunnel's own handshake. A measuring handshake beside it would be one more
+	// burst of junk and an initiation to the same port, which a flood guard on the way counts against this address.
 	var before time.Duration
-	if selected.Protocol == "awg" {
-		before, _ = diag.Handshake(runCtx, selected, fastestTimeout)
-		if err := runCtx.Err(); err != nil {
-			return Info{}, err
-		}
-	}
 
 	step(report, StepResolve)
 	serverIP, err := r.resolveServer(runCtx, run, host, target.Hold)
@@ -728,7 +727,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				return Info{}, failure("tunnel_failed", "AmneziaWG tunnel: create userspace stack")
 			}
 		}
-		err = startAWGHandshake(runCtx, awgTun, selected.AWG, endpoint, run.tunnel)
+		before, err = startAWGHandshake(runCtx, awgTun, selected.AWG, endpoint, run.tunnel)
 		if err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
@@ -890,7 +889,7 @@ const latencyEvery = 30 * time.Second
 // probes cannot give it: with the forwarder they are answered inside this process.
 func (r *Real) keepLatency(ctx context.Context, run *realRun, p profile.Profile) {
 	if p.Protocol == "awg" {
-		return // its key is the tunnel's: the number measured before connecting stays
+		return // its key is the tunnel's: the time of the tunnel's own handshake stays
 	}
 	ticker := time.NewTicker(latencyEvery)
 	defer ticker.Stop()
@@ -1295,6 +1294,10 @@ func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu
 	if err != nil {
 		return err
 	}
+	if t.noIPv6 {
+		// ponytail: the probe has already started and finds the same; a constructor argument would save its two dials.
+		bridge.noVPN6.Store(true)
+	}
 	t.bridge = bridge
 	return nil
 }
@@ -1606,47 +1609,50 @@ func startVLESS(ctx context.Context, p *profile.VLESS, server netip.Addr) (*xray
 	return x, nil
 }
 
-func startAWGHandshake(ctx context.Context, tunDevice tun.Device, p *profile.AWG, endpoint netip.AddrPort, tunnel *realTunnel) error {
+// startAWGHandshake brings the device up and waits for the first handshake. The time it returns is from the
+// initiation to the answer, to 5 ms: the round trip the window shows.
+func startAWGHandshake(ctx context.Context, tunDevice tun.Device, p *profile.AWG, endpoint netip.AddrPort, tunnel *realTunnel) (time.Duration, error) {
 	if err := ctx.Err(); err != nil {
 		_ = tunDevice.Close()
-		return err
+		return 0, err
 	}
 	gated := newGatedTun(tunDevice)
 	awgDevice := device.NewDevice(gated, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
 	if !tunnel.setAWG(awgDevice) {
-		return context.Canceled
+		return 0, context.Canceled
 	}
 	if err := awgDevice.IpcSet(p.UAPI(endpoint)); err != nil {
 		gated.release()
 		awgDevice.Close()
-		return errors.New("configure AmneziaWG device")
+		return 0, errors.New("configure AmneziaWG device")
 	}
 	gated.release()
 	if err := awgDevice.Up(); err != nil {
 		awgDevice.Close()
-		return errors.New("start AmneziaWG device")
+		return 0, errors.New("start AmneziaWG device")
 	}
 	keyBytes, err := hex.DecodeString(p.ServerKey)
 	if err != nil || len(keyBytes) != 32 {
 		awgDevice.Close()
-		return errors.New("decode AmneziaWG peer key")
+		return 0, errors.New("decode AmneziaWG peer key")
 	}
 	var serverKey [32]byte
 	copy(serverKey[:], keyBytes)
 	peer := awgDevice.LookupPeer(device.NoisePublicKey(serverKey))
 	if peer == nil {
 		awgDevice.Close()
-		return errors.New("find AmneziaWG peer")
+		return 0, errors.New("find AmneziaWG peer")
 	}
+	sent := time.Now()
 	if err := peer.SendHandshakeInitiation(false); err != nil {
 		awgDevice.Close()
-		return errors.New("send AmneziaWG handshake")
+		return 0, errors.New("send AmneziaWG handshake")
 	}
 	if err := waitAWGHandshake(ctx, awgDevice, p.ServerKey, 10*time.Second); err != nil {
 		awgDevice.Close()
-		return err
+		return 0, err
 	}
-	return nil
+	return time.Since(sent), nil
 }
 
 type gatedTun struct {
@@ -1688,7 +1694,7 @@ func (g *gatedTun) Close() error {
 }
 
 func waitAWGHandshake(ctx context.Context, awgDevice *device.Device, serverKey string, timeout time.Duration) error {
-	ticker := time.NewTicker(25 * time.Millisecond)
+	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -180,5 +182,40 @@ func TestResultDoesNotSerializeProfileSecrets(t *testing.T) {
 		if strings.Contains(string(encoded), secret) {
 			t.Fatalf("serialized result contains %q: %s", secret, encoded)
 		}
+	}
+}
+
+// A start right after a cancel is not lost: it begins when the cancelled run has left.
+func TestRunnerStartAfterCancel(t *testing.T) {
+	var calls atomic.Int32
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	runner := NewRunner(Config{Profiles: func() ([]profile.Profile, error) {
+		calls.Add(1)
+		entered <- struct{}{}
+		<-release
+		return nil, errors.New("none")
+	}}, nil)
+	runner.Start("sub")
+	<-entered
+	runner.Cancel()
+	if again := runner.Start("sub"); again.State != "running" || again.Step != 0 {
+		t.Fatalf("start after cancel = %#v", again)
+	}
+	close(release)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("the second run did not start")
+	}
+	deadline := time.After(time.Second)
+	for runner.Get().State == "running" {
+		select {
+		case <-deadline:
+			t.Fatal("the second run did not finish")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if got := runner.Get(); calls.Load() != 2 || got.State != "failed" || got.Error == "cancelled" {
+		t.Fatalf("calls=%d state=%#v", calls.Load(), got)
 	}
 }
