@@ -438,6 +438,19 @@ it), `country` (code), `city`, `via` (`direct`, `relay` or `warp`), `ipv6`, `loa
 lists the node's paths as its protocols. Other subscriptions have only `id`, `name` and `protocol`; the window then
 groups by the first part of the name, which is a guess.
 
+The owner's own words and the rest of what `sync` says, all optional (absent on a subscription that is not managed and
+on a panel that does not send them):
+
+| Where | Field | Meaning |
+|---|---|---|
+| server | `label` | The owner's name of the path's profile (for example a protocol and transport), plain text, shortened |
+| server | `node_label` | The owner's name of the node |
+| server | `via_country` | Country code where a `relay` path enters, when it is not the node's own |
+| server | `ipv6_egress` | `true` or `false`: whether IPv6 leaves through this path. Absent: the panel did not say. On `false` the engine treats the path as having no IPv6 at once (names get no IPv6 addresses, IPv6 destinations are turned away), without probing |
+| subscription | `telegram` | Telegram proxies: `[{"node", "country", "city", "via", "via_country", "ipv6", "link"}]`. `link` opens in Telegram; it is a secret of the same kind as a server's credentials: for the trusted window only, never logged |
+| subscription | `devices_used`, `devices_limit` | Devices of this person on the panel and the allowed number; both absent when the panel does not count |
+| subscription | `debug` | `{"intake": bool, "unasked": bool, "request": {"id", "level", "note", "expires_unix"}}`: whether the panel takes debug logs, whether a send without a request is allowed, and the owner's open request. Absent: no intake (see "Debug logs") |
+
 Subscriptions expose `notice` (empty when the panel sent no message), the panel's `Announce` response header decoded
 from plain text or `base64:<value>`.
 Port hopping is accepted from Hysteria2 `ports: "from-to"` profiles and the `mport` or `host:from-to` link forms;
