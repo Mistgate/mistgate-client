@@ -65,3 +65,13 @@ its own release address into `tauri.conf.json`.
 A release is the tag `v<version>` with three files: `Mistgate_<version>_x64-setup.exe`, its `.sig`, and `latest.json`
 (plus `MistgateSetup_<version>_x64.exe` for a first install). The version is set in `ui/package.json`,
 `ui/src-tauri/tauri.conf.json`, `ui/src-tauri/Cargo.toml` and `ServiceVersion` in `core/internal/ipc/server.go`.
+
+## The `mistgate://` link
+
+The installer registers the `mistgate` link scheme for the machine (`HKLM\Software\Classes\mistgate`), so a
+subscription page can offer "add to the app": `mistgate://add?url=<the subscription link, URL-encoded>&name=<its title>`.
+Windows starts the app with the link; when the app already runs, the second start hands the link to the first and
+leaves (`tauri-plugin-single-instance`). The window comes up on its first screen and shows the same sheet as for a
+pasted link: nothing is added, and no device is enrolled, until the person presses the button. Only an `https` `url`
+is taken (at most 4096 characters, no control characters); `name` is read and not used, the sheet shows the name the
+panel gives. The link is never logged. From version 0.1.1.

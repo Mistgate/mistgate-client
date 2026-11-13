@@ -16,6 +16,8 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell .mg-tg-help > b { font-size: 13px; font-weight: 700; letter-spacing: 0; color: color-mix(in oklab, var(--text) 82%, transparent); }
 .shell .mg-tg-help ol { margin: 0; padding-inline-start: 18px; display: grid; gap: 6px; text-align: start; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .shell .mg-tg-help .lsb { margin-top: 4px; padding: 0 14px; }
+/* Adding one more subscription: the way back, beside the form's other small buttons. */
+.shell .onb-alt .mg-back { cursor: pointer; }
 /* A program's own icon on its tile (Routes > Apps): in the design's tinted square, in place of its symbol. */
 .shell .grid.apps .mono > img.mg-appic { width: 22px; height: 22px; }
 .shell .grid.apps .mono.mg-has-ic > .gl { display: none; }
@@ -46,8 +48,6 @@ html.shell-tray .ty-fly { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--
 .shell .sx-row.col:has(.g-git-fork), .shell .sx-upd .up-new .need { display: none; }
 /* Diagnostics, "Show contents": the lines that will be sent (the design draws the button, not the list). */
 .shell .sheet .mg-lines { direction: ltr; text-align: left; max-height: 150px; margin: 0; padding: 10px 12px; overflow: auto; border-radius: 12px; background: color-mix(in oklab, var(--text) 6%, transparent); font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; user-select: text; }
-/* Notifications: "update installed" waits for updates to exist. */
-.shell .sx-nl .sx-row.nr:nth-child(5) { opacity: .45; pointer-events: none; }
 /* Subscription: the panel gives no support address yet, and leaving a subscription is on Home's menu until its
    confirmation is designed here. */
 .shell .sb-act a:first-child, .shell .sx-pg .sx-g:has(.lsb.dang) { display: none; }

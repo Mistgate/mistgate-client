@@ -1,6 +1,7 @@
 // The other screens on the real service: the VPN chip in their title bar, and Settings itself.
 // As on Home, the design's logic stays as generated; these subclasses feed it the service's state and send its
 // choices to the service. What the service has no setting for yet stays the design's local switch.
+import { clock as hhmm, named as withName, reportOff, reportState, type ReportSub } from './report';
 import { updates } from './updates';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -107,9 +108,9 @@ const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'a
 
 // the design's own words for a switch it shows switched off, in the window's language
 const repTexts = new Map<string, string>();
-function repText(Base: typeof DCLogic, sub: 'old' | 'basic') {
-  const key = document.documentElement.lang + '|' + sub;
-  if (!repTexts.has(key)) { const l: any = new (Base as any)({ sub }); l.state = {}; repTexts.set(key, l.renderVals().repSub); }
+function repText(Base: typeof DCLogic, sub: 'old' | 'basic' | 'ok', what: 'repSub' | 'repLast' = 'repSub', on = false) {
+  const key = document.documentElement.lang + '|' + sub + '|' + what + '|' + on;
+  if (!repTexts.has(key)) { const l: any = new (Base as any)({ sub }); l.state = { on: { rep: on } }; repTexts.set(key, l.renderVals()[what]); }
   return repTexts.get(key)!;
 }
 
@@ -234,7 +235,7 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       this.setState((old: any) => ({
         ks: s.kill_switch, ksAsk: false, pr: PR_BACK[s.protocol] ?? 'auto',
         on: Object.assign({}, old?.on, { lan: s.lan, game: s.game, auto: s.autoconnect, min: shellPrefs().min, tray: shellPrefs().tray,
-          nt: notifyOn('nt'), n0: notifyOn('n0'), n1: notifyOn('n1'), n2: notifyOn('n2'), n3: notifyOn('n3'), n4: false }),
+          nt: notifyOn('nt'), n0: notifyOn('n0'), n1: notifyOn('n1'), n2: notifyOn('n2'), n3: notifyOn('n3'), n4: notifyOn('n4') }),
       }));
     }
     save(patch: Partial<Settings>) {
@@ -258,25 +259,31 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       // what is shown is the service's setting: flip that, and bring the window's own half in line with it
       v.tg.auto = () => { const next = !on.auto; pref.set('auto', next ? '1' : '0'); applyShell('auto'); this.save({ autoconnect: next }); };
       // notifications: the window's own switches (live-notify reads them when something happens)
-      for (const key of ['nt', 'n0', 'n1', 'n2', 'n3'] as NotifyKey[]) {
+      for (const key of ['nt', 'n0', 'n1', 'n2', 'n3', 'n4'] as NotifyKey[]) {
         v.tg[key] = () => {
           setNotify(key, !notifyOn(key));
           this.setState((old: any) => ({ on: Object.assign({}, old?.on, { [key]: notifyOn(key) }) }));
         };
       }
-      v.tg.n4 = () => {}; // "update installed": there are no updates yet (dimmed in shell.css)
       v.tg.min = () => flip('min');
       v.tg.tray = () => flip('tray');
       for (const k of Object.keys(PR)) v.prSet[k] = () => this.save({ protocol: PR[k] });
-      // Privacy. Block reports wait for the panel's next report format: the switch is shown as the design shows a panel
-      // that does not take them. The log is the service's.
+      // Privacy. Block reports: the person's switch for the subscription on screen, there only when its panel takes
+      // them. The log is the service's.
       const u = this.sub();
-      const link = !!u && !u.managed;
+      const rs = reportState(u as ReportSub | null);
       Object.assign(v, {
-        repCls: 'dis', repLs: 'hide', repSub: repText(Base, link ? 'basic' : 'old'),
+        repCls: rs.can ? '' : 'dis', repLs: rs.can ? '' : 'hide',
+        // a link subscription has no panel to send to; a panel that says nothing of reports is too old; one that says
+        // "no" has them switched off by its owner
+        repSub: rs.link ? repText(Base, 'basic') : rs.can ? withName(repText(Base, 'ok'), u!.name) : (u as ReportSub | null)?.probe ? reportOff() : repText(Base, 'old'),
+        // "Last sent today at 13:58 · 4 times this week": the time is the real one, the week's count is not kept
+        repLast: rs.on && rs.at ? repText(Base, 'ok', 'repLast', true).split(' · ')[0].replace(/\d{1,2}[:.]\d{2}/, hhmm(rs.at)) : repText(Base, 'ok', 'repLast', false),
         clearLog: () => void rpc('log.clear').then(() => this.setState({ logCleared: true }), () => {}),
       });
-      v.tg.rep = () => {};
+      v.T.rep = rs.on ? 'on' : '';
+      v.A.rep = rs.on ? 'true' : 'false';
+      v.tg.rep = () => { if (rs.can && u) void rpc('report.set', { sub: u.id, on: !rs.on }).catch(() => {}); };
       // Sections drawn for the finished product and not in this build (Updates; Local proxy on an older service;
       // Subscription while there is none): shown dimmed and closed, so that the design's samples are not taken for the real state.
       if (u) this.subVals(v, u);

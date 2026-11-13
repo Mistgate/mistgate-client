@@ -2,6 +2,7 @@
 // design's rows. The design's logic stays as generated. Its wording is reused: the sample results it carries (in
 // the window's language) are read once, by position, and real numbers are put into them. Only what this build
 // really checks is shown; the design's other rows (route hops, speed limits, Wi-Fi) come with their detectors.
+import { clock as hhmm, named as withName, reportOff, reportState, type ReportSub } from './report';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
@@ -27,7 +28,7 @@ type State = { state: 'idle' | 'running' | 'done' | 'failed'; step: number; pct:
 type LogEntry = { t_unix_ms: number; level: string; src?: string; msg: string };
 // what a Mistgate panel says about diagnostics: it takes them, the person may send unasked, support asked for them
 type Ask = { id: string; level: string; note?: string; expires_unix: number };
-type DSub = { id: string; name: string; host: string; servers: Server[]; debug?: { intake: boolean; unasked?: boolean; request?: Ask } };
+type DSub = ReportSub & { host: string; servers: Server[]; debug?: { intake: boolean; unasked?: boolean; request?: Ask } };
 type Line = { ts: number; lvl: string; src: string; msg: string; kv?: Record<string, string> };
 // the lines the service made and keeps: exactly these are sent
 type Snap = { key: string; at: number; id: string; bytes: number; count: number; lines: Line[] };
@@ -87,13 +88,15 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       const subs = (list: DSub[]) => {
         this.subs = list; this.bySub = new Map(list.map((u) => [u.id, u.servers])); this.servers = list.flatMap((u) => u.servers);
         // only a panel that takes diagnostics gets the design's full variant; a link subscription has nobody to send to
-        this.setState({ md: this.cur()?.debug?.intake ? 'mg' : 'basic' });
+        // block reports: the design's states of the switch, from the subscription's own
+        const rs = reportState(this.cur());
+        this.setState({ md: this.cur()?.debug?.intake ? 'mg' : 'basic', anonK: !rs.can ? 'old' : !rs.on ? 'off' : rs.at ? 'on' : 'fresh' });
       };
       this.off.push(listen<{ subs: DSub[] }>('mg://subs', (e) => subs(e.payload.subs)));
       rpc<{ subs: DSub[] }>('subs.list').then((r) => subs(r.subs), () => {});
       document.addEventListener('click', this.onShow);
       rpc<{ entries: LogEntry[] }>('log.get').then((r) => { this.log = r.entries; this.forceUpdate(); }, () => {});
-      // until the subscriptions are read: the design's "basic" variant; block reports are not offered in this build
+      // until the subscriptions are read: the design's "basic" variant, block reports not offered
       this.setState({ md: 'basic', anonK: 'old', rep: 'closed' });
     }
     // "Checked 2 min ago" is plain markup in the design: say when this result was made
@@ -261,6 +264,10 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
 
     renderVals() {
       const v = super.renderVals();
+      // "Help find blocks": the switch of the subscription on screen, the design's sentence for its state
+      const cu = this.cur(), rs = reportState(cu);
+      v.toggleAnon = () => { if (rs.can && cu) void rpc('report.set', { sub: cu.id, on: !rs.on }).catch(() => {}); };
+      if (!rs.can) { if (cu?.probe) v.anonTxt = reportOff(); } else v.anonTxt = withName(rs.on && rs.at ? String(v.anonTxt).replace(/\d{1,2}[:.]\d{2}/, hhmm(rs.at)) : v.anonTxt, cu!.name);
       if (!S) return v;
       const { I, G, look } = S;
       const d = this.diag, r = d.result;

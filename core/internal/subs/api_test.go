@@ -50,6 +50,11 @@ type fakePanel struct {
 	debugBody   string
 	debugRetry  string
 	debugCalls  []debugCall
+
+	probeStatus int // 0 = 200 {"accepted": 2}
+	probeBody   string
+	probeRetry  string
+	probeCalls  []debugCall
 }
 
 type debugCall struct {
@@ -144,6 +149,18 @@ func (p *fakePanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			_, _ = w.Write([]byte(`{"id":"dbr_abc","lines":3,"dropped_kv":1}`))
 		}
+	case strings.HasSuffix(r.URL.Path, "/probe"):
+		body, _ := io.ReadAll(r.Body)
+		p.probeCalls = append(p.probeCalls, debugCall{r.URL.Path, r.Header.Clone(), body, len(body) > 0})
+		if p.probeStatus != 0 {
+			if p.probeRetry != "" {
+				w.Header().Set("Retry-After", p.probeRetry)
+			}
+			w.WriteHeader(p.probeStatus)
+			_, _ = w.Write([]byte(p.probeBody))
+			return
+		}
+		_, _ = w.Write([]byte(`{"accepted":2}`))
 	case strings.HasSuffix(r.URL.Path, "/client/leave"):
 		p.leaves++
 		p.leaveAuth = append(p.leaveAuth, r.Header.Get("Authorization"))

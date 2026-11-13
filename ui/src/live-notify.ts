@@ -1,14 +1,22 @@
 // Windows notifications, shown by the main window while it runs (in the tray too): only when something needs the
 // user's attention. The switches are the window's own (Settings > Notifications); the service knows nothing of them.
-// ponytail: a press on a notification opens nothing yet (the plugin gives desktop no callback), and "update
-// installed" waits for updates to exist.
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { PROTO, type Sub } from './live';
 import { words } from './live-i18n';
+import { version } from '../package.json';
+
+// "Update installed": the design's words, with the version this build is
+const UPDATED: Record<string, [(v: string) => string, string]> = {
+  en: [(v) => `Mistgate updated to ${v}`, 'The new version is installed and already running.'],
+  ru: [(v) => `Mistgate обновлён до ${v}`, 'Новая версия установлена и уже работает.'],
+  zh: [(v) => `Mistgate 已更新到 ${v}`, '新版本已安装并正在运行。'],
+  fa: [(v) => `‏Mistgate به نسخه ${v} به‌روز شد`, 'نسخه جدید نصب شده و در حال اجراست.'],
+  tr: [(v) => `Mistgate ${v} sürümüne güncellendi`, 'Yeni sürüm kuruldu ve çalışıyor.'],
+};
 
 type Status = { state: string; server_id?: string; protocol?: string };
-export type NotifyKey = 'nt' | 'n0' | 'n1' | 'n2' | 'n3';
+export type NotifyKey = 'nt' | 'n0' | 'n1' | 'n2' | 'n3' | 'n4';
 
 const get = (key: string) => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } };
 const set = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* lasts this start */ } };
@@ -23,6 +31,11 @@ function show(key: NotifyKey, title: string, body: string) {
 const LOST_AFTER = 30_000;
 
 export function startNotify() {
+  // ---- the app itself: this start is the first of a new version
+  const before = get('ver');
+  set('ver', version);
+  if (before && before !== version) { const [title, body] = UPDATED[document.documentElement.lang] ?? UPDATED.en; show('n4', title(version), body); }
+
   // ---- the connection: lost for over 30 s, and back on another way
   let was: Status | null = null; // the last connected state
   let lostTimer = 0;

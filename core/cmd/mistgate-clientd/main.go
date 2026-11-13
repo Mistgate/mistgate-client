@@ -21,6 +21,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/ipc"
+	"github.com/mistgate/mistgate-client/core/internal/probereport"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/proxy"
 	"github.com/mistgate/mistgate-client/core/internal/session"
@@ -216,6 +217,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	if configured := settingsStore.Get(); shouldConnectAtStart(configured) {
 		_, _ = manager.Connect(ctx, engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub})
 	}
+	reporter := &probereport.Reporter{Subs: store, Log: logger.With("src", "report")}
 	diagnostics := diag.NewRunner(diag.Config{Profiles: store.Profiles, Tunnel: func() bool {
 		status, err := manager.Status(ctx)
 		return err == nil && status.State == "connected"
@@ -227,6 +229,9 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		return ""
 	}, Logger: logger.With("src", "diag")}, func(state diag.State) {
 		manager.Events().Publish("diag", state)
+		if state.State == "done" { // a finished check goes to the panel when the person has the switch on
+			go reporter.Auto(context.Background(), state.Result)
+		}
 	})
 	localProxy := proxy.New(proxy.Config{
 		Dir: dataDir, Settings: settingsStore.Get, Dial: dialVPN, Host: homeAddr,

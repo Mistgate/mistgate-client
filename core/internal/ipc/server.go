@@ -16,6 +16,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
+	"github.com/mistgate/mistgate-client/core/internal/probereport"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/proxy"
 	"github.com/mistgate/mistgate-client/core/internal/session"
@@ -33,7 +34,7 @@ const (
 )
 
 const (
-	ServiceVersion = "0.1.0"
+	ServiceVersion = "0.1.1"
 	API            = 0
 	DefaultQueue   = 64
 )
@@ -50,6 +51,7 @@ type Server struct {
 	Ping      PingFunc                    // servers.ping
 	Logs      *LogStore
 	Proxy     *proxy.Proxy
+	Report    *probereport.Reporter // report.*
 	Logger    *slog.Logger
 	QueueSize int
 
@@ -144,7 +146,7 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 
 // slowMethods wait on the network for seconds.
 var slowMethods = map[string]bool{
-	"servers.ping": true, "servers.hosts": true, "subs.preview": true, "subs.add": true, "subs.refresh": true, "subs.remove": true, "apps.list": true, "debug.send": true, "debug.decline": true,
+	"servers.ping": true, "servers.hosts": true, "subs.preview": true, "subs.add": true, "subs.refresh": true, "subs.remove": true, "apps.list": true, "debug.send": true, "debug.decline": true, "report.send": true,
 }
 
 // dispatch answers one call; a panic in it is that call's error, not the end of the service.
@@ -437,6 +439,9 @@ func (s *Server) handle(ctx context.Context, request Request, trusted bool) (any
 		return map[string]any{}, nil, nil
 	case "debug.preview", "debug.send", "debug.decline":
 		result, rpcError := s.handleDebug(ctx, request)
+		return result, nil, rpcError
+	case "report.set", "report.preview", "report.send":
+		result, rpcError := s.handleReport(ctx, request)
 		return result, nil, rpcError
 	case "subscribe":
 		var params struct {
@@ -839,6 +844,9 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 		logger = slog.Default()
 	}
 	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Apps: apps, Ping: ping, Logs: logs, Proxy: localProxy}
+	if store != nil {
+		server.Report = &probereport.Reporter{Subs: store, Log: logger.With("src", "report")}
+	}
 	if diagnostics != nil {
 		defer diagnostics.Cancel()
 	}

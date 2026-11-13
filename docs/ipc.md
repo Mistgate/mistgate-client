@@ -75,6 +75,9 @@ without its `\n`. Signatures are checked offline (no revocation lookups); a cata
 | `debug.preview` | `{"sub": "<subscription id>", "parts": ["system", "checks", "log"], "note": "…", "request": "dbr_…"}` (`note`, `request` optional) | `{"id": "<snapshot id>", "count": N, "bytes": N, "lines": [{"ts": 0, "lvl": "info", "src": "…", "msg": "…", "kv": {…}}]}`, see "Debug logs" |
 | `debug.send` | `{"id": "<snapshot id>"}` | `{"ok": true, "id": "dbr_…", "lines": N}` or `{"ok": false, "code": "<code>", "retry_s": N}` |
 | `debug.decline` | `{"sub": "<subscription id>", "request": "dbr_…"}` | `{"ok": true}` or `{"ok": false, "code": "<code>", "retry_s": N}` |
+| `report.set` | `{"sub": "<subscription id>", "on": true \| false}` | Subscription (with the new `report`), see "Block reports" |
+| `report.preview` | `{"sub": "<subscription id>"}` | `{"body": {…}, "servers": N}`: exactly the JSON that would go out |
+| `report.send` | `{"sub": "<subscription id>"}` | `{"ok": true, "accepted": N}` or `{"ok": false, "code": "<code>", "retry_s": N}` |
 
 Status:
 
@@ -266,6 +269,48 @@ is the panel's (`too_many_requests`, `device_removed`, `device_blocked`, `link_c
 is the panel's `Retry-After`, 0 when it sent none. After a success the service syncs the subscription, so the request
 goes away. `debug.decline` tells the panel the person will not answer a request; a request that is not the open one
 gives `{"ok": false, "code": "no_request"}` without a call.
+
+### Block reports
+
+A managed subscription carries three more keys in `subs.list`, the `subs` event and the answers that return a
+Subscription:
+
+- `"probe": {"intake": true, "v": 1}`: what the panel's sync says. `intake` is whether the panel's owner takes block
+  reports, `v` the newest report version it reads. The key is left out when the panel did not say (a subscription that is
+  not managed, an old panel). The ASN the panel gives the device is not shown anywhere; only a report uses it.
+- `"report": false`: the person's own switch, **off by default** and stored per subscription. It only decides whether a
+  finished network check is sent by itself. It is kept when the panel stops taking reports (then `probe.intake` is false
+  and the switch cannot be turned on).
+- `"report_last": {"at_unix": 0, "accepted": 0, "error": ""}`: how the latest send of this subscription ended; kept in
+  memory only (gone when the service restarts), left out before the first send. `error` is empty on success, else the code
+  of `report.send` below; `accepted` is how many servers the panel kept (it drops a server whose host and port are not in
+  the person's subscription, so it can be less than `servers` of the preview).
+
+`report.set` turns the switch. `on: true` needs `probe.intake` true and `probe.v` at least 1. Errors: `bad_params`,
+`unknown_subscription`, `probe_off` (the panel does not take reports). `on: false` always works. A `subs` event follows.
+
+`report.preview` builds the report from the last finished network check (`diag.get`) of that subscription and returns
+the body as it would be posted, so the window can show it. `servers` is `len(body.servers)`; it may be 0 (nothing in
+the check can be told honestly; `report.send` then refuses with `no_servers`). The preview does not need the switch or
+the panel's intake. Errors: `bad_params`, `unknown_subscription`, `no_check` (no finished check of this subscription,
+or it is older than 24 hours).
+
+`report.send` posts that same report now, whatever the switch says: it is the person's own act. The result is not an RPC
+error: `ok: true` and `accepted`, or `ok: false` with a `code` and `retry_s`, the seconds until a send may start again
+(0 when nothing is held). `code` is the panel's (`probe_off`, `cross_origin`, `user_inactive`, `too_large`,
+`unsupported_media_type`, `bad_request`, `too_many_requests`, `retry` for a 429 or 503 without a body, …) or the
+service's: `offline`, `fetch_failed`, `decoy` (the panel answered like a normal page), `probe_off` (the panel does
+not take reports, no request is made), `no_servers`, `too_soon` (see below), `no_link`. RPC errors, before anything is
+built: `bad_params`, `unknown_subscription`, `no_check`. A `403 probe_off` also sets `probe.intake` to false until the next sync (a
+`subs` event follows); the switch keeps its value.
+
+The same send runs by itself when a network check ends in `done`, for a subscription whose `report` is true and
+`probe.intake` is true. At most one send per subscription in 10 minutes (`too_soon`, the check's result is not kept
+for later), and none before a `Retry-After` of the panel has passed. A request that never reached the panel (`offline`,
+`fetch_failed`) does not start the wait. The request uses the same HTTP client as the sync, with a 15 second timeout.
+
+The service log gets only a fact and a code (`block report sent: accepted N`, `block report failed: <code>`): never
+the link, the token, a host or port, the ASN or the body. See `client-api.md`, "probe: v1", for what the body holds.
 
 ### Regional DNS
 

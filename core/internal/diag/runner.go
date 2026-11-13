@@ -32,6 +32,10 @@ type Result struct {
 		Kind string `json:"kind"`
 	} `json:"network"`
 	Servers []Server `json:"servers"`
+	// For the block report only, never sent to the window: the VPN was up when the check began, and the one server (a
+	// path id) that was answered from the live tunnel instead of being tried outside it.
+	VPN  bool   `json:"-"`
+	Live string `json:"-"`
 	// Route: blocking by address on the way out. Hop is the first silent hop when blocked, the path length when ok.
 	Route struct {
 		Verdict string `json:"verdict"`
@@ -264,6 +268,9 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 	}
 	result := &Result{Sub: sub, Servers: make([]Server, len(selected))}
 	result.Network.Kind = physical.Kind
+	if result.VPN = r.config.Tunnel != nil && r.config.Tunnel(); result.VPN && LiveAWG != nil {
+		result.Live, _ = LiveAWG()
+	}
 	result.Neighbours = neighbours(scanLocal())
 	r.log("neighbours", fmt.Sprintf("found=%d", len(result.Neighbours)))
 	anyServerOK, anyHostAlive := checkProfiles(ctx, selected, physical, r.config, result.Servers)
@@ -554,6 +561,9 @@ func resolveProfile(ctx context.Context, p profile.Profile) (netip.AddrPort, int
 func serverForProfile(p profile.Profile) Server {
 	return Server{ID: p.ID, Name: p.Name, Protocol: p.Protocol, Verdict: "app", Reason: "engine_error"}
 }
+
+// Endpoint is the host and port the checks reach a profile's server at, as the profile gives them.
+func Endpoint(p profile.Profile) (string, uint16, error) { return profileEndpoint(p) }
 
 func profileEndpoint(p profile.Profile) (string, uint16, error) {
 	switch p.Protocol {

@@ -19,6 +19,10 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
   ${IfNot} ${Errors}
     Delete "$DESKTOP\${PRODUCTNAME}.lnk"
   ${EndIf}
+  ; mistgate:// links (a subscription page's "add to the app" button) open the app
+  WriteRegStr HKLM "Software\Classes\mistgate" "" "URL:Mistgate"
+  WriteRegStr HKLM "Software\Classes\mistgate" "URL Protocol" ""
+  WriteRegStr HKLM "Software\Classes\mistgate\shell\open\command" "" '"$INSTDIR\mistgate.exe" "%1"'
   ClearErrors
   nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" install'
   Pop $0
@@ -46,6 +50,7 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
   nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" uninstall'
   ; "start with Windows", written by the app for this user
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Mistgate"
+  DeleteRegKey HKLM "Software\Classes\mistgate"
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

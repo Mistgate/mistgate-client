@@ -143,6 +143,7 @@ const TG_HELP: Record<string, { head: string; steps: string[]; open: string }> =
     '“Users” içinde, kartınızda “Telegram Proxy” anahtarını açar',
     'Vekiller, aboneliğin bir sonraki güncellemesinden sonra burada görünür' ] },
 };
+const BACK: Record<string, string> = { en: 'Cancel', ru: 'Отмена', zh: '取消', fa: 'لغو', tr: 'İptal' };
 const PINGS: Record<string, number> = {};
 // The one path that is measured for a node's number: the row shows a round trip to the node, and every path of it
 // would give the same. A path that reaches the node itself before one through a relay; VLESS first (one TCP connect),
@@ -181,7 +182,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     // Esc, or a click outside it, closes the subscription switcher
     onKeyDown = (e: KeyboardEvent) => {
       this.onEnter(e);
-      if (e.key === 'Escape') this.closeSubs();
+      if (e.key === 'Escape') { this.closeSubs(); if (this.adding && this.st().add === 'none') this.addMode(false); }
       // the design's hint on the search field
       if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); document.querySelector<HTMLInputElement>('.servers input[type=search]')?.focus(); }
     };
@@ -208,7 +209,10 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         listen<{ subs: Sub[] }>('mg://subs', (e) => this.applySubs(e.payload.subs)),
         listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? this.sync() : this.setState({ cs: 'svc', wave: false }))),
         listen<{ mode: string; effective: string }>('mg://routes', (e) => { this.route = e.payload; this.paint(); }),
+        // a subscription link from a mistgate:// link: shown and asked about like a pasted one, never added by itself
+        listen('mg://add', () => this.takeLink()),
       ];
+      this.takeLink();
       document.addEventListener('paste', this.onPaste, true);
       document.addEventListener('keydown', this.onKeyDown, true);
       document.addEventListener('input', this.onSearch, true);
@@ -251,7 +255,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
-      this.paintTg(); this.paintTgHelp();
+      this.paintTg(); this.paintTgHelp(); this.paintAddBack();
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
@@ -362,7 +366,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const sel = sub?.servers.some((s) => s.id === this.st().sel) ? this.st().sel : 'auto';
       pref.set('sub', sub?.id ?? '');
       pref.set('server', sel);
-      this.setState({ si: !sub ? 5 : expired ? 4 : 0, svN: sub?.servers.length ? 8 : 0, subst: 'ok', liveSub: sub?.id, sel });
+      this.setState({ si: !sub || this.adding ? 5 : expired ? 4 : 0, svN: sub?.servers.length ? 8 : 0, subst: 'ok', liveSub: sub?.id, sel });
       const ids = sub ? sub.id + ':' + sub.servers.map((n) => n.id).join(',') : '';
       if (sub && ids !== hostsFor) {
         hostsFor = ids;
@@ -403,6 +407,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         setTimeout(() => this.setState((old: any) => ({ flash: { ...old?.flash, ...mark(false) } })), 750); // the design's flash on a fresh number
       });
     }
+    takeLink() { void invoke<string>('take_link').then((url) => { if (url) this.startAdd(url); }, () => {}); }
     // preview first: nothing is added until the user presses the button on the sheet
     addSeq = 0;
     startAdd(text: string) {
@@ -422,6 +427,22 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           this.setState({ add: ['offline', 'fetch_failed', 'service_down', 'timeout'].includes(err?.code) ? 'offline' : 'badlink' });
         },
       );
+    }
+    // One more subscription: the design's own first-subscription form, in place of the stage, with a way back.
+    // (It used to read the clipboard at once and call whatever was there a bad link.)
+    adding = false;
+    addMode(on: boolean) {
+      this.adding = on;
+      this.setState({ subsPop: false, add: 'none' }, () => this.applySubs(this.subsList ?? []));
+    }
+    paintAddBack() {
+      const alt = document.querySelector('.onb .onb-alt');
+      const old = alt?.querySelector('.mg-back');
+      if (!alt || !this.adding || !this.subsList?.length) return void old?.remove();
+      if (old) return;
+      const back = Object.assign(document.createElement('button'), { className: 'mg-back', textContent: BACK[document.documentElement.lang] ?? BACK.en });
+      back.onclick = () => this.addMode(false);
+      alt.append(document.createElement('i'), back);
     }
     fromClipboard() {
       invoke<string>('clipboard_text').then((t) => (t.trim() ? this.startAdd(t) : this.setState({ add: 'badlink', subsPop: false })),
@@ -523,7 +544,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const baseToggle = v.toggleSubs;
       v.toggleSubs = (e?: { currentTarget?: Element }) => {
         // the "Add subscription" row of the switcher shares the switcher's handler in the design
-        if (e?.currentTarget?.classList.contains('add')) this.fromClipboard();
+        if (e?.currentTarget?.classList.contains('add')) this.addMode(true);
         else baseToggle();
       };
       v.addSub = () => this.addFromField();
@@ -660,6 +681,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
               // the list may have arrived before this answer: re-derive the screen for the new choice
               (added) => {
                 this.pending = null;
+                this.adding = false;
                 // with the list asked again: this answer can come before the list that has the new subscription
                 this.setState({ add: 'none', liveSub: added.id, sel: 'auto' }, () => rpc<{ subs: Sub[] }>('subs.list').then((r) => this.applySubs(r.subs), () => {}));
               },
@@ -672,7 +694,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       if (v.ad.isErr) {
         if (this.refusal) v.ad.ep = this.refusal; // the panel says why; the design's text would only guess
         const retry = this.st().add === 'offline';
-        v.ad.b1Go = () => (retry ? this.startAdd(this.lastText) : this.setState({ add: 'none' }));
+        // "Paste another link" leads to the form, where a link can be typed, pasted or taken from a file
+        v.ad.b1Go = () => (retry ? this.startAdd(this.lastText) : this.st().add === 'badlink' ? this.addMode(true) : this.setState({ add: 'none' }));
         v.ad.b2Go = () => this.setState({ add: 'none' });
       }
     }

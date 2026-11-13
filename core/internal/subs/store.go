@@ -52,6 +52,11 @@ type Subscription struct {
 	DevicesUsed  int        `json:"devices_used,omitempty"`
 	DevicesLimit int        `json:"devices_limit,omitempty"`
 	Debug        *Debug     `json:"debug,omitempty"` // nil: the panel did not say (a link subscription, an old panel)
+	// Block reports (report.go). Probe nil: the panel did not say, or the subscription is not managed. Report is the
+	// person's switch (off by default; kept when the panel stops taking reports). ReportLast is set in memory by List only.
+	Probe      *Probe      `json:"probe,omitempty"`
+	Report     bool        `json:"report"`
+	ReportLast *ReportLast `json:"report_last,omitempty"`
 }
 
 // Telegram is one MTProto proxy of the subscription, as a link Telegram opens. Twins of one server share Node.
@@ -120,6 +125,10 @@ type Store struct {
 	changes chan struct{}
 	client  *http.Client
 	protect func([]byte) ([]byte, error)
+	clock   func() time.Time // nil: time.Now (tests)
+
+	reportMu sync.Mutex // after mu, never before it
+	reports  map[string]*reportState
 }
 
 func Open(dir string) (*Store, error) {
@@ -208,7 +217,7 @@ func (s *Store) List() []Subscription {
 	defer s.mu.RUnlock()
 	result := make([]Subscription, len(s.state.Subscriptions))
 	for i, sub := range s.state.Subscriptions {
-		result[i] = publicCopy(sub.Subscription)
+		result[i] = s.withLast(publicCopy(sub.Subscription))
 	}
 	return result
 }
@@ -331,6 +340,7 @@ func (s *Store) Remove(id string) error {
 			}
 			s.state = candidate
 			s.mu.Unlock()
+			s.forgetReport(id)
 			s.changed()
 			return nil
 		}
@@ -402,6 +412,7 @@ func (s *Store) refresh(ctx context.Context, id string) (Subscription, error) {
 	candidate := cloneState(s.state)
 	for i := range candidate.Subscriptions {
 		if candidate.Subscriptions[i].ID == id {
+			next.Report = candidate.Subscriptions[i].Report // the person may have used the switch while the sync ran
 			candidate.Subscriptions[i] = next
 			break
 		}
@@ -847,6 +858,10 @@ func publicCopy(sub Subscription) Subscription {
 			d.Request = nil
 		}
 		sub.Debug = &d
+	}
+	if sub.Probe != nil {
+		p := *sub.Probe
+		sub.Probe = &p
 	}
 	sub.Servers = append([]Server(nil), sub.Servers...)
 	if sub.Servers == nil {

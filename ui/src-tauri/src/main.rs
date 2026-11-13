@@ -24,6 +24,8 @@ struct Shell {
     anchor: Mutex<(f64, f64)>,
     // a click on the tray icon first takes the focus from the panel (which hides it): that click must not reopen it
     hidden_at: Mutex<Instant>,
+    // a subscription link handed over by a mistgate:// link, until the window takes it
+    link: Mutex<Option<String>>,
 }
 
 fn show_main_window(app: &AppHandle, screen: Option<String>) {
@@ -307,38 +309,28 @@ fn autostart(enabled: bool, minimized: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// One Mistgate per user session. A second start brings the first one's window up and leaves.
-#[cfg(windows)]
-fn already_running() -> bool {
-    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
-    use windows_sys::Win32::System::Threading::CreateMutexW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetClassNameW, IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW};
-    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
-    // kept for the life of the process: the mutex is the mark
-    unsafe { CreateMutexW(std::ptr::null(), 0, wide("Local\\net.mistgate.client").as_ptr()) };
-    if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
-        return false;
-    }
-    // ponytail: found by its title; a named message would survive a renamed window
-    // an Explorer window of a folder named the same has this title too: skip those
-    let (title, explorer) = (wide("Mistgate"), wide("CabinetWClass"));
-    let mut window = std::ptr::null_mut();
-    loop {
-        window = unsafe { FindWindowExW(std::ptr::null_mut(), window, std::ptr::null(), title.as_ptr()) };
-        let mut class = [0u16; 32];
-        let n = if window.is_null() { 0 } else { unsafe { GetClassNameW(window, class.as_mut_ptr(), 32) } } as usize;
-        if window.is_null() || class[..n] != explorer[..explorer.len() - 1] {
-            break;
-        }
-    }
-    if !window.is_null() {
-        unsafe {
-            // a minimized window is brought back, a hidden one shown
-            ShowWindow(window, if IsIconic(window) != 0 { SW_RESTORE } else { SW_SHOW });
-            SetForegroundWindow(window);
-        }
-    }
+/// A "mistgate://add?url=<subscription link>" link, as a subscription page's "add to the app" button gives it: the
+/// https link inside, or nothing. The link carries the person's token: it is never logged, and the window only shows
+/// what it would add and asks, as for a pasted link.
+fn link_of(args: &[String]) -> Option<String> {
+    let link = args.iter().find(|a| a.to_ascii_lowercase().starts_with("mistgate://add"))?;
+    let url = tauri::Url::parse(link).ok()?.query_pairs().find(|(key, _)| key == "url")?.1.into_owned();
+    (url.starts_with("https://") && url.len() <= 4096 && !url.chars().any(|c| c.is_control())).then_some(url)
+}
+
+/// Keeps the link for the window to take, and brings the window up on its first screen.
+fn offer_link(app: &AppHandle, args: &[String]) -> bool {
+    let Some(url) = link_of(args) else { return false };
+    *app.state::<Shell>().link.lock().unwrap() = Some(url);
+    show_main_window(app, Some("Main".into()));
+    let _ = app.emit("mg://add", ());
     true
+}
+
+// the window takes the link once: on its start, and when told one has come
+#[tauri::command]
+fn take_link(shell: State<Shell>) -> String {
+    shell.link.lock().unwrap().take().unwrap_or_default()
 }
 
 #[cfg(feature = "setup")]
@@ -349,16 +341,20 @@ fn main() {
 
 #[cfg(not(feature = "setup"))]
 fn main() {
-    #[cfg(windows)]
-    if already_running() {
-        return;
-    }
     tauri::Builder::default()
+        // One Mistgate per user session: a second start hands its arguments to the first and leaves. The first
+        // brings its window up, and takes a mistgate:// link if that is what the start was for.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if !offer_link(app, &args) {
+                show_main_window(app, None);
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Shell {
             close_to_tray: AtomicBool::new(true),
             anchor: Mutex::new((0.0, 0.0)),
             hidden_at: Mutex::new(Instant::now()),
+            link: Mutex::new(None),
         })
         .setup(|app| {
             app.manage(bridge::spawn(app.handle().clone()));
@@ -402,7 +398,8 @@ fn main() {
             tray.build(app)?;
 
             // started by Windows with "start minimized": stay in the tray
-            if !std::env::args().any(|a| a == "--minimized") {
+            let args: Vec<String> = std::env::args().collect();
+            if !offer_link(app.handle(), &args) && !args.iter().any(|a| a == "--minimized") {
                 show_main_window(app.handle(), None);
             }
             Ok(())
@@ -424,7 +421,7 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text, open_url, pick_exe, app_icon, notify])
+        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text, open_url, pick_exe, app_icon, notify, take_link])
         .run(tauri::generate_context!())
         .expect("the window could not start");
 }

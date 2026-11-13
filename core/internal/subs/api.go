@@ -49,6 +49,8 @@ type apiState struct {
 	// The panel's plain resolvers: the tunnel's DNS, and per region the ones its own people use. Not secret.
 	DNS      []netip.Addr       `json:"dns,omitempty"`
 	DNSSplit []profile.DNSSplit `json:"dns_split,omitempty"`
+	// The ASN of this device's network as the panel saw it; only a block report uses it, the window never gets it.
+	ASN uint32 `json:"asn,omitempty"`
 }
 
 type syncBody struct {
@@ -67,7 +69,12 @@ type syncBody struct {
 		QuotaBytes  int64 `json:"quota_bytes"`
 		UsedBytes   int64 `json:"used_bytes"`
 	} `json:"plan"`
-	DNS     *syncDNS `json:"dns"`
+	DNS   *syncDNS `json:"dns"`
+	Probe *struct {
+		Intake bool `json:"intake"`
+		V      int  `json:"v"`
+	} `json:"probe"`
+	ASN     json.RawMessage `json:"asn"`
 	Servers []struct {
 		ID      string     `json:"id"`
 		Country string     `json:"country"`
@@ -416,6 +423,9 @@ func (s *Store) reenrol(ctx context.Context, link string, st storedSubscription)
 // applyDeviceCode records an answer that says what became of this device.
 func applyDeviceCode(st *storedSubscription, code string) {
 	st.Error, st.Halt = code, true
+	if code == "device_removed" || code == "device_blocked" {
+		st.Probe, st.ASN = nil, 0 // no panel to report to any more; the person's switch stays
+	}
 	switch code {
 	case "device_removed":
 		st.Key, st.Base, st.ETag, st.Managed, st.Notice = "", "", "", false, ""
@@ -483,6 +493,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
 	st.Debug = panelDebug(b.Debug)
+	st.Probe, st.ASN = panelProbe(b.Probe), panelASN(b.ASN)
 	if b.Devices != nil && b.Devices.Used >= 0 && b.Devices.Limit >= 1 && b.Devices.Limit <= 1000 {
 		st.DevicesUsed, st.DevicesLimit = min(b.Devices.Used, 1000), b.Devices.Limit
 	}

@@ -223,10 +223,59 @@ answers `401 device_removed` (a second `leave` too). The client forgets the devi
 
 ### probe: v1, as the panel takes it today
 
-`POST <link>/probe`, announced by the `Probe-Report: 1` header on the subscription answer, only with the user's
-consent. The report never relies on the request's address: the app states the ASN itself and says whether the
-check ran through the VPN (`vpn`, `direct_checked`). Verdicts are v1's: `ok`, `freeze`, `tcp_blocked`,
-`handshake_failed`, `no_answer`. The operator has its own switch for app reports (off by default; kept 7 days).
+`POST <link>/probe` takes a report of the client's network check. `<link>` is the subscription link the person pasted
+(the token in it is the only authorisation; no page password, no device key). Headers: `Content-Type: application/json`,
+`Probe-Report: 1`, and the User-Agent and caps of every request. At most 128 KiB and 256 servers. The panel's owner has
+a switch for app reports (off by default, kept 7 days); `sync` says whether it is on (`probe.intake`) and which version
+the panel reads (`probe.v`). The report never relies on the request's address: the app states the ASN itself and says
+whether the check ran through the VPN (`vpn`, `direct_checked`).
+
+Limits (the panel's): two reports at once, then one in 10 minutes per subscription (`429` with `Retry-After`). The
+client keeps to one in 10 minutes per subscription and waits out a `Retry-After`. Answers: `200 {"accepted": N}` (the
+servers the panel matched to the person's subscription by host and port; it drops the rest), `403 probe_off` (the
+owner has not switched it on: the client sets `probe.intake` to false until the next sync), `403 cross_origin`,
+`409 user_inactive`, `413 too_large`, `415`, `400 bad_request`, `429`. The client sends nothing without the person's
+switch (`report`, off by default, per subscription), except when the person presses send by hand.
+
+**What the client sends.** Only the fields the check measured; the parser refuses unknown ones, so the body is exactly:
+
+```json
+{ "v": 1, "vpn": false, "direct_checked": true,
+  "network": { "asn": 64500, "type": "mobile" },
+  "servers": [ { "type": "hysteria2", "host": "oslo.example", "port": 443, "verdict": "ok", "delay_ms": 42 } ] }
+```
+- `v`: 1. `vpn`: the VPN was up when the check began. `direct_checked`: true when the report has servers: every server in
+  it was tried from the physical adapter, outside the tunnel (the live tunnel's own AmneziaWG path is not tried that way,
+  so it is left out).
+- `network.asn`: the `asn` of the last `sync`, left out when the panel did not give one. The panel gives it only to a
+  request that says `X-Mistgate-Direct: 1`, which the client does not send yet, so today it is usually absent.
+  `network.type` is `mobile` only for a mobile-broadband adapter; Wi-Fi and Ethernet could be a home or an office, so
+  nothing is said. `operator`, `country` and `region` are never sent: the client does not know them.
+- `servers`: one per path of the subscription that the check could judge, `type` the path's protocol (`hysteria2`,
+  `awg`, `vless`), `host` (lower case) and `port` as the profile of the path has them, as the subscription gave them.
+  `delay_ms`: the handshake's round trip, only for `ok` and when it is a millisecond or more.
+  Not sent, because the client has no honest value: `flaky`, `tcp_ok`, `tcp_tries`, `tcp_ms`, `dl_bytes`, `dl_stalled`
+  (the client's freeze check downloads from foreign sites, not from the servers) and `dns` (its DNS check asks about
+  blocked sites, not the servers' names).
+
+| The client's check | `verdict` |
+|---|---|
+| `ok` | `ok` |
+| `blocked`, `udp_no_answer` (Hysteria2 or AmneziaWG: the host answers on TCP, the handshake gets nothing) | `handshake_failed` |
+| `down`, `no_answer` (nothing answers: no handshake, no TCP) | `no_answer` |
+| `blocked`, `no_answer` (VLESS: a cut TCP connect and a failed handshake look the same) | left out |
+| `down`, `not_found` (the client could not resolve the name), `config` (`auth_rejected`, `bad_config`), `app` | left out |
+
+`freeze` and `tcp_blocked` are not produced: the check has no per-server freeze test and no TCP-only probe. A path that
+reaches the node through a relay (`via: relay`) is left out too: its host and port are the relay's, and the panel would
+match them to the wrong server. A check older than 24 hours is not sent. The report holds the subscription's paths only; the
+rest of the check (route hops, UDP and NAT, DNS, foreign sites) stays on the machine.
+
+The service log gets a fact and a code, never the link, a host, the ASN or the body. The window shows the person the
+exact body first (`report.preview`, see `ipc.md`, "Block reports").
+
+`X-Mistgate-Caps` does not list `probe=1` yet (the panel does not ask for it: it announces reports with the
+`Probe-Report: 1` header and `sync`'s `probe`).
 
 A v2 with the client's wider check (route hops, UDP and NAT, DNS, foreign sites, the client's verdict names) is
 **deferred**: the panel has no storage or admin view for it.
@@ -262,10 +311,9 @@ send more often than once per 10 minutes, a delivery in progress, or too many at
 - Basic mode against a Mistgate panel: the client announces itself as a Mihomo client and reads the Mihomo profile
   (Hysteria2 with Gecko and port ranges, AmneziaWG), see `docs/ipc.md`. That is the stopgap until this API is live.
 - The ASN for a report comes from `sync` (`X-Mistgate-Direct: 1`, outside the tunnel), never from a third-party
-  service.
+  service. The client reads and keeps it already; it will send the header once it knows a sync leaves outside the tunnel.
 - `hwid` must become per operator's panel and survive a reinstall (today it is one per install).
-- The client's own network check does not map to report v1 yet: v1 wants the ASN from the app and has other
-  verdict names.
+- The client's own network check maps to report v1 only in part (see "probe: v1"); the rest waits for v2.
 
 ## Not in v1
 
