@@ -27,6 +27,8 @@ export const updates = {
 
   // quiet: a check nobody asked for (the start of the app) does not show "checking" and keeps a failure to itself
   async check(quiet = false) {
+    // with "install updates automatically" off the app asks nobody by itself: only the button in Settings checks
+    if (quiet && !updates.auto()) return;
     if (busy || state.up === 'downloading' || state.up === 'ready') return;
     busy = true;
     if (!quiet) put({ up: 'checking' });

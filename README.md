@@ -111,6 +111,24 @@ Needs Go, Rust (MSVC) and Node with pnpm. Details, and the Go versions that must
 - The app tells the panel nothing about what you open. A debug bundle leaves the PC only when you press send, and the
   app shows it line by line first.
 
+The full list of what the app connects to, and when, is in [PRIVACY.md](PRIVACY.md).
+
+## Code signing policy
+
+The Windows installer is not signed with a code-signing certificate yet. The project has applied for free code
+signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/); until that is granted, check a download against the SHA-256 printed in
+its release notes.
+
+- **Committers and reviewers:** [the members of the Mistgate organisation](https://github.com/orgs/Mistgate/people).
+  Every change from outside the team is reviewed before it is merged.
+- **Approvers:** [the owners of the Mistgate organisation](https://github.com/orgs/Mistgate/people?query=role%3Aowner).
+  Every release is approved by an owner before it is signed.
+- Releases are built from this repository's source by its build scripts, with nothing added by hand.
+- The installer tells what it adds (a background service) before it starts, and the app is removed through Windows'
+  "Installed apps", which also removes the service.
+- Privacy: [PRIVACY.md](PRIVACY.md).
+
 ## Status
 
 It is beta and young. Not there yet: a Windows code-signing certificate, an uninstall screen of its own, macOS and
