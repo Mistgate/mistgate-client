@@ -47,6 +47,7 @@ This list is made by `ui/tools/licences.mjs` (`pnpm licences`) from the dependen
 | golang.org/x/time | v0.15.0 | BSD-3-Clause |
 | golang.zx2c4.com/wintun | v0.0.0-20230126152724-0fa3db229ce2 | MIT |
 | golang.zx2c4.com/wireguard/windows | v1.1.1 | MIT |
+| google.golang.org/genproto/googleapis/rpc | v0.0.0-20260817212433-ac3dfec99bb1 | Apache-2.0 |
 | google.golang.org/grpc | v1.85.0 | Apache-2.0 |
 | google.golang.org/protobuf | v1.36.12 | BSD-3-Clause |
 | gvisor.dev/gvisor | v0.0.0-20260122175437-89a5d21be8f0 | Apache-2.0 |

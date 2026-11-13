@@ -207,7 +207,8 @@ The body (stable key order; the client ignores fields it does not know):
   "sni": "…", "fingerprint": "chrome", "public_key": "…", "short_id": "…", "spider_x": "/", "alpn": ["h2"] }`.
   `flow` only with `raw` and `reality`; `path` and `host` (only when set) with `xhttp` and `ws`; `mode` and
   `x_padding_bytes` with `xhttp` only; `public_key`, `short_id`, `spider_x` with `reality`; `alpn` with `tls`, which is
-  the ordinary certificate check (no pin, never skipped). No gRPC, no mux. The client reads these fields in one place
+  the ordinary certificate check (no pin, never skipped). The panel sends no gRPC and no mux (the client reads those only
+  from other providers' links and profiles). The client reads these fields in one place
   (`profile.ParseVLESS`) and checks them: port, UUID form, `public_key` as 32 bytes of base64url, `short_id` as at most
   8 bytes of hex, paths starting with `/` and free of spaces and control characters, names of DNS characters only. A
   transport, security, flow, mode or fingerprint it does not know makes the path unsupported (counted, not an error of

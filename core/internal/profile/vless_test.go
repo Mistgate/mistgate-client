@@ -99,7 +99,7 @@ func TestParseVLESSBad(t *testing.T) {
 		"uuid not hex":            {realityVision(), map[string]any{"uuid": "5783a3e7-e373-51cd-8642-c83782b807cz"}},
 		"unknown flow":            {realityVision(), map[string]any{"flow": "xtls-rprx-direct"}},
 		"vision on xhttp":         {realityXHTTP(), map[string]any{"flow": "xtls-rprx-vision"}},
-		"grpc":                    {realityVision(), map[string]any{"transport": "grpc"}},
+		"grpc without a name":     {realityVision(), map[string]any{"transport": "grpc"}},
 		"no transport":            {realityVision(), map[string]any{"transport": nil}},
 		"xhttp without a path":    {realityXHTTP(), map[string]any{"path": nil}},
 		"path without a slash":    {realityXHTTP(), map[string]any{"path": "xh"}},

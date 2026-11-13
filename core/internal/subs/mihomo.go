@@ -15,41 +15,44 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, int, error) {
+func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, int, kindCounts, error) {
 	var document map[string]any
 	if yaml.Unmarshal([]byte(body), &document) != nil {
-		return nil, nil, 0, &Error{Code: "unsupported_format"}
+		return nil, nil, 0, nil, &Error{Code: "unsupported_format"}
 	}
 	value, ok := field(document, "proxies")
 	if !ok {
-		return nil, nil, 0, &Error{Code: "unsupported_format"}
+		return nil, nil, 0, nil, &Error{Code: "unsupported_format"}
 	}
 	proxies, ok := value.([]any)
 	if !ok {
-		return nil, nil, 0, &Error{Code: "unsupported_format"}
+		return nil, nil, 0, nil, &Error{Code: "unsupported_format"}
 	}
 	if notice, refused := refusedProfile(proxies); refused {
-		return nil, nil, 0, &Error{Code: "refused", Notice: notice}
+		return nil, nil, 0, nil, &Error{Code: "refused", Notice: notice}
 	}
 
 	servers := make([]Server, 0, len(proxies))
 	entries := make([]storedEntry, 0, len(proxies))
 	seen := make(map[string]bool)
-	unsupported := 0
+	unsupported, kinds := 0, kindCounts{}
 	for _, value := range proxies {
 		proxy, ok := value.(map[string]any)
 		if !ok {
 			unsupported++
+			kinds.add("other", 1)
 			continue
 		}
 		protocol, _, _, err := parseProxyProfile(proxy)
 		if err != nil {
 			unsupported++
+			kinds.add(proxyKind(proxy, err), 1)
 			continue
 		}
 		raw, err := yaml.Marshal(proxy)
 		if err != nil {
 			unsupported++
+			kinds.add(proxyKind(proxy, err), 1)
 			continue
 		}
 		identity := make(map[string]any, len(proxy))
@@ -61,6 +64,7 @@ func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, i
 		identityBytes, err := yaml.Marshal(identity)
 		if err != nil {
 			unsupported++
+			kinds.add(proxyKind(proxy, err), 1)
 			continue
 		}
 		server := Server{
@@ -76,9 +80,18 @@ func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, i
 		entries = append(entries, storedEntry{Server: server, Raw: string(raw)})
 	}
 	if len(entries) == 0 {
-		return nil, nil, unsupported, &Error{Code: "no_servers"}
+		return nil, nil, unsupported, kinds, &Error{Code: "no_servers"}
 	}
-	return servers, entries, unsupported, nil
+	return servers, entries, unsupported, kinds, nil
+}
+
+// proxyKind is the kind of a proxy this build did not take: its type, and for vless the reason as well.
+func proxyKind(proxy map[string]any, err error) string {
+	kind := strings.ToLower(stringValue(proxy["type"]))
+	if kind == "vless" {
+		return vlessKind(err)
+	}
+	return kind
 }
 
 func refusedProfile(proxies []any) (string, bool) {
@@ -144,8 +157,8 @@ func parseVLESSEntry(raw string) (*profile.VLESS, error) {
 }
 
 // parseVLESSProxy reads a Mihomo "vless" proxy: its fields are turned into the settings of a panel's "vless" path and
-// checked by profile.ParseVLESS, as a share link is. Refused: networks other than tcp, ws and xhttp, VLESS's own
-// encryption, and skip-cert-verify (the app does not accept any certificate).
+// checked by profile.ParseVLESS, as a share link is. Refused: networks other than tcp, ws, httpupgrade, grpc and xhttp,
+// VLESS's own encryption, and skip-cert-verify (the app does not accept any certificate).
 func parseVLESSProxy(proxy map[string]any) (*profile.VLESS, error) {
 	text := func(name string) string { value, _ := field(proxy, name); return stringValue(value) }
 	section := func(name string) map[string]any {
@@ -159,10 +172,10 @@ func parseVLESSProxy(proxy map[string]any) (*profile.VLESS, error) {
 		return nil, errors.New("invalid VLESS port")
 	}
 	if enc := text("encryption"); enc != "" && enc != "none" {
-		return nil, errors.New("unsupported VLESS encryption")
+		return nil, &profile.VLESSError{Reason: profile.ReasonEncryption, Text: "unsupported VLESS encryption"}
 	}
 	if flag("skip-cert-verify") {
-		return nil, errors.New("VLESS proxy asks to accept any certificate")
+		return nil, &profile.VLESSError{Reason: profile.ReasonCertificate, Text: "VLESS proxy asks to accept any certificate"}
 	}
 	settings := map[string]any{
 		"server": text("server"), "port": port, "uuid": text("uuid"), "flow": text("flow"),
@@ -189,11 +202,31 @@ func parseVLESSProxy(proxy map[string]any) (*profile.VLESS, error) {
 		opts := section("ws-opts")
 		headers, _ := opts["headers"].(map[string]any)
 		settings["transport"], settings["path"], settings["host"] = "ws", stringValue(opts["path"]), stringValue(headers["Host"])
+		// Mihomo has no network for HTTP upgrade: it is ws-opts with this switch.
+		if value, ok := field(opts, "v2ray-http-upgrade"); ok {
+			if on, _ := boolValue(value); on {
+				settings["transport"] = "httpupgrade"
+			}
+		}
+	case "httpupgrade":
+		// Not a Mihomo network as far as I know (see "ws"); taken for profiles of other makers, under either name of the options.
+		opts := section("http-upgrade-opts")
+		if opts == nil {
+			opts = section("httpupgrade-opts")
+		}
+		headers, _ := opts["headers"].(map[string]any)
+		host := stringValue(opts["host"])
+		if host == "" {
+			host = stringValue(headers["Host"])
+		}
+		settings["transport"], settings["path"], settings["host"] = "httpupgrade", stringValue(opts["path"]), host
+	case "grpc":
+		settings["transport"], settings["service_name"] = "grpc", stringValue(section("grpc-opts")["grpc-service-name"])
 	case "xhttp":
 		opts := section("xhttp-opts")
 		settings["transport"], settings["path"], settings["host"], settings["mode"] = "xhttp", stringValue(opts["path"]), stringValue(opts["host"]), stringValue(opts["mode"])
 	default:
-		return nil, errors.New("unsupported VLESS network")
+		return nil, &profile.VLESSError{Reason: profile.ReasonTransport, Text: "unsupported VLESS network"}
 	}
 	if settings["transport"] != "raw" && settings["path"] == "" {
 		settings["path"] = "/"

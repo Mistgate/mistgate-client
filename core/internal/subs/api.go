@@ -118,9 +118,10 @@ const (
 )
 
 // capServers is that limit for a list read from links or a profile.
-func capServers(servers []Server, entries []storedEntry, unsupported int) ([]Server, []storedEntry, int) {
+func capServers(servers []Server, entries []storedEntry, unsupported int, kinds kindCounts) ([]Server, []storedEntry, int, kindCounts) {
 	if len(servers) > maxServers {
 		unsupported += len(servers) - maxServers
+		kinds.add("other", len(servers)-maxServers)
 		servers = servers[:maxServers]
 	}
 	entries = entries[:min(len(entries), maxServers)]
@@ -130,7 +131,7 @@ func capServers(servers []Server, entries []storedEntry, unsupported int) ([]Ser
 	for i := range entries {
 		entries[i].Server.Name = shortText(entries[i].Server.Name)
 	}
-	return servers, entries, unsupported
+	return servers, entries, unsupported, kinds
 }
 
 // shortText keeps a name the panel's owner typed: one line, no control characters, at most 64 characters.
@@ -429,9 +430,9 @@ func applyDeviceCode(st *storedSubscription, code string) {
 	switch code {
 	case "device_removed":
 		st.Key, st.Base, st.ETag, st.Managed, st.Notice = "", "", "", false, ""
-		st.Servers, st.Entries, st.Unsupported, st.Telegram = []Server{}, nil, 0, nil
+		st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds, st.Telegram = []Server{}, nil, 0, nil, nil
 	case "device_blocked":
-		st.ETag, st.Servers, st.Entries, st.Unsupported, st.Telegram = "", []Server{}, nil, 0, nil
+		st.ETag, st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds, st.Telegram = "", []Server{}, nil, 0, nil, nil
 	}
 	// link_changed keeps the servers: the tunnel works, only the sync is cut off.
 }
@@ -490,7 +491,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.ExpireUnix, st.TotalBytes, st.UsedBytes = b.Plan.ExpiresUnix, b.Plan.QuotaBytes, b.Plan.UsedBytes
 	st.Notice = shortTextN(b.Notice.Text, maxNotice)
 	st.DNS, st.DNSSplit = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
-	st.Servers, st.Entries, st.Unsupported = []Server{}, nil, 0
+	st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds = []Server{}, nil, 0, nil
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
 	st.Debug = panelDebug(b.Debug)
 	st.Probe, st.ASN = panelProbe(b.Probe), panelASN(b.ASN)

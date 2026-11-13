@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -17,19 +18,60 @@ type VLESS struct {
 	Port      uint16
 	UUID      string
 	Flow      string // "" or "xtls-rprx-vision"
-	Transport string // "raw", "xhttp" or "ws"
-	Path      string // xhttp and ws; starts with "/"
-	HTTPHost  string // xhttp and ws; the Host header when it differs from the SNI
-	Mode      string // xhttp: "auto", "packet-up", "stream-up" or "stream-one"
-	XPadding  [2]int32
-	Security  string // "reality", "tls" or "none" (no outer encryption: only what the sites themselves encrypt is hidden)
-	SNI       string
+	Transport string // "raw", "xhttp", "ws", "httpupgrade" or "grpc"
+	Path      string // xhttp, ws and httpupgrade; starts with "/"
+	// HTTPHost: the Host header when it differs from the SNI (xhttp, ws, httpupgrade); for grpc it is the :authority,
+	// which is the same thing on HTTP/2.
+	HTTPHost string
+	// Mode: xhttp "auto", "packet-up", "stream-up" or "stream-one"; grpc "gun" or "multi". The two never meet, so one
+	// field does for both.
+	Mode        string
+	XPadding    [2]int32
+	XMux        *XMux  // xhttp; nil: every value is the default of StreamConfig
+	ServiceName string // grpc; the name in the path "/<name>/Tun"
+	Security    string // "reality", "tls" or "none" (no outer encryption: only what the sites themselves encrypt is hidden)
+	SNI         string
 	// Fingerprint is the uTLS ClientHello to imitate.
 	Fingerprint string
 	PublicKey   [32]byte // reality
 	ShortID     [8]byte  // reality, zero-padded
 	SpiderX     string   // reality
 	ALPN        []string // tls
+}
+
+// XMux is how xhttp shares connections (Xray's "xmux"). A nil range is not set, so StreamConfig keeps its own default
+// there; a set range may be 0 (no limit). Ranges are "from, to" with from <= to.
+type XMux struct {
+	MaxConcurrency, MaxConnections, CMaxReuseTimes, HMaxRequestTimes, HMaxReusableSecs *[2]int32
+	HKeepAlivePeriod                                                                   int64 // seconds; 0: not set
+}
+
+// VLESSError is a refusal of a path (or a link, or a proxy) with a reason from the fixed set below, so that the
+// reason can be shown or counted without any of the server's data in it. Text is for the log and holds none either.
+type VLESSError struct{ Reason, Text string }
+
+func (e *VLESSError) Error() string { return e.Text }
+
+// The reasons. "invalid" is everything else: a value that is malformed or that this build does not take.
+const (
+	ReasonTransport   = "transport"
+	ReasonEncryption  = "encryption"
+	ReasonCertificate = "any certificate"
+	ReasonFlow        = "flow"
+	ReasonSecurity    = "security"
+	ReasonDisguise    = "disguise"
+	ReasonInvalid     = "invalid"
+)
+
+func refuse(reason, text string) error { return &VLESSError{reason, text} }
+
+// VLESSReason is the reason of a refusal from this package or from a Mihomo proxy; ReasonInvalid for any other error.
+func VLESSReason(err error) string {
+	var refusal *VLESSError
+	if errors.As(err, &refusal) {
+		return refusal.Reason
+	}
+	return ReasonInvalid
 }
 
 // VLESSFlowVision is the only flow; any other value makes the path unsupported.
@@ -53,6 +95,8 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 		Host          string          `json:"host"`
 		Mode          string          `json:"mode"`
 		XPaddingBytes json.RawMessage `json:"x_padding_bytes"`
+		XMux          json.RawMessage `json:"xmux"`
+		ServiceName   string          `json:"service_name"`
 		Security      string          `json:"security"`
 		SNI           string          `json:"sni"`
 		Fingerprint   string          `json:"fingerprint"`
@@ -81,7 +125,7 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 	}
 	switch out.Transport {
 	case "raw": // path, host and the xhttp fields mean nothing here and are ignored
-	case "xhttp", "ws":
+	case "xhttp", "ws", "httpupgrade":
 		if out.Path = s.Path; !validPath(out.Path) {
 			return nil, errors.New("invalid VLESS path")
 		}
@@ -91,7 +135,7 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 			}
 			out.HTTPHost = s.Host
 		}
-		if out.Transport == "ws" {
+		if out.Transport != "xhttp" {
 			break
 		}
 		switch out.Mode = s.Mode; out.Mode {
@@ -104,18 +148,40 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 		if out.XPadding, err = parseXPadding(s.XPaddingBytes); err != nil {
 			return nil, err
 		}
+		if out.XMux, err = parseXMux(s.XMux); err != nil {
+			return nil, err
+		}
+	case "grpc":
+		// Xray asks for no TLS here: gRPC runs on h2c without it, so security "none" is taken as it is for the others.
+		if !validServiceName(s.ServiceName) {
+			return nil, errors.New("invalid VLESS gRPC service name")
+		}
+		out.ServiceName = s.ServiceName
+		switch out.Mode = s.Mode; out.Mode {
+		case "":
+			out.Mode = "gun"
+		case "gun", "multi":
+		default:
+			return nil, errors.New("unsupported VLESS gRPC mode")
+		}
+		if s.Host != "" {
+			if !validHost(s.Host) {
+				return nil, errors.New("invalid VLESS gRPC authority")
+			}
+			out.HTTPHost = s.Host
+		}
 	default:
-		return nil, errors.New("unsupported VLESS transport")
+		return nil, refuse(ReasonTransport, "unsupported VLESS transport")
 	}
 	switch out.Flow {
 	case "":
 	case VLESSFlowVision:
 		// Vision rides directly on the TLS (or REALITY) of the raw transport; Xray refuses it anywhere else.
 		if out.Transport != "raw" || out.Security == "none" {
-			return nil, errors.New("VLESS flow needs the raw transport with TLS or REALITY")
+			return nil, refuse(ReasonFlow, "VLESS flow needs the raw transport with TLS or REALITY")
 		}
 	default:
-		return nil, errors.New("unsupported VLESS flow")
+		return nil, refuse(ReasonFlow, "unsupported VLESS flow")
 	}
 	if out.Fingerprint == "" {
 		out.Fingerprint = "chrome"
@@ -125,8 +191,8 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 	}
 	switch out.Security {
 	case "reality":
-		if out.Transport == "ws" {
-			return nil, errors.New("VLESS reality does not carry ws")
+		if out.Transport == "ws" || out.Transport == "httpupgrade" { // Xray: REALITY carries raw, xhttp and gRPC only
+			return nil, refuse(ReasonSecurity, "VLESS reality does not carry ws or httpupgrade")
 		}
 		if !validName(s.SNI) {
 			return nil, errors.New("invalid VLESS server name")
@@ -165,7 +231,7 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 		// VLESS, and of the traffic everything a site does not encrypt itself. Taken as it is; the choice is the provider's.
 		out.SNI = ""
 	default:
-		return nil, errors.New("unsupported VLESS security")
+		return nil, refuse(ReasonSecurity, "unsupported VLESS security")
 	}
 	return out, nil
 }
@@ -255,4 +321,69 @@ func parseXPadding(raw json.RawMessage) ([2]int32, error) {
 		return [2]int32{}, errors.New("invalid VLESS xhttp padding")
 	}
 	return [2]int32{int32(lo), int32(hi)}, nil
+}
+
+// validServiceName is gRPC's service name: printable ASCII without a space, "?" or "#", at most 128 characters. A name
+// that starts with "/" is Xray's custom path form ("/a/b/Tun|TunMulti") and is taken the same way.
+func validServiceName(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		if c := value[i]; c <= ' ' || c >= 0x7f || c == '?' || c == '#' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseXMux reads xhttp's "xmux" object, with Xray's own names. Each range is a number or "from-to" and is not
+// negative; Xray swaps a range given the wrong way round, and so does this. Absent: nil. Xray refuses maxConnections
+// together with maxConcurrency, and so does this. Values are capped at what int32 holds, as Xray's are.
+func parseXMux(raw json.RawMessage) (*XMux, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var m struct {
+		MaxConcurrency   json.RawMessage `json:"maxConcurrency"`
+		MaxConnections   json.RawMessage `json:"maxConnections"`
+		CMaxReuseTimes   json.RawMessage `json:"cMaxReuseTimes"`
+		HMaxRequestTimes json.RawMessage `json:"hMaxRequestTimes"`
+		HMaxReusableSecs json.RawMessage `json:"hMaxReusableSecs"`
+		HKeepAlivePeriod *int64          `json:"hKeepAlivePeriod"`
+	}
+	bad := errors.New("invalid VLESS xhttp xmux")
+	if json.Unmarshal(raw, &m) != nil {
+		return nil, bad
+	}
+	out := &XMux{}
+	for _, field := range []struct {
+		raw json.RawMessage
+		to  **[2]int32
+	}{{m.MaxConcurrency, &out.MaxConcurrency}, {m.MaxConnections, &out.MaxConnections}, {m.CMaxReuseTimes, &out.CMaxReuseTimes},
+		{m.HMaxRequestTimes, &out.HMaxRequestTimes}, {m.HMaxReusableSecs, &out.HMaxReusableSecs}} {
+		if len(field.raw) == 0 || string(field.raw) == "null" {
+			continue
+		}
+		from, to, isRange := strings.Cut(strings.Trim(string(field.raw), `"`), "-")
+		if !isRange {
+			to = from
+		}
+		lo, err1 := strconv.ParseInt(from, 10, 32)
+		hi, err2 := strconv.ParseInt(to, 10, 32)
+		if err1 != nil || err2 != nil || lo < 0 || hi < 0 {
+			return nil, bad
+		}
+		*field.to = &[2]int32{int32(min(lo, hi)), int32(max(lo, hi))}
+	}
+	if out.MaxConcurrency != nil && out.MaxConnections != nil && out.MaxConcurrency[1] > 0 && out.MaxConnections[1] > 0 {
+		return nil, bad
+	}
+	if m.HKeepAlivePeriod != nil {
+		if *m.HKeepAlivePeriod < 0 || *m.HKeepAlivePeriod > math.MaxInt32 { // seconds
+			return nil, bad
+		}
+		out.HKeepAlivePeriod = *m.HKeepAlivePeriod
+	}
+	return out, nil
 }

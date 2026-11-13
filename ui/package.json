@@ -1,7 +1,7 @@
 {
   "name": "mistgate-ui",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "design": "node tools/dc-import.mjs",

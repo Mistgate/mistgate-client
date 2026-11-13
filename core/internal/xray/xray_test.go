@@ -142,6 +142,72 @@ func TestRealityXHTTPModes(t *testing.T) {
 	}
 }
 
+func TestRealityGRPC(t *testing.T) {
+	for _, mode := range []string{"gun", "multi"} {
+		t.Run(mode, func(t *testing.T) {
+			q := xraytest.RealityProfile("grpc", "", "")
+			q.ServiceName, q.Mode = "mist", mode
+			p := xraytest.Server(t, q, "")
+			x := start(t, p)
+			echo := netip.MustParseAddrPort(xraytest.TCPEcho(t))
+			roundTripTCP(t, x, echo.Addr().String(), echo.Port(), 1<<20)
+			if udp, ok := xraytest.UDPEcho(t, "127.0.0.1:0"); ok {
+				roundTripUDP(t, x, udp)
+			}
+		})
+	}
+}
+
+// A server of another name is a path the client does not reach: the service name is really in the request.
+func TestGRPCServiceNameIsUsed(t *testing.T) {
+	q := xraytest.RealityProfile("grpc", "", "")
+	q.ServiceName = "mist"
+	p := xraytest.Server(t, q, "")
+	p.ServiceName = "other"
+	x := start(t, p)
+	echo := netip.MustParseAddrPort(xraytest.TCPEcho(t))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := x.DialTCP(ctx, echo.Addr().String(), echo.Port())
+	if err == nil {
+		defer conn.Close()
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Write([]byte("ping"))
+		if n, err := conn.Read(make([]byte, 4)); err == nil || n != 0 {
+			t.Fatal("echo came back through a wrong service name")
+		}
+	}
+}
+
+func TestPlainGRPC(t *testing.T) { // Xray runs gRPC on h2c when nothing wraps it
+	q := profile.VLESS{Transport: "grpc", ServiceName: "plain", Mode: "gun", Security: "none", Fingerprint: "chrome"}
+	p := xraytest.Server(t, q, "")
+	echo := netip.MustParseAddrPort(xraytest.TCPEcho(t))
+	roundTripTCP(t, start(t, p), echo.Addr().String(), echo.Port(), 256<<10)
+}
+
+func TestHTTPUpgrade(t *testing.T) { // REALITY does not carry it (Xray), so it runs plain here; the TLS side is Xray's own
+	q := profile.VLESS{Transport: "httpupgrade", Path: "/up", HTTPHost: "cdn.example", Security: "none", Fingerprint: "chrome"}
+	p := xraytest.Server(t, q, "")
+	x := start(t, p)
+	echo := netip.MustParseAddrPort(xraytest.TCPEcho(t))
+	roundTripTCP(t, x, echo.Addr().String(), echo.Port(), 1<<20)
+	if udp, ok := xraytest.UDPEcho(t, "127.0.0.1:0"); ok {
+		roundTripUDP(t, x, udp)
+	}
+}
+
+func TestRealityXHTTPWithXMux(t *testing.T) {
+	q := xraytest.RealityProfile("xhttp", "", "packet-up")
+	q.XMux = &profile.XMux{MaxConcurrency: &[2]int32{2, 4}, CMaxReuseTimes: &[2]int32{50, 50}, HKeepAlivePeriod: 20}
+	p := xraytest.Server(t, q, "")
+	x := start(t, p)
+	echo := netip.MustParseAddrPort(xraytest.TCPEcho(t))
+	for range 6 { // more streams than the concurrency of one connection
+		roundTripTCP(t, x, echo.Addr().String(), echo.Port(), 32<<10)
+	}
+}
+
 func TestRealityXHTTPWithPaddingAndHost(t *testing.T) {
 	q := xraytest.RealityProfile("xhttp", "", "packet-up")
 	q.XPadding, q.HTTPHost = [2]int32{200, 400}, "cdn.example"

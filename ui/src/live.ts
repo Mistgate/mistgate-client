@@ -17,6 +17,7 @@ export type Server = { id: string; name: string; protocol: string; node?: string
 export type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; managed?: boolean; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
+  unsupported_kinds?: Record<string, number>; // what the servers that were not read are, by kind
   // a Mistgate panel only: MTProto proxies as links Telegram opens, and this person's devices
   telegram?: { node?: string; country?: string; city?: string; via?: string; via_country?: string; ipv6?: boolean; link: string }[];
   devices_used?: number; devices_limit?: number;
@@ -148,6 +149,15 @@ const WHERE: Record<string, string> = {
   fa: 'از کسی که سرور VPN شما را اداره می‌کند. صفحهٔ اشتراکی را که به شما داده‌اند باز کنید و لینک را از آنجا کپی کنید، یا در همان صفحه «افزودن به Mistgate» را بزنید.',
   tr: 'VPN sunucunuzu yöneten kişiden. Size verilen abonelik sayfasını açın ve bağlantıyı oradan kopyalayın ya da sayfadaki “Mistgate’e ekle” düğmesine basın.',
 };
+// The add sheet, when some servers of the subscription cannot be used: how many, and of which kinds.
+const UNREAD: Record<string, (n: number, kinds: string) => string> = {
+  en: (n, kinds) => `${n} more not added: the app can’t use ${kinds}`,
+  ru: (n, kinds) => `Ещё ${n} не добавлено: приложение не умеет ${kinds}`,
+  zh: (n, kinds) => `另有 ${n} 个未添加：应用不支持 ${kinds}`,
+  fa: (n, kinds) => `${n} مورد دیگر اضافه نشد: برنامه از ${kinds} پشتیبانی نمی‌کند`,
+  tr: (n, kinds) => `${n} tane daha eklenmedi: uygulama ${kinds} kullanamıyor`,
+};
+const KIND: Record<string, string> = { trojan: 'Trojan', ss: 'Shadowsocks', ssr: 'ShadowsocksR', vmess: 'VMess', tuic: 'TUIC', wireguard: 'WireGuard', hysteria: 'Hysteria 1', socks5: 'SOCKS5', http: 'HTTP', other: '…' };
 const BACK: Record<string, string> = { en: 'Cancel', ru: 'Отмена', zh: '取消', fa: 'لغو', tr: 'İptal' };
 const PINGS: Record<string, number> = {};
 // The one path that is measured for a node's number: the row shows a round trip to the node, and every path of it
@@ -262,7 +272,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
-      this.paintTg(); this.paintTgHelp(); this.paintAddBack(); this.paintWhere();
+      this.paintTg(); this.paintTgHelp(); this.paintAddBack(); this.paintWhere(); this.paintUnread();
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
@@ -468,6 +478,18 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const onb = document.querySelector('.onb'), old = onb?.querySelector('.mg-where');
       if (!onb || !this.whereOpen) return void old?.remove();
       if (!old) onb.append(Object.assign(document.createElement('p'), { className: 'mg-where', textContent: WHERE[document.documentElement.lang] ?? WHERE.en }));
+    }
+    paintUnread() {
+      const facts = document.querySelector('.sheet .ad-f, .ad-f');
+      const sub = this.st().add === 'basic' || this.st().add === 'confirm' ? this.pending?.sub : null;
+      const old = facts?.parentElement?.querySelector('.mg-unread');
+      if (!facts || !sub?.unsupported) return void old?.remove();
+      const kinds = Object.keys(sub.unsupported_kinds ?? {}).map((k) => KIND[k] ?? k.replace(/^vless/, 'VLESS')).join(', ');
+      const text = (UNREAD[document.documentElement.lang] ?? UNREAD.en)(sub.unsupported, kinds || '…');
+      if (old) { if (old.lastChild?.textContent !== text) old.lastChild!.textContent = text; return; }
+      const note = Object.assign(document.createElement('p'), { className: 'ad-note mg-unread' });
+      note.append(Object.assign(document.createElement('span'), { className: 'gl g-info-circle' }), text);
+      facts.after(note);
     }
     paintAddBack() {
       const alt = document.querySelector('.onb .onb-alt');

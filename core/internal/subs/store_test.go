@@ -71,7 +71,7 @@ func TestPreviewBase64AndUnsupportedEntries(t *testing.T) {
 	if _, err := store.Preview(context.Background(), "vless://unsupported\nhy2://broken"); errorCode(err) != "no_servers" {
 		t.Fatalf("unsupported-only error = %v", err)
 	}
-	if _, _, _, err := parseURLBody("{\"proxies\": []}", ""); errorCode(err) != "unsupported_format" {
+	if _, _, _, _, err := parseURLBody("{\"proxies\": []}", ""); errorCode(err) != "unsupported_format" {
 		t.Fatalf("JSON error = %v", err)
 	}
 }
@@ -278,7 +278,7 @@ func identityProtection(data []byte) ([]byte, error) { return append([]byte(nil)
 
 func TestLinksOnOneLine(t *testing.T) {
 	text := "hysteria2://a@203.0.113.5:443/?insecure=1#One two hy2://b@203.0.113.6:443/?insecure=1#Three\tvless://x@example.com:443#other"
-	servers, _, unsupported, err := parseEntries(text, "sub")
+	servers, _, unsupported, _, err := parseEntries(text, "sub")
 	if err != nil || len(servers) != 2 || unsupported != 1 {
 		t.Fatalf("got %d servers, %d unsupported, err %v", len(servers), unsupported, err)
 	}
@@ -292,7 +292,7 @@ func TestParseEntriesHysteriaPortHoppingLinks(t *testing.T) {
 		"hy2://auth@hop.example:443?mport=20000-20100#Mport",
 		"hy2://auth@hop.example:20000-20100#PortRange",
 	} {
-		servers, entries, _, err := parseEntries(link, "sub")
+		servers, entries, _, _, err := parseEntries(link, "sub")
 		if err != nil || len(servers) != 1 || len(entries) != 1 {
 			t.Errorf("parseEntries(%q) = %#v, %v", link, servers, err)
 			continue
@@ -393,7 +393,7 @@ func TestMihomoProfileSubscription(t *testing.T) {
 
 func TestMihomoRequiresValidYAMLProxies(t *testing.T) {
 	for _, body := range []string{"name: Missing proxies", "proxies: ["} {
-		if _, _, _, err := parseURLBody(body, "sub"); errorCode(err) != "unsupported_format" {
+		if _, _, _, _, err := parseURLBody(body, "sub"); errorCode(err) != "unsupported_format" {
 			t.Errorf("parseURLBody(%q) error = %v", body, err)
 		}
 	}

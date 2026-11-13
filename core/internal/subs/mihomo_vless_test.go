@@ -10,7 +10,7 @@ func TestMihomoVLESSProxies(t *testing.T) {
   - {name: Any cert, type: vless, server: edge.example.net, port: 443, uuid: 8f3c1e2a-6b7d-4c9e-a1b2-3c4d5e6f7a8b, network: tcp, tls: true, skip-cert-verify: true}
   - {name: gRPC, type: vless, server: edge.example.net, port: 443, uuid: 8f3c1e2a-6b7d-4c9e-a1b2-3c4d5e6f7a8b, network: grpc, tls: true}
 `
-	servers, entries, unsupported, err := parseMihomoProfile(profile, "sub")
+	servers, entries, unsupported, _, err := parseMihomoProfile(profile, "sub")
 	if err != nil || len(servers) != 3 || unsupported != 2 {
 		t.Fatalf("servers=%d unsupported=%d err=%v", len(servers), unsupported, err)
 	}

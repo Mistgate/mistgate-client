@@ -633,7 +633,7 @@ func TestClientAPIVLESSPaths(t *testing.T) {
 			apiServer("Berlin", "DE",
 				apiPath("pth_vless_raw", "vless", "direct", false, vlessPathSettings(nil)),
 				apiPath("pth_vless_xhttp", "vless", "relay", false, vlessPathSettings(map[string]any{"flow": nil, "transport": "xhttp", "path": "/xh", "mode": "packet-up", "x_padding_bytes": "100-1000"})),
-				apiPath("pth_vless_grpc", "vless", "direct", false, vlessPathSettings(map[string]any{"flow": nil, "transport": "grpc"})),
+				apiPath("pth_vless_kcp", "vless", "direct", false, vlessPathSettings(map[string]any{"flow": nil, "transport": "kcp"})),
 				apiPath("pth_vless_flow", "vless", "direct", false, vlessPathSettings(map[string]any{"flow": "xtls-rprx-direct"})),
 				apiPath("pth_vless_sec", "vless", "direct", false, vlessPathSettings(map[string]any{"security": "none"})),
 				apiPath("pth_vless_port", "vless", "direct", false, vlessPathSettings(map[string]any{"port": 70000})),
@@ -643,6 +643,9 @@ func TestClientAPIVLESSPaths(t *testing.T) {
 	got, err := store.Refresh(context.Background(), sub.ID)
 	if err != nil || got.Error != "" || len(got.Servers) != 2 || got.Unsupported != 5 {
 		t.Fatalf("refresh = %#v, %v (unknown transport, flow, security, port and protocol are unsupported paths, not errors)", got, err)
+	}
+	if got.UnsupportedKinds != nil {
+		t.Errorf("a managed subscription has no unsupported kinds: %v", got.UnsupportedKinds)
 	}
 	if got.Servers[0].ID != "pth_vless_raw" || got.Servers[0].Protocol != "vless" || got.Servers[1].Name != "Berlin · relay" {
 		t.Fatalf("servers = %#v", got.Servers)

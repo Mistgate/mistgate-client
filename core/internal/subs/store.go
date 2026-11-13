@@ -57,6 +57,12 @@ type Subscription struct {
 	Probe      *Probe      `json:"probe,omitempty"`
 	Report     bool        `json:"report"`
 	ReportLast *ReportLast `json:"report_last,omitempty"`
+
+	// UnsupportedKinds says what Unsupported was made of: kind -> count, the counts adding up to Unsupported. A kind is
+	// the scheme of a link or the type of a profile's proxy, lower case ("trojan", "ss"); a vless that failed has its
+	// reason in brackets ("vless (transport)"). Nothing of the server is in it (see kindCounts). Absent: nothing was
+	// unsupported, the subscription is managed, or it was saved by an older build and has not been refreshed since.
+	UnsupportedKinds map[string]int `json:"unsupported_kinds,omitempty"`
 }
 
 // Telegram is one MTProto proxy of the subscription, as a link Telegram opens. Twins of one server share Node.
@@ -535,12 +541,12 @@ func (s *Store) preview(ctx context.Context, text, id string) (storedSubscriptio
 		sub := Subscription{ID: id, Kind: "awg", Name: "AmneziaWG", UpdatedUnix: time.Now().Unix(), Servers: []Server{server}}
 		return storedSubscription{Subscription: sub, Entries: []storedEntry{{Server: server, Raw: text}}, IntervalHours: defaultIntervalHours}, nil
 	}
-	servers, entries, unsupported, parseErr := parseEntries(text, id)
+	servers, entries, unsupported, kinds, parseErr := parseEntries(text, id)
 	if parseErr != nil {
 		return storedSubscription{}, parseErr
 	}
-	servers, entries, unsupported = capServers(servers, entries, unsupported)
-	sub := Subscription{ID: id, Kind: "links", Name: "Servers", UpdatedUnix: time.Now().Unix(), Unsupported: unsupported, Servers: servers}
+	servers, entries, unsupported, kinds = capServers(servers, entries, unsupported, kinds)
+	sub := Subscription{ID: id, Kind: "links", Name: "Servers", UpdatedUnix: time.Now().Unix(), Unsupported: unsupported, UnsupportedKinds: kinds, Servers: servers}
 	return storedSubscription{Subscription: sub, Entries: entries, IntervalHours: defaultIntervalHours}, nil
 }
 
@@ -600,15 +606,15 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 		ID: id, Kind: "url", Name: name, Host: parsed.Host, UpdatedUnix: time.Now().Unix(),
 		ExpireUnix: expire, UsedBytes: used, TotalBytes: total, Notice: responseNotice(response.Header.Get("Announce")),
 	}
-	servers, entries, unsupported, err := parseURLBody(string(body), id)
-	servers, entries, unsupported = capServers(servers, entries, unsupported)
+	servers, entries, unsupported, kinds, err := parseURLBody(string(body), id)
+	servers, entries, unsupported, kinds = capServers(servers, entries, unsupported, kinds)
 	sub.Name, sub.Notice = shortText(sub.Name), shortTextN(sub.Notice, maxNotice)
 	var coded *Error
 	if err != nil && errors.As(err, &coded) && coded.Notice != "" {
 		sub.Notice = coded.Notice
 	}
 	if err == nil {
-		sub.Unsupported, sub.Servers = unsupported, servers
+		sub.Unsupported, sub.UnsupportedKinds, sub.Servers = unsupported, kinds, servers
 	}
 	plain := storedSubscription{Subscription: sub, URL: rawURL, Entries: entries, IntervalHours: parseInterval(response.Header.Get("profile-update-interval"))}
 	if id != "" && strings.TrimSpace(response.Header.Get("Mistgate-Client-Api")) == "1" {
@@ -621,7 +627,7 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 	return plain, err
 }
 
-func parseURLBody(body, id string) ([]Server, []storedEntry, int, error) {
+func parseURLBody(body, id string) ([]Server, []storedEntry, int, kindCounts, error) {
 	body = strings.TrimSpace(body)
 	if !strings.Contains(body, "://") {
 		if decoded, err := decodeSubscription(body); err == nil {
@@ -635,7 +641,7 @@ func parseURLBody(body, id string) ([]Server, []storedEntry, int, error) {
 		return parseEntries(body, id)
 	}
 	if strings.HasPrefix(body, "{") || strings.HasPrefix(body, "[") {
-		return nil, nil, 0, &Error{Code: "unsupported_format"}
+		return nil, nil, 0, nil, &Error{Code: "unsupported_format"}
 	}
 	return parseMihomoProfile(body, id)
 }
@@ -643,11 +649,11 @@ func parseURLBody(body, id string) ([]Server, []storedEntry, int, error) {
 var linkStart = regexp.MustCompile(`\s+([a-zA-Z][a-zA-Z0-9+.-]*://)`)
 var mihomoProxiesKey = regexp.MustCompile(`(?m)^proxies\s*:`)
 
-func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
+func parseEntries(text, id string) ([]Server, []storedEntry, int, kindCounts, error) {
 	servers := make([]Server, 0)
 	entries := make([]storedEntry, 0)
 	seen := make(map[string]bool)
-	unsupported, count := 0, 0
+	unsupported, count, kinds := 0, 0, kindCounts{}
 	// a single-line field turns a pasted list into one line: a new link starts wherever whitespace is followed by a scheme
 	for _, line := range strings.Split(linkStart.ReplaceAllString(text, "\n$1"), "\n") {
 		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
@@ -672,6 +678,11 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 		}
 		if err != nil {
 			unsupported++
+			if protocol == "vless" {
+				kinds.add(vlessKind(err), 1)
+			} else {
+				kinds.add(protocol, 1)
+			}
 			continue
 		}
 		name := linkFragment(line)
@@ -685,13 +696,32 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 		entries = append(entries, storedEntry{Server: server, Raw: line})
 	}
 	if count == 0 {
-		return nil, nil, unsupported, &Error{Code: "bad_link"}
+		return nil, nil, unsupported, kinds, &Error{Code: "bad_link"}
 	}
 	if len(entries) == 0 {
-		return nil, nil, unsupported, &Error{Code: "no_servers"}
+		return nil, nil, unsupported, kinds, &Error{Code: "no_servers"}
 	}
-	return servers, entries, unsupported, nil
+	return servers, entries, unsupported, kinds, nil
 }
+
+// kindCounts is Subscription.UnsupportedKinds while it is being counted. The kinds go to the window and can be shown
+// to the person, so a name is let in only if it looks like a kind (lower case words, at most 40 characters, nothing
+// like a host, key or path) and there are at most 12 of them; whatever does not fit is counted as "other".
+type kindCounts map[string]int
+
+const maxKinds = 12
+
+var kindName = regexp.MustCompile(`^[a-z0-9][a-z0-9 ()+._-]{0,39}$`)
+
+func (k kindCounts) add(kind string, n int) {
+	if !kindName.MatchString(kind) || k[kind] == 0 && kind != "other" && len(k) >= maxKinds-1 {
+		kind = "other"
+	}
+	k[kind] += n
+}
+
+// vlessKind is how a vless that failed is counted: "vless" and the reason from profile's fixed set.
+func vlessKind(err error) string { return "vless (" + profile.VLESSReason(err) + ")" }
 
 func linkFragment(line string) string {
 	_, fragment, ok := strings.Cut(line, "#")
@@ -875,6 +905,7 @@ func publicCopy(sub Subscription) Subscription {
 		p := *sub.Probe
 		sub.Probe = &p
 	}
+	sub.UnsupportedKinds = maps.Clone(sub.UnsupportedKinds)
 	sub.Servers = append([]Server(nil), sub.Servers...)
 	if sub.Servers == nil {
 		sub.Servers = []Server{}

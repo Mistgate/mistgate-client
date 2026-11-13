@@ -25,6 +25,8 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
 	"github.com/xtls/xray-core/transport/internet"
+	xgrpc "github.com/xtls/xray-core/transport/internet/grpc"
+	"github.com/xtls/xray-core/transport/internet/httpupgrade"
 	"github.com/xtls/xray-core/transport/internet/reality"
 	"github.com/xtls/xray-core/transport/internet/splithttp"
 	"github.com/xtls/xray-core/transport/internet/tcp"
@@ -155,6 +157,14 @@ func StreamConfig(p *profile.VLESS) (*internet.StreamConfig, error) {
 	case "ws":
 		stream.ProtocolName = "websocket"
 		stream.TransportSettings = []*internet.TransportConfig{{ProtocolName: "websocket", Settings: serial.ToTypedMessage(&websocket.Config{Path: p.Path, Host: p.HTTPHost})}}
+	case "httpupgrade":
+		stream.ProtocolName = "httpupgrade"
+		stream.TransportSettings = []*internet.TransportConfig{{ProtocolName: "httpupgrade", Settings: serial.ToTypedMessage(&httpupgrade.Config{Path: p.Path, Host: p.HTTPHost})}}
+	case "grpc":
+		stream.ProtocolName = "grpc"
+		stream.TransportSettings = []*internet.TransportConfig{{ProtocolName: "grpc", Settings: serial.ToTypedMessage(&xgrpc.Config{
+			ServiceName: p.ServiceName, MultiMode: p.Mode == "multi", Authority: p.HTTPHost,
+		})}}
 	case "xhttp":
 		config := &splithttp.Config{
 			Host: p.HTTPHost, Path: p.Path, Mode: p.Mode,
@@ -169,6 +179,22 @@ func StreamConfig(p *profile.VLESS) (*internet.StreamConfig, error) {
 		}
 		if p.XPadding != [2]int32{} {
 			config.XPaddingBytes = &splithttp.RangeConfig{From: p.XPadding[0], To: p.XPadding[1]}
+		}
+		if m := p.XMux; m != nil {
+			rng := func(set *[2]int32, keep *splithttp.RangeConfig) *splithttp.RangeConfig {
+				if set == nil {
+					return keep
+				}
+				return &splithttp.RangeConfig{From: set[0], To: set[1]}
+			}
+			x := config.Xmux
+			x.MaxConcurrency, x.CMaxReuseTimes = rng(m.MaxConcurrency, nil), rng(m.CMaxReuseTimes, nil)
+			x.MaxConnections = rng(m.MaxConnections, x.MaxConnections)
+			x.HMaxRequestTimes, x.HMaxReusableSecs = rng(m.HMaxRequestTimes, x.HMaxRequestTimes), rng(m.HMaxReusableSecs, x.HMaxReusableSecs)
+			x.HKeepAlivePeriod = m.HKeepAlivePeriod
+			if m.MaxConnections == nil && x.MaxConcurrency != nil && x.MaxConcurrency.To > 0 {
+				x.MaxConnections = nil // Xray takes one of the two: a concurrency given by the link replaces the default of 3 connections
+			}
 		}
 		stream.ProtocolName = "splithttp"
 		stream.TransportSettings = []*internet.TransportConfig{{ProtocolName: "splithttp", Settings: serial.ToTypedMessage(config)}}

@@ -473,9 +473,9 @@ no secrets. URL fetches send `User-Agent: mihomo/1.19.33 Mistgate/0.0.1 (Windows
 panels that recognize Mihomo return their full client profile. A URL body may be the usual plain or base64 link list,
 or a Mihomo YAML profile with a top-level `proxies` list. Only `proxies` is used; groups, rules and DNS are ignored
 because Mistgate applies its own routing. Supported proxies are Hysteria2 and WireGuard with or without
-`amnezia-wg-option`; other types are counted as unsupported. VLESS does not come this way: only a panel's client API
-(`docs/client-api.md`) hands it out, and a path with a transport, security or flow the client does not know is counted as
-unsupported like any other unknown protocol.
+`amnezia-wg-option`, and `vless` (below); other types are counted as unsupported. A panel's client API
+(`docs/client-api.md`) hands VLESS out too, and a path with a transport, security or flow the client does not know is
+counted as unsupported like any other unknown protocol.
 
 A server of a panel's client API also carries its place in the panel's structure: `node` (the paths of one node share
 it), `country` (code), `city`, `via` (`direct`, `relay` or `warp`), `ipv6`, `load` (`low`, `medium`, `high`, or absent) and, for AmneziaWG, `version`
@@ -500,10 +500,28 @@ Subscriptions expose `notice` (empty when the panel sent no message), the panel'
 from plain text or `base64:<value>`.
 `vless://` share links are read too (the v2rayN form), and `vless` proxies of a Mihomo profile: REALITY, TLS or no
 outer encryption at all (`security=none`, as some providers give it: the network then sees that it is VLESS), over raw
-(`type=tcp`), `xhttp` or `ws`, with `sni`, `fp`, `pbk`, `sid`, `spx`, `flow` (Vision, on raw with TLS or REALITY),
-`path`, `host`, `mode`, `alpn` and the padding from xhttp's `extra`. Refused, and counted in `unsupported`: other
-transports (gRPC, HTTP upgrade), VLESS's own `encryption`, a header disguise on raw, and a link or proxy that asks to
-accept any certificate (`allowInsecure=1`, `skip-cert-verify`).
+(`type=tcp`), `xhttp`, `ws`, `httpupgrade` or `grpc`, with `sni`, `fp`, `pbk`, `sid`, `spx`, `flow` (Vision, on raw with
+TLS or REALITY), `path`, `host`, `mode`, `alpn`, and from xhttp's `extra` the padding and the `xmux` (`maxConcurrency`,
+`maxConnections`, `cMaxReuseTimes`, `hMaxRequestTimes`, `hMaxReusableSecs`: a number or `from-to`; `hKeepAlivePeriod` in
+seconds; what the link does not give stays at the client's default; the rest of `extra` is not read, and an `xmux` the
+client cannot read is left out without refusing the link). gRPC takes `serviceName` (required, at most 128 printable
+characters), `mode=gun|multi` (`gun` by default) and `authority` (the HTTP/2 `:authority`; `host` is taken when there is
+no `authority`); in a Mihomo proxy it is `network: grpc` with `grpc-opts: {grpc-service-name}`. As in Xray, gRPC needs no
+TLS, and REALITY carries only raw, xhttp and gRPC (not ws or httpupgrade). HTTP upgrade takes `path` and `host`; in a
+Mihomo proxy it is `network: ws` with `ws-opts: {v2ray-http-upgrade: true}` (also read: `network: httpupgrade` with
+`http-upgrade-opts` or `httpupgrade-opts`). Refused, and counted in `unsupported`: other transports (kcp, quic, h2 and the
+like), VLESS's own `encryption`, a header disguise on raw, and a link or proxy that asks to accept any certificate
+(`allowInsecure=1`, `skip-cert-verify`).
+
+`unsupported_kinds` (a Subscription key) says what `unsupported` was made of: an object of kind to count whose counts add
+up to `unsupported`, for example `{"trojan": 3, "ss": 2, "vless (transport)": 1, "vless (any certificate)": 1}`. A kind
+is the scheme of a link or the `type` of a Mihomo proxy in lower case; a `vless` that failed is `vless (<reason>)`, the
+reason being one of `transport`, `encryption`, `any certificate`, `flow`, `security`, `disguise` or `invalid` (anything
+else: a malformed or unknown value). A kind is at most 40 characters of `a-z 0-9 space ( ) + . _ -`, there are at most 12
+kinds, and whatever does not fit (a name that does not look like a kind, a thirteenth kind, servers past the list limit)
+is counted in `other`. Nothing of a server is in it: no address, name, key, id or path. The key is left out when nothing
+is unsupported, on a managed subscription (its servers come from `sync`), and on a subscription saved by an older build
+until its next refresh; `subs.preview`, `subs.add`, `subs.refresh` and `subs.list` carry it like `unsupported`.
 Port hopping is accepted from Hysteria2 `ports: "from-to"` profiles and the `mport` or `host:from-to` link forms;
 `hop-interval` is in seconds. If every profile proxy uses a refusal endpoint (`0.0.0.0`, `127.0.0.1`, `::`, or port
 0/1), the refresh fails with `refused`, its first proxy name becomes `notice`, and existing servers are kept. A first

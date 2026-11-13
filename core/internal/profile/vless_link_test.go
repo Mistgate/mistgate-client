@@ -36,7 +36,7 @@ func TestParseVLESSLink(t *testing.T) {
 	}
 	for name, link := range map[string]string{
 		"vision without tls":  "vless://" + id + "@edge.example.net:80?type=tcp&security=none&flow=xtls-rprx-vision",
-		"grpc":                "vless://" + id + "@edge.example.net:443?type=grpc&security=tls",
+		"grpc without a name": "vless://" + id + "@edge.example.net:443?type=grpc&security=tls",
 		"any certificate":     "vless://" + id + "@edge.example.net:443?type=ws&security=tls&allowInsecure=1",
 		"vless encryption":    "vless://" + id + "@edge.example.net:443?type=tcp&security=reality&encryption=mlkem768x25519plus.native.0rtt.abc",
 		"header disguise":     "vless://" + id + "@edge.example.net:443?type=tcp&security=tls&headerType=http",

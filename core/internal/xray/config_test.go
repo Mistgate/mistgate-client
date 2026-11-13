@@ -9,6 +9,8 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
 	"github.com/xtls/xray-core/transport/internet"
+	xgrpc "github.com/xtls/xray-core/transport/internet/grpc"
+	"github.com/xtls/xray-core/transport/internet/httpupgrade"
 	"github.com/xtls/xray-core/transport/internet/reality"
 	"github.com/xtls/xray-core/transport/internet/splithttp"
 	"github.com/xtls/xray-core/transport/internet/tls"
@@ -23,6 +25,8 @@ func sample(security, transport string) *profile.VLESS {
 		p.Path, p.Mode, p.HTTPHost, p.XPadding = "/xh", "stream-up", "cdn.example", [2]int32{10, 20}
 	case "ws":
 		p.Path, p.HTTPHost = "/ws", "cdn.example"
+	case "httpupgrade":
+		p.Path, p.HTTPHost = "/hu", "cdn.example"
 	}
 	if security == "reality" {
 		p.PublicKey[0], p.ShortID[0], p.SpiderX = 7, 9, "/crawl?p=100-200&c=3&t=4-5"
@@ -132,7 +136,7 @@ func TestStreamConfig(t *testing.T) {
 func TestStartRefusesWhatItDoesNotKnow(t *testing.T) {
 	addr := netip.MustParseAddr("203.0.113.5")
 	for name, change := range map[string]func(*profile.VLESS){
-		"transport": func(p *profile.VLESS) { p.Transport = "grpc" },
+		"transport": func(p *profile.VLESS) { p.Transport = "kcp" },
 		"security":  func(p *profile.VLESS) { p.Security = "ssl" },
 		"spider":    func(p *profile.VLESS) { p.SpiderX = "/x?p=9-1" },
 	} {
@@ -148,5 +152,75 @@ func TestStartRefusesWhatItDoesNotKnow(t *testing.T) {
 	}
 	if _, err := Start(sample("reality", "raw"), netip.Addr{}, ""); err == nil {
 		t.Error("started without a server address")
+	}
+}
+
+func TestStreamConfigGRPCAndHTTPUpgrade(t *testing.T) {
+	g := sample("tls", "grpc")
+	g.ServiceName, g.Mode, g.HTTPHost = "svc", "multi", "auth.example"
+	stream := streamOf(t, g)
+	if stream.ProtocolName != "grpc" || stream.TransportSettings[0].ProtocolName != "grpc" {
+		t.Fatalf("grpc = %q", stream.ProtocolName)
+	}
+	transport, _ := stream.TransportSettings[0].Settings.GetInstance()
+	if c := transport.(*xgrpc.Config); c.ServiceName != "svc" || !c.MultiMode || c.Authority != "auth.example" || c.UserAgent != "" {
+		t.Errorf("grpc config = %v", c)
+	}
+	g.Mode, g.HTTPHost = "gun", ""
+	transport, _ = streamOf(t, g).TransportSettings[0].Settings.GetInstance()
+	if c := transport.(*xgrpc.Config); c.MultiMode || c.Authority != "" {
+		t.Errorf("gun config = %v", c)
+	}
+
+	stream = streamOf(t, sample("tls", "httpupgrade"))
+	if stream.ProtocolName != "httpupgrade" || stream.TransportSettings[0].ProtocolName != "httpupgrade" {
+		t.Fatalf("httpupgrade = %q", stream.ProtocolName)
+	}
+	transport, _ = stream.TransportSettings[0].Settings.GetInstance()
+	if c := transport.(*httpupgrade.Config); c.Path != "/hu" || c.Host != "cdn.example" {
+		t.Errorf("httpupgrade config = %v", c)
+	}
+}
+
+func TestStreamConfigXMux(t *testing.T) {
+	xmuxOf := func(m *profile.XMux) *splithttp.XmuxConfig {
+		p := sample("reality", "xhttp")
+		p.XMux = m
+		transport, _ := streamOf(t, p).TransportSettings[0].Settings.GetInstance()
+		return transport.(*splithttp.Config).Xmux
+	}
+	r := func(from, to int32) *[2]int32 { return &[2]int32{from, to} }
+	same := func(got *splithttp.RangeConfig, from, to int32) bool {
+		return got != nil && got.From == from && got.To == to
+	}
+
+	// nothing given: the defaults of this build
+	x := xmuxOf(nil)
+	if !same(x.MaxConnections, 3, 3) || !same(x.HMaxRequestTimes, 600, 900) || !same(x.HMaxReusableSecs, 1800, 3000) || x.MaxConcurrency != nil || x.CMaxReuseTimes != nil || x.HKeepAlivePeriod != 0 {
+		t.Errorf("defaults = %v", x)
+	}
+	// some given: those change, the rest stays
+	x = xmuxOf(&profile.XMux{HMaxRequestTimes: r(100, 200), CMaxReuseTimes: r(5, 5), HKeepAlivePeriod: 20})
+	if !same(x.MaxConnections, 3, 3) || !same(x.HMaxRequestTimes, 100, 200) || !same(x.HMaxReusableSecs, 1800, 3000) || !same(x.CMaxReuseTimes, 5, 5) || x.HKeepAlivePeriod != 20 {
+		t.Errorf("partial = %v", x)
+	}
+	// an explicit 0 is a value, not "not set"
+	x = xmuxOf(&profile.XMux{HMaxRequestTimes: r(0, 0)})
+	if !same(x.HMaxRequestTimes, 0, 0) {
+		t.Errorf("explicit zero = %v", x)
+	}
+	// Xray takes maxConcurrency or maxConnections: a concurrency replaces the default of 3 connections ...
+	x = xmuxOf(&profile.XMux{MaxConcurrency: r(16, 32)})
+	if !same(x.MaxConcurrency, 16, 32) || x.MaxConnections != nil {
+		t.Errorf("concurrency = %v", x)
+	}
+	// ... unless it is 0, or the link names the connections itself
+	x = xmuxOf(&profile.XMux{MaxConcurrency: r(0, 0)})
+	if !same(x.MaxConnections, 3, 3) {
+		t.Errorf("concurrency 0 = %v", x)
+	}
+	x = xmuxOf(&profile.XMux{MaxConcurrency: r(8, 8), MaxConnections: r(0, 0)})
+	if !same(x.MaxConcurrency, 8, 8) || !same(x.MaxConnections, 0, 0) {
+		t.Errorf("concurrency and connections 0 = %v", x)
 	}
 }
