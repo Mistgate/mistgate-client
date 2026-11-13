@@ -1,9 +1,9 @@
 // The tray: the icon (drawn from the design's glyphs for the current state) and the quick panel's window.
 // As elsewhere, the design's logic stays as generated; the panel's subclass feeds it the service's state.
+import { FLAG } from './flags';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
-import FLAGS from './design/flags.json';
 import GLYPHS from './design/tray-icons.json';
 import { words } from './live-i18n';
 import { pref } from './live-settings';
@@ -24,7 +24,7 @@ function flagOf(name: string) {
   const m = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
   if (!m) return { flag: '', text: name };
   const cc = [...m[0]].map((c) => String.fromCharCode(c.codePointAt(0)! - 0x1f1e6 + 97)).join('');
-  return { flag: (FLAGS as Record<string, string>)[cc] ?? '', text: name.replace(m[0], '').trim() || name };
+  return { flag: FLAG[cc] ?? '', text: name.replace(m[0], '').trim() || name };
 }
 
 // ---- the icon: lives in the main window, which is always there (hidden when closed to the tray)

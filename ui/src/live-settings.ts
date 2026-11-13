@@ -140,7 +140,10 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       document.addEventListener('click', this.onPage, true);
       this.off.push(listen<Settings>('mg://settings', (e) => this.apply(e.payload)));
       rpc<Settings>('settings.get').then((s) => this.apply(s), () => {});
-      this.setState({ lg: document.documentElement.lang || 'en' });
+      // a link from another screen may name the section it leads to
+      let sec = '';
+      try { sec = sessionStorage.getItem('mg.sec') ?? ''; sessionStorage.removeItem('mg.sec'); } catch { /* the first section */ }
+      this.setState({ lg: document.documentElement.lang || 'en', ...(sec ? { sec } : {}) });
       // the update card follows the app's one updater
       const up = () => this.setState({ up: updates.get().up, upP: updates.get().pct });
       this.off.push(Promise.resolve(updates.on(up)));

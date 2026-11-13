@@ -6,7 +6,7 @@ import { clock as hhmm, named as withName, reportOff, reportState, type ReportSu
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
-import FLAGS from './design/flags.json';
+import { FLAG } from './flags';
 import { nodesOf, PROTO, sufOf, VIA, type Server } from './live';
 import { words } from './live-i18n';
 import { liveChip, pref } from './live-settings';
@@ -43,7 +43,7 @@ function flagOf(name: string) {
   const m = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
   if (!m) return { flag: '', text: name };
   const cc = [...m[0]].map((c) => String.fromCharCode(c.codePointAt(0)! - 0x1f1e6 + 97)).join('');
-  return { flag: (FLAGS as Record<string, string>)[cc] ?? '', text: name.replace(m[0], '').trim() || name };
+  return { flag: FLAG[cc] ?? '', text: name.replace(m[0], '').trim() || name };
 }
 
 // The design's own sample results, rendered by its logic without mounting it: the source of every phrase below.
@@ -58,6 +58,8 @@ function samples(Base: typeof DCLogic) {
   }
   return { I, G, look };
 }
+
+const toPrivacy = (e: MouseEvent) => { if ((e.target as Element | null)?.closest?.('.anon-l')) try { sessionStorage.setItem('mg.sec', 'priv'); } catch { /* opens on its first section */ } };
 
 export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
   let S: ReturnType<typeof samples> | null = null;
@@ -95,6 +97,8 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
       this.off.push(listen<{ subs: DSub[] }>('mg://subs', (e) => subs(e.payload.subs)));
       rpc<{ subs: DSub[] }>('subs.list').then((r) => subs(r.subs), () => {});
       document.addEventListener('click', this.onShow);
+      // "What's sent" leads to Settings: say which section it means (the design's link names the screen only)
+      document.addEventListener('click', toPrivacy, true);
       rpc<{ entries: LogEntry[] }>('log.get').then((r) => { this.log = r.entries; this.forceUpdate(); }, () => {});
       // until the subscriptions are read: the design's "basic" variant, block reports not offered
       this.setState({ md: 'basic', anonK: 'old', rep: 'closed' });

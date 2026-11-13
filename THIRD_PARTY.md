@@ -358,5 +358,6 @@ The Go standard library and runtime: BSD-3-Clause.
 | @fontsource/onest | 5.3.1 | OFL-1.1 |
 | @tauri-apps/api | 2.12.4 | Apache-2.0 OR MIT |
 | @tauri-apps/plugin-updater | 2.14.1 | MIT OR Apache-2.0 |
+| country-flag-icons | 1.6.20 | MIT |
 | react | 19.3.1 | MIT |
 | react-dom | 19.3.1 | MIT |

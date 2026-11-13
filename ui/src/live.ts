@@ -5,7 +5,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
-import FLAGS from './design/flags.json';
+import { FLAG } from './flags';
 import { words } from './live-i18n';
 import { pref } from './live-settings';
 
@@ -28,9 +28,6 @@ const STEP: Record<string, number> = { resolve: 0, handshake: 2, tunnel: 3, veri
 export const PROTO: Record<string, [fam: string, label: string, full: string]> = {
   hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'], vless: ['vless', 'VLESS', 'VLESS'],
 };
-// the design's flags, and Turkey's, which the canvas does not have yet (drawn for the region list)
-// ponytail: a country outside this table has no picture; the canvas needs the rest of the flags
-const FLAG: Record<string, string> = { ...(FLAGS as Record<string, string>), tr: '/blob/bc9caa2c3d3cb9a41eee59f9fe3669ed.svg' };
 const mbps = (bps: number) => (bps / 1e6).toFixed(1);
 const DAY = 86400;
 
