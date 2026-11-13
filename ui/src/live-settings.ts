@@ -187,10 +187,14 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
         else if (button.querySelector('.g-copy')) void navigator.clipboard?.writeText(row.querySelector('.g-key') ? this.proxy.password : row.querySelector('.mo')?.textContent ?? '').catch(() => {});
         return;
       }
-      if (t?.closest?.('.sx-row:has(.g-code-brackets) a')) { // the design links its sample address
-        e.preventDefault();
-        void invoke('open_url', { url: 'https://github.com/Mistgate/mistgate-client' }).catch(() => {});
-        return;
+      // About: the design links its sample address; the rows lead to the project's own pages
+      const REPO = 'https://github.com/Mistgate/mistgate-client';
+      for (const [glyph, url] of [['g-code-brackets', REPO], ['g-page-star', REPO + '/blob/main/THIRD_PARTY.md'], ['g-privacy-policy', REPO + '#privacy']]) {
+        if (t?.closest?.(`.sx-row:has(.${glyph}) a`)) {
+          e.preventDefault();
+          void invoke('open_url', { url }).catch(() => {});
+          return;
+        }
       }
       if (!t?.closest?.('.sb-act a')) return;
       e.preventDefault();

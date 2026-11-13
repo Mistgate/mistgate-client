@@ -55,6 +55,6 @@ html.shell-tray .ty-fly { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--
 .shell .stip-l:has(.bar i[style*="width: 0%"]), .shell .stip-l:has(.bar i[style*="width:0%"]) { display: none; }
 /* Diag: the design's "full check again in 48 min" is a sample; this build has no such timer. */
 .shell .ck-go .cg-t small { display: none; }
-/* About: the design's samples (service state, Restart, the links to nowhere) are hidden until they are real; the
-   source code row stays */
-.shell .sx-ab .m, .shell .sx-pg:has(> .sx-ab) > .sx-g .sx-row:not(:has(.g-code-brackets)) { display: none; }
+/* About: the design's samples of the service's state and its Restart are hidden until they are real; the rows of
+   links stay (live-settings points them at the project's pages) */
+.shell .sx-ab .m, .shell .sx-pg:has(> .sx-ab) > .sx-g .sx-row:has(.g-cpu) { display: none; }

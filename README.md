@@ -11,6 +11,7 @@ Hysteria2, AmneziaWG and VLESS in one window. For <a href="https://github.com/Mi
 <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-f2c46b">
 <a href="https://github.com/Mistgate/mistgate-client/releases/latest"><img alt="Version" src="https://img.shields.io/github/v/release/Mistgate/mistgate-client?sort=semver&color=b8acf2"></a>
 <a href="LICENSE"><img alt="Licence: AGPL-3.0" src="https://img.shields.io/github/license/Mistgate/mistgate-client?color=b8acf2"></a>
+<a href="https://github.com/Mistgate/mistgate-client/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Mistgate/mistgate-client/actions/workflows/ci.yml/badge.svg?branch=main"></a>
 <img alt="Windows 10 and 11, x64" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-8ec8ea">
 <a href="core/go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/Mistgate/mistgate-client?filename=core%2Fgo.mod"></a>
 <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-7dd3a0">
@@ -118,4 +119,4 @@ Linux builds. If something does not work, [open an issue](https://github.com/Mis
 ## Licence
 
 [AGPL-3.0](LICENSE). The libraries it links keep their own licences, among them Xray-core (MPL-2.0), Hysteria,
-amneziawg-go, gVisor and wintun.
+amneziawg-go, gVisor and wintun: the whole list is in [THIRD_PARTY.md](THIRD_PARTY.md).

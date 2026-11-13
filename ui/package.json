@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "licences": "node tools/licences.mjs",
     "bundle": "node tools/prepare-bundle.mjs && node tools/tauri-bundle.mjs && node tools/setup-build.mjs"
   },
   "dependencies": {
