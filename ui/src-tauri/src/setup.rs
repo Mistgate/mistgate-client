@@ -27,6 +27,29 @@ fn valid(path: &str) -> bool {
         && !path.chars().any(|c| c.is_control() || "\"<>|?*/".contains(c)) && !path[2..].contains(':') && !path.ends_with('\\')
 }
 
+/// Whether a program without the administrator's rights could swap the folder for its own. The service in it runs
+/// as the system, so such a folder would hand the system to any program of the user. Asked of Windows directly:
+/// may this (unelevated) program delete or rename what lies in any folder above? The folder's own contents are
+/// closed by the installer (installer.nsh).
+/// ponytail: a setup started as administrator cannot ask this way and lets every folder through; the installer's
+/// own closing of the folder still holds there.
+fn open_to_user(path: &str) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, OPEN_EXISTING};
+    use windows_sys::Win32::UI::Shell::IsUserAnAdmin;
+    if unsafe { IsUserAnAdmin() } != 0 {
+        return false;
+    }
+    Path::new(path).ancestors().skip(1).filter(|above| above.exists()).any(|above| unsafe {
+        let handle = CreateFileW(wide(above.as_os_str()).as_ptr(), 0x40 /* FILE_DELETE_CHILD */, 7, std::ptr::null(), OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, std::ptr::null_mut());
+        if handle == INVALID_HANDLE_VALUE {
+            return false;
+        }
+        CloseHandle(handle);
+        true
+    })
+}
+
 /// Where Mistgate is installed now (an update goes to the same place), or the usual folder.
 fn default_path() -> String {
     let out = std::process::Command::new("reg.exe").args(["query", UNINSTALL_KEY, "/ve"]).creation_flags(NO_WINDOW).output();
@@ -47,6 +70,7 @@ struct Info {
     path: String,
     need_mb: u64,
     free_mb: u64,
+    open: bool, // any program of the user could replace the folder: not a place for the service
     version: &'static str,
 }
 
@@ -65,7 +89,8 @@ fn setup_info(path: Option<String>) -> Info {
     }
     let mut free = 0u64;
     unsafe { GetDiskFreeSpaceExW(wide(at.as_os_str()).as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut()) };
-    Info { path, need_mb: env!("MG_SETUP_MB").parse().unwrap_or(0), free_mb: free >> 20, version: env!("CARGO_PKG_VERSION") }
+    let open = open_to_user(&path);
+    Info { path, open, need_mb: env!("MG_SETUP_MB").parse().unwrap_or(0), free_mb: free >> 20, version: env!("CARGO_PKG_VERSION") }
 }
 
 /// "Change…": Windows' own folder dialog. The answer is the folder Mistgate would go to (the chosen one, with its
@@ -105,7 +130,7 @@ struct Outcome {
 /// Runs the installer inside, silently, with Windows' permission prompt. Waits for it to finish.
 #[tauri::command]
 async fn setup_install(path: String, desktop: bool) -> Outcome {
-    if !valid(&path) || BUSY.swap(true, Ordering::SeqCst) {
+    if !valid(&path) || open_to_user(&path) || BUSY.swap(true, Ordering::SeqCst) {
         return Outcome { state: "failed", code: 0 };
     }
     let outcome = tauri::async_runtime::spawn_blocking(move || install(&path, desktop)).await.unwrap_or(Outcome { state: "failed", code: 0 });

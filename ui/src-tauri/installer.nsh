@@ -23,6 +23,14 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
   WriteRegStr HKLM "Software\Classes\mistgate" "" "URL:Mistgate"
   WriteRegStr HKLM "Software\Classes\mistgate" "URL Protocol" ""
   WriteRegStr HKLM "Software\Classes\mistgate\shell\open\command" "" '"$INSTDIR\mistgate.exe" "%1"'
+  ; The folder holds a program that runs as the system: whatever folder was chosen, only administrators and the
+  ; system may change what is in it; everyone else reads and runs.
+  nsExec::ExecToLog 'icacls "$INSTDIR" /setowner *S-1-5-32-544 /T /C /Q'
+  Pop $0
+  nsExec::ExecToLog 'icacls "$INSTDIR" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /C /Q'
+  Pop $0
+  nsExec::ExecToLog 'icacls "$INSTDIR\*" /reset /T /C /Q'
+  Pop $0
   ClearErrors
   nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" install'
   Pop $0

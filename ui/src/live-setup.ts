@@ -4,7 +4,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { DCLogic } from './dc';
 
-type Info = { path: string; need_mb: number; free_mb: number; version: string };
+type Info = { path: string; need_mb: number; free_mb: number; version: string; open: boolean };
+// a folder any program could swap for its own is refused (the service in it runs as the system)
+const OPEN: Record<string, string> = {
+  en: 'Any program can change this folder without administrator rights. Choose another one, for example in Program Files.',
+  ru: 'Эту папку может менять любая программа без прав администратора. Выберите другую, например в Program Files.',
+  zh: '任何程序无需管理员权限即可更改此文件夹。请选择其他位置，例如 Program Files。',
+  fa: 'هر برنامه‌ای می‌تواند بدون دسترسی مدیر این پوشه را تغییر دهد. پوشهٔ دیگری انتخاب کنید، مثلاً در Program Files.',
+  tr: 'Bu klasörü her program yönetici izni olmadan değiştirebilir. Başka bir klasör seçin, örneğin Program Files içinde.',
+};
 type Outcome = { state: 'ok' | 'denied' | 'failed'; code: number };
 // the languages as Settings lists them, each by its own name
 const LANGS = [['en', 'English', 'ltr'], ['ru', 'Русский', 'ltr'], ['zh', '中文', 'ltr'], ['fa', 'فارسی', 'rtl'], ['tr', 'Türkçe', 'ltr']];
@@ -115,11 +123,13 @@ export function liveSetup(Base: typeof DCLogic): typeof DCLogic {
       v.spaceT = short
         ? sample('space').replace('D:', drive).replace('86', String(i.need_mb)).replace('41', String(i.free_mb))
         : sample('none').replace('C:', drive).replace('86', String(i.need_mb)).replace('212', String(Math.floor(i.free_mb / 1024)));
+      if (i.open) v.spaceT = OPEN[document.documentElement.lang] ?? OPEN.en;
+      const no = short || i.open;
       v.path = i.path;
-      v.pathC = short ? 'bad' : '';
-      v.instC = short ? 'dis' : '';
-      // no room: Install shows where, instead of starting
-      v.install = () => (short ? this.setState({ step: 'folder', issue: 'none' }) : this.run(1));
+      v.pathC = no ? 'bad' : '';
+      v.instC = no ? 'dis' : '';
+      // no room, or not a safe place: Install shows where, instead of starting
+      v.install = () => (no ? this.setState({ step: 'folder', issue: 'none' }) : this.run(1));
       return v;
     }
   } as unknown as typeof DCLogic;

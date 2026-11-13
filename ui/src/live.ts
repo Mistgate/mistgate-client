@@ -187,6 +187,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     pending: { text: string; sub: Sub } | null = null; // the subscription on the confirm sheet
     lastText = '';
     refusal = ''; // the panel's own words when it refuses a subscription (device limit, expired, switched off…)
+    offered = ''; // a link from a mistgate:// link, waiting to be put into the link field
     pasted = ''; // what was pasted into the link field, with its line breaks (the field itself drops them)
     onPaste = (e: ClipboardEvent) => {
       if ((e.target as Element | null)?.closest?.('.onb-in')) this.pasted = e.clipboardData?.getData('text') ?? '';
@@ -224,7 +225,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         listen<{ subs: Sub[] }>('mg://subs', (e) => this.applySubs(e.payload.subs)),
         listen<{ up: boolean }>('mg://service', (e) => (e.payload.up ? this.sync() : this.setState({ cs: 'svc', wave: false }))),
         listen<{ mode: string; effective: string }>('mg://routes', (e) => { this.route = e.payload; this.paint(); }),
-        // a subscription link from a mistgate:// link: shown and asked about like a pasted one, never added by itself
+        // a subscription link from a mistgate:// link: put into the form like a pasted one, never fetched or added by itself
         listen('mg://add', () => this.takeLink()),
       ];
       this.takeLink();
@@ -258,6 +259,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     componentDidUpdate() {
       super.componentDidUpdate?.();
       this.paint();
+      const field = this.offered ? document.querySelector<HTMLInputElement>('.onb-in input') : null;
+      if (field) { field.value = this.pasted = this.offered; this.offered = ''; field.focus(); }
     }
     // Words the design has as plain markup: the route chip (always "all except RU sites" there) and the link field's hint.
     paint() {
@@ -435,7 +438,10 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           const have = await rpc<{ url: string }>('subs.link', { id: u.id }).then((r) => r.url, () => '');
           if (have && have.trim() === url.trim()) { this.adding = false; pref.set('sub', u.id); return this.setState({ liveSub: u.id, add: 'none', subsPop: false }, () => this.applySubs(this.subsList ?? [])); }
         }
-        this.startAdd(url);
+        // Nothing is fetched for a link that came from outside: it is put into the form, and the user's own press on
+        // the button sends it. (A page could otherwise make the service call any address by getting one click.)
+        this.offered = url;
+        this.addMode(true);
       }, () => {});
     }
     // preview first: nothing is added until the user presses the button on the sheet
