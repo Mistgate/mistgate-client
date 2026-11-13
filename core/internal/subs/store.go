@@ -448,6 +448,12 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 				} else {
 					p.Hy2, _, err = parseMihomoEntry(entry.Raw, entry.Server.Protocol)
 				}
+			case entry.Server.Protocol == "vless":
+				if strings.Contains(strings.SplitN(entry.Raw, "\n", 2)[0], "://") {
+					p.VLESS, err = profile.ParseVLESSLink(entry.Raw)
+				} else { // a Mihomo profile's proxy
+					p.VLESS, err = parseVLESSEntry(entry.Raw)
+				}
 			case entry.Server.Protocol == "awg":
 				if strings.HasPrefix(strings.TrimSpace(entry.Raw), "[Interface]") {
 					p.AWG, err = profile.ParseAWG(entry.Raw)
@@ -654,17 +660,23 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, error) {
 		}
 		count++
 		protocol := strings.ToLower(scheme)
-		if protocol != "hysteria2" && protocol != "hy2" {
-			unsupported++
-			continue
+		var err error
+		switch protocol {
+		case "hysteria2", "hy2":
+			protocol = "hysteria2"
+			_, err = profile.ParseHy2(line)
+		case "vless":
+			_, err = profile.ParseVLESSLink(line)
+		default:
+			err = errors.New("unsupported link")
 		}
-		if _, err := profile.ParseHy2(line); err != nil {
+		if err != nil {
 			unsupported++
 			continue
 		}
 		name := linkFragment(line)
 		entry := strings.SplitN(line, "#", 2)[0]
-		server := Server{ID: serverID(id, entry), Name: name, Protocol: "hysteria2"}
+		server := Server{ID: serverID(id, entry), Name: name, Protocol: protocol}
 		if seen[server.ID] {
 			continue
 		}

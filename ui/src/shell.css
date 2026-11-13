@@ -16,6 +16,8 @@ html, body { margin: 0; overflow: hidden; background: transparent; }
 .shell .mg-tg-help > b { font-size: 13px; font-weight: 700; letter-spacing: 0; color: color-mix(in oklab, var(--text) 82%, transparent); }
 .shell .mg-tg-help ol { margin: 0; padding-inline-start: 18px; display: grid; gap: 6px; text-align: start; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .shell .mg-tg-help .lsb { margin-top: 4px; padding: 0 14px; }
+/* The form's "Where do I get a link?": its answer, under the small buttons. */
+.shell .onb .mg-where { max-width: 340px; margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; text-align: center; color: var(--muted); }
 /* Adding one more subscription: the way back, beside the form's other small buttons. */
 .shell .onb-alt .mg-back { cursor: pointer; }
 /* A program's own icon on its tile (Routes > Apps): in the design's tinted square, in place of its symbol. */

@@ -133,7 +133,7 @@ func TestStartRefusesWhatItDoesNotKnow(t *testing.T) {
 	addr := netip.MustParseAddr("203.0.113.5")
 	for name, change := range map[string]func(*profile.VLESS){
 		"transport": func(p *profile.VLESS) { p.Transport = "grpc" },
-		"security":  func(p *profile.VLESS) { p.Security = "none" },
+		"security":  func(p *profile.VLESS) { p.Security = "ssl" },
 		"spider":    func(p *profile.VLESS) { p.SpiderX = "/x?p=9-1" },
 	} {
 		p := sample("reality", "raw")

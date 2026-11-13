@@ -498,6 +498,12 @@ on a panel that does not send them):
 
 Subscriptions expose `notice` (empty when the panel sent no message), the panel's `Announce` response header decoded
 from plain text or `base64:<value>`.
+`vless://` share links are read too (the v2rayN form), and `vless` proxies of a Mihomo profile: REALITY, TLS or no
+outer encryption at all (`security=none`, as some providers give it: the network then sees that it is VLESS), over raw
+(`type=tcp`), `xhttp` or `ws`, with `sni`, `fp`, `pbk`, `sid`, `spx`, `flow` (Vision, on raw with TLS or REALITY),
+`path`, `host`, `mode`, `alpn` and the padding from xhttp's `extra`. Refused, and counted in `unsupported`: other
+transports (gRPC, HTTP upgrade), VLESS's own `encryption`, a header disguise on raw, and a link or proxy that asks to
+accept any certificate (`allowInsecure=1`, `skip-cert-verify`).
 Port hopping is accepted from Hysteria2 `ports: "from-to"` profiles and the `mport` or `host:from-to` link forms;
 `hop-interval` is in seconds. If every profile proxy uses a refusal endpoint (`0.0.0.0`, `127.0.0.1`, `::`, or port
 0/1), the refresh fails with `refused`, its first proxy name becomes `notice`, and existing servers are kept. A first

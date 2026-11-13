@@ -193,6 +193,7 @@ func StreamConfig(p *profile.VLESS) (*internet.StreamConfig, error) {
 		stream.SecuritySettings = []*serial.TypedMessage{serial.ToTypedMessage(&tls.Config{
 			ServerName: p.SNI, NextProtocol: p.ALPN, Fingerprint: p.Fingerprint,
 		})}
+	case "none": // plain VLESS: the transport alone
 	default:
 		return nil, errors.New("unsupported VLESS security")
 	}

@@ -2,6 +2,7 @@ package subs
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -125,9 +126,83 @@ func parseProxyProfile(proxy map[string]any) (string, *profile.Hy2, *profile.AWG
 	case "wireguard":
 		parsed, err := parseWireguardProxy(proxy)
 		return "awg", nil, parsed, err
+	case "vless":
+		_, err := parseVLESSProxy(proxy)
+		return "vless", nil, nil, err
 	default:
 		return "", nil, nil, errors.New("unsupported proxy type")
 	}
+}
+
+// parseVLESSEntry is a stored Mihomo "vless" proxy (kept as its YAML) as a profile.
+func parseVLESSEntry(raw string) (*profile.VLESS, error) {
+	var proxy map[string]any
+	if yaml.Unmarshal([]byte(raw), &proxy) != nil {
+		return nil, errors.New("invalid stored profile")
+	}
+	return parseVLESSProxy(proxy)
+}
+
+// parseVLESSProxy reads a Mihomo "vless" proxy: its fields are turned into the settings of a panel's "vless" path and
+// checked by profile.ParseVLESS, as a share link is. Refused: networks other than tcp, ws and xhttp, VLESS's own
+// encryption, and skip-cert-verify (the app does not accept any certificate).
+func parseVLESSProxy(proxy map[string]any) (*profile.VLESS, error) {
+	text := func(name string) string { value, _ := field(proxy, name); return stringValue(value) }
+	section := func(name string) map[string]any {
+		value, _ := field(proxy, name)
+		m, _ := value.(map[string]any)
+		return m
+	}
+	flag := func(name string) bool { value, _ := field(proxy, name); on, _ := boolValue(value); return on }
+	port, err := strconv.Atoi(text("port"))
+	if err != nil {
+		return nil, errors.New("invalid VLESS port")
+	}
+	if enc := text("encryption"); enc != "" && enc != "none" {
+		return nil, errors.New("unsupported VLESS encryption")
+	}
+	if flag("skip-cert-verify") {
+		return nil, errors.New("VLESS proxy asks to accept any certificate")
+	}
+	settings := map[string]any{
+		"server": text("server"), "port": port, "uuid": text("uuid"), "flow": text("flow"),
+		"sni": text("servername"), "fingerprint": strings.ToLower(text("client-fingerprint")), "security": "none",
+	}
+	if settings["sni"] == "" {
+		settings["sni"] = text("sni")
+	}
+	if flag("tls") {
+		settings["security"] = "tls"
+	}
+	if opts := section("reality-opts"); opts != nil {
+		settings["security"], settings["public_key"], settings["short_id"] = "reality", stringValue(opts["public-key"]), stringValue(opts["short-id"])
+	}
+	if value, ok := field(proxy, "alpn"); ok {
+		if list, err := stringList(value); err == nil {
+			settings["alpn"] = list
+		}
+	}
+	switch strings.ToLower(text("network")) {
+	case "", "tcp":
+		settings["transport"] = "raw"
+	case "ws":
+		opts := section("ws-opts")
+		headers, _ := opts["headers"].(map[string]any)
+		settings["transport"], settings["path"], settings["host"] = "ws", stringValue(opts["path"]), stringValue(headers["Host"])
+	case "xhttp":
+		opts := section("xhttp-opts")
+		settings["transport"], settings["path"], settings["host"], settings["mode"] = "xhttp", stringValue(opts["path"]), stringValue(opts["host"]), stringValue(opts["mode"])
+	default:
+		return nil, errors.New("unsupported VLESS network")
+	}
+	if settings["transport"] != "raw" && settings["path"] == "" {
+		settings["path"] = "/"
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return nil, errors.New("invalid VLESS proxy")
+	}
+	return profile.ParseVLESS(encoded)
 }
 
 func parseHy2Proxy(proxy map[string]any) (*profile.Hy2, error) {

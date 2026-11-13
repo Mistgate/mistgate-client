@@ -22,7 +22,7 @@ type VLESS struct {
 	HTTPHost  string // xhttp and ws; the Host header when it differs from the SNI
 	Mode      string // xhttp: "auto", "packet-up", "stream-up" or "stream-one"
 	XPadding  [2]int32
-	Security  string // "reality" or "tls"
+	Security  string // "reality", "tls" or "none" (no outer encryption: only what the sites themselves encrypt is hidden)
 	SNI       string
 	// Fingerprint is the uTLS ClientHello to imitate.
 	Fingerprint string
@@ -65,6 +65,9 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 		return nil, errors.New("invalid VLESS settings")
 	}
 	out := &VLESS{Host: s.Server, Flow: s.Flow, Transport: s.Transport, Security: s.Security, SNI: s.SNI, Fingerprint: s.Fingerprint}
+	if out.Security == "" {
+		out.Security = "none" // said before the flow is checked: Vision needs TLS or REALITY
+	}
 	if !validHost(s.Server) {
 		return nil, errors.New("invalid VLESS server")
 	}
@@ -107,9 +110,9 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 	switch out.Flow {
 	case "":
 	case VLESSFlowVision:
-		// Vision rides directly on the TLS of the raw transport; Xray refuses it anywhere else.
-		if out.Transport != "raw" || out.Security != "reality" {
-			return nil, errors.New("VLESS flow needs the raw transport with reality")
+		// Vision rides directly on the TLS (or REALITY) of the raw transport; Xray refuses it anywhere else.
+		if out.Transport != "raw" || out.Security == "none" {
+			return nil, errors.New("VLESS flow needs the raw transport with TLS or REALITY")
 		}
 	default:
 		return nil, errors.New("unsupported VLESS flow")
@@ -157,6 +160,10 @@ func ParseVLESS(settings json.RawMessage) (*VLESS, error) {
 			}
 		}
 		out.ALPN = s.ALPN
+	case "none":
+		// Plain VLESS, as some providers give it: nothing wraps the connection, so the network on the way sees that it is
+		// VLESS, and of the traffic everything a site does not encrypt itself. Taken as it is; the choice is the provider's.
+		out.SNI = ""
 	default:
 		return nil, errors.New("unsupported VLESS security")
 	}

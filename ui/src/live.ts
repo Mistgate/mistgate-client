@@ -143,6 +143,14 @@ const TG_HELP: Record<string, { head: string; steps: string[]; open: string }> =
     '“Users” içinde, kartınızda “Telegram Proxy” anahtarını açar',
     'Vekiller, aboneliğin bir sonraki güncellemesinden sonra burada görünür' ] },
 };
+// "Where do I get a link?": the design links a sample address. The answer is short enough to give on the spot.
+const WHERE: Record<string, string> = {
+  en: 'From whoever runs your VPN server. Open the subscription page they gave you and copy the link there, or press “Add to Mistgate” on it.',
+  ru: 'У того, кто держит ваш VPN-сервер. Откройте страницу подписки, которую вам дали, и скопируйте ссылку там — или нажмите на ней «Добавить в Mistgate».',
+  zh: '向管理您 VPN 服务器的人索取。打开对方给您的订阅页面，在那里复制链接，或在页面上点击“添加到 Mistgate”。',
+  fa: 'از کسی که سرور VPN شما را اداره می‌کند. صفحهٔ اشتراکی را که به شما داده‌اند باز کنید و لینک را از آنجا کپی کنید، یا در همان صفحه «افزودن به Mistgate» را بزنید.',
+  tr: 'VPN sunucunuzu yöneten kişiden. Size verilen abonelik sayfasını açın ve bağlantıyı oradan kopyalayın ya da sayfadaki “Mistgate’e ekle” düğmesine basın.',
+};
 const BACK: Record<string, string> = { en: 'Cancel', ru: 'Отмена', zh: '取消', fa: 'لغو', tr: 'İptal' };
 const PINGS: Record<string, number> = {};
 // The one path that is measured for a node's number: the row shows a round trip to the node, and every path of it
@@ -214,6 +222,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       ];
       this.takeLink();
       document.addEventListener('paste', this.onPaste, true);
+      document.addEventListener('click', this.onWhere, true);
       document.addEventListener('keydown', this.onKeyDown, true);
       document.addEventListener('input', this.onSearch, true);
       document.addEventListener('click', this.onClickAway);
@@ -225,6 +234,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     componentWillUnmount() {
       super.componentWillUnmount();
       document.removeEventListener('paste', this.onPaste, true);
+      document.removeEventListener('click', this.onWhere, true);
       document.removeEventListener('keydown', this.onKeyDown, true);
       document.removeEventListener('input', this.onSearch, true);
       document.removeEventListener('click', this.onClickAway);
@@ -255,7 +265,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const text = r.mode === 'smart' ? (region ? a.dataset.smart.replace('RU', region) : smart) : r.mode === 'selected' ? only : all;
         if (t.nodeValue !== text) t.nodeValue = text;
       });
-      this.paintTg(); this.paintTgHelp(); this.paintAddBack();
+      this.paintTg(); this.paintTgHelp(); this.paintAddBack(); this.paintWhere();
       const field = document.querySelector<HTMLInputElement>('.onb-in input');
       if (field?.placeholder.includes('vless://')) field.placeholder = field.placeholder.replace('vless://', 'hysteria2://');
     }
@@ -416,7 +426,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         const list = this.subsList ?? (await rpc<{ subs: Sub[] }>('subs.list').then((r) => r.subs, () => [] as Sub[]));
         for (const u of list) {
           const have = await rpc<{ url: string }>('subs.link', { id: u.id }).then((r) => r.url, () => '');
-          if (have && have.trim() === url.trim()) { pref.set('sub', u.id); return this.setState({ liveSub: u.id, add: 'none', subsPop: false }, () => this.applySubs(this.subsList ?? [])); }
+          if (have && have.trim() === url.trim()) { this.adding = false; pref.set('sub', u.id); return this.setState({ liveSub: u.id, add: 'none', subsPop: false }, () => this.applySubs(this.subsList ?? [])); }
         }
         this.startAdd(url);
       }, () => {});
@@ -447,6 +457,20 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     addMode(on: boolean) {
       this.adding = on;
       this.setState({ subsPop: false, add: 'none' }, () => this.applySubs(this.subsList ?? []));
+    }
+    // a press on "Where do I get a link?" shows the answer under the form, a second press takes it away. Drawn again
+    // after every update: the form is redrawn from the design's markup, which has no such line.
+    whereOpen = false;
+    onWhere = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.onb .onb-alt a')) return;
+      e.preventDefault();
+      this.whereOpen = !this.whereOpen;
+      this.paintWhere();
+    };
+    paintWhere() {
+      const onb = document.querySelector('.onb'), old = onb?.querySelector('.mg-where');
+      if (!onb || !this.whereOpen) return void old?.remove();
+      if (!old) onb.append(Object.assign(document.createElement('p'), { className: 'mg-where', textContent: WHERE[document.documentElement.lang] ?? WHERE.en }));
     }
     paintAddBack() {
       const alt = document.querySelector('.onb .onb-alt');
@@ -543,7 +567,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const rmT = v.subs?.[1]?.rmT ?? 'Remove';
       v.subs = list.map((u, i) => ({
         ...card(u), i, cls: u.id === sub?.id ? 'on' : '', on: u.id === sub?.id ? 'true' : 'false',
-        pick: () => { this.setState({ liveSub: u.id, subsPop: false, mFor: undefined, sel: 'auto' }, () => this.applySubs(list)); },
+        // choosing a subscription also leaves the "add one more" form
+        pick: () => { this.adding = false; this.whereOpen = false; this.setState({ liveSub: u.id, subsPop: false, mFor: undefined, sel: 'auto' }, () => this.applySubs(list)); },
         mOpen: mFor === i, menu: () => this.setState({ mFor: mFor === i ? undefined : i }),
         // the design words the dialog from its own sample at this index: 1 is its "link" sample ("Remove", not "Sign out")
         ask: () => { this.rmId = u.id; this.setState({ rmAsk: 1, mFor: undefined }); }, rmT,

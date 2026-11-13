@@ -34,7 +34,7 @@ const (
 )
 
 const (
-	ServiceVersion = "0.1.1"
+	ServiceVersion = "0.1.2"
 	API            = 0
 	DefaultQueue   = 64
 )
