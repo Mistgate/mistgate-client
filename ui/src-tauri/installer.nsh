@@ -8,7 +8,18 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
   ; an update: stop and remove the running service so its file can be replaced (the VPN goes down with it)
   ${If} ${FileExists} "$INSTDIR\mistgate-clientd.exe"
     StrCpy $MgFresh 0
-    nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" uninstall'
+    ; Only the file of the install this machine has on record is run, with these (administrator's) rights. A file of
+    ; that name found in any other folder may be anybody's: there the service is stopped and removed by its name.
+    ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "InstallLocation"
+    ${If} $0 == "$INSTDIR"
+    ${OrIf} $0 == '"$INSTDIR"'
+      nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" uninstall'
+    ${Else}
+      nsExec::ExecToLog 'sc.exe stop MistgateClient'
+      Pop $0
+      nsExec::ExecToLog 'sc.exe delete MistgateClient'
+    ${EndIf}
+    Pop $0
   ${EndIf}
 !macroend
 

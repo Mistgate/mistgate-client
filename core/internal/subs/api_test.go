@@ -80,7 +80,7 @@ func (p *fakePanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.t.Errorf("caps header = %q", r.Header.Get("X-Mistgate-Caps"))
 	}
 	api := strings.Contains(r.URL.Path, "/client/")
-	if api && r.UserAgent() != "Mistgate/0.0.1 (Windows)" {
+	if api && r.UserAgent() != apiUserAgent {
 		p.t.Errorf("API user agent = %q", r.UserAgent())
 	}
 	switch {

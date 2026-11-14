@@ -11,6 +11,8 @@ things below. Nothing about the sites you open or the programs you run is sent t
 | Your VPN servers | While you are connected, when you measure latency, and during a network check | The VPN traffic itself and the handshakes of the protocols |
 | This project's GitHub releases | A little after the app starts and four times a day, while "Install updates automatically" is on; and when you press "Check for updates" | A request for `latest.json`, and the installer when there is a newer one. Switch the automatic check off in Settings > Updates |
 | Rule lists (the `meta-rules-dat` lists, from GitHub or jsDelivr, and lists whose links you add yourself) | When the lists are updated | A plain download of the list files |
+| A public STUN server (`stun.l.google.com`) | Each time you connect in the Smart route mode with the region set to automatic; and during a network check | One small request, sent outside the tunnel, that returns your public address. The app uses it to tell which country you are in (to choose the list of sites that go direct) and keeps it in memory only: it is not written anywhere and not sent on. Set the region by hand in Routes to switch this off |
+| `1.1.1.1` and `8.8.8.8`, port 443 | While you are connected, every 10 seconds | An empty connection **through the tunnel**, to see that the tunnel still carries traffic. Those servers see the VPN server's address, not yours |
 | Public DNS resolvers, a few well-known sites and speed-test files | Only when you run the network check or the speed test | Ordinary requests that tell what is reachable from your network. The result stays on the PC |
 | Your Mistgate panel, block reports | Only with "Help find blocks" switched on for that subscription (off by default), after a network check, and only if the panel's owner takes such reports | Which of **your own** servers answered and which did not: protocol, the server's address and port, a verdict, the handshake time. No site names, no address of yours, no keys |
 | Your Mistgate panel, debug bundle | Only when you press send, after the app has shown you every line | Version, Windows build, the last network check and the app's log, with addresses, links and names removed |
@@ -29,5 +31,7 @@ anything. Whoever runs your VPN server sees what any VPN server sees: that you a
 leaves through it. That is their service, not this app; ask them for their own policy.
 
 This program will not transfer any information to other networked systems unless specifically requested by the user
-or the person installing or operating it, except for the update check and the list downloads described above, both
-of which can be switched off or are started by the user.
+or the person installing or operating it, except for the update check, the list downloads and the region and tunnel checks
+described above. The update check can be switched off; the lists are downloaded for the Smart and Only
+selected route modes and when you press Update in Routes (they have no switch of their own); the
+region request goes away with a region set by hand; the tunnel check runs only while you are connected.

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mistgate/mistgate-client/core/internal/version"
 	"io"
 	"net/http"
 	"net/url"
@@ -268,7 +269,7 @@ func (s *Store) fetchURL(ctx context.Context, rawURL string) ([]byte, error) {
 	if err != nil {
 		return nil, errors.New("invalid site URL")
 	}
-	request.Header.Set("User-Agent", "Mistgate/0.0.1")
+	request.Header.Set("User-Agent", "Mistgate/"+version.Service)
 	client := *s.client
 	client.Timeout = fetchTimeout
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {

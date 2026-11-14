@@ -50,6 +50,13 @@ fn open_to_user(path: &str) -> bool {
     })
 }
 
+/// A folder that already holds something and is not Mistgate's own install: whatever lies there (a library the
+/// service would load from beside itself, a file under the service's name) was put by somebody else, and after the
+/// install it would run as the system. A new or empty folder, or the one Mistgate is in, is fine.
+fn used_by_other(path: &str) -> bool {
+    !path.eq_ignore_ascii_case(&default_path()) && std::fs::read_dir(path).map(|mut inside| inside.next().is_some()).unwrap_or(false)
+}
+
 /// Where Mistgate is installed now (an update goes to the same place), or the usual folder.
 fn default_path() -> String {
     let out = std::process::Command::new("reg.exe").args(["query", UNINSTALL_KEY, "/ve"]).creation_flags(NO_WINDOW).output();
@@ -71,6 +78,7 @@ struct Info {
     need_mb: u64,
     free_mb: u64,
     open: bool, // any program of the user could replace the folder: not a place for the service
+    used: bool, // somebody else's files are in it already
     version: &'static str,
 }
 
@@ -89,8 +97,8 @@ fn setup_info(path: Option<String>) -> Info {
     }
     let mut free = 0u64;
     unsafe { GetDiskFreeSpaceExW(wide(at.as_os_str()).as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut()) };
-    let open = open_to_user(&path);
-    Info { path, open, need_mb: env!("MG_SETUP_MB").parse().unwrap_or(0), free_mb: free >> 20, version: env!("CARGO_PKG_VERSION") }
+    let (open, used) = (open_to_user(&path), used_by_other(&path));
+    Info { path, open, used, need_mb: env!("MG_SETUP_MB").parse().unwrap_or(0), free_mb: free >> 20, version: env!("CARGO_PKG_VERSION") }
 }
 
 /// "Change…": Windows' own folder dialog. The answer is the folder Mistgate would go to (the chosen one, with its
@@ -130,7 +138,7 @@ struct Outcome {
 /// Runs the installer inside, silently, with Windows' permission prompt. Waits for it to finish.
 #[tauri::command]
 async fn setup_install(path: String, desktop: bool) -> Outcome {
-    if !valid(&path) || open_to_user(&path) || BUSY.swap(true, Ordering::SeqCst) {
+    if !valid(&path) || open_to_user(&path) || used_by_other(&path) || BUSY.swap(true, Ordering::SeqCst) {
         return Outcome { state: "failed", code: 0 };
     }
     let outcome = tauri::async_runtime::spawn_blocking(move || install(&path, desktop)).await.unwrap_or(Outcome { state: "failed", code: 0 });

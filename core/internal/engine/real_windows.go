@@ -312,6 +312,10 @@ func (r *Real) routeRegion(configured settings.Settings) string {
 }
 
 func (r *Real) routeDirect(address netip.Addr, name string) bool {
+	return r.routeDirectNames(address, name, nil)
+}
+
+func (r *Real) routeDirectNames(address netip.Addr, name string, remembered []string) bool {
 	configured := r.settings()
 	var region *geo.Set
 	var rules *geo.SiteRules
@@ -323,7 +327,7 @@ func (r *Real) routeDirect(address netip.Addr, name string) bool {
 			}
 		}
 	}
-	return directByRules(address, name, configured.RouteMode, region, rules)
+	return directByRulesNames(address, name, remembered, configured.RouteMode, region, rules)
 }
 
 // nameRoute is the bridge's view of a host name: blocked, or the regional resolver its DNS question goes to (zero: the
@@ -612,8 +616,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			probeAddrs = append(probeAddrs, parsed.Addr())
 		}
 	}
-	shouldDirect := func(address netip.Addr, name string) bool {
-		return !slices.Contains(probeAddrs, address) && r.routeDirect(address, name)
+	shouldDirect := func(address netip.Addr, name string, remembered []string) bool {
+		return !slices.Contains(probeAddrs, address) && r.routeDirectNames(address, name, remembered)
 	}
 	hasSiteRules := func() bool {
 		if r.geo == nil {
@@ -1191,7 +1195,17 @@ func (r *Real) resolveServer(ctx context.Context, run *realRun, host string, hol
 			return address, nil
 		}
 	}
-	address, err := resolveServer(ctx, host)
+	var address netip.Addr
+	err := errors.New("server lookup failed")
+	if hold {
+		// The held firewall closes Windows' own resolver (it asks from another process) and lets this service's
+		// sockets through: a server not seen before (the user picked another one while connected) is asked for by
+		// the service itself, of the same resolvers. Without this the pick ended in "server not found".
+		address, err = resolveServerVia(ctx, ownResolver, host)
+	}
+	if err != nil {
+		address, err = resolveServer(ctx, host)
+	}
 	if err != nil {
 		return netip.Addr{}, err
 	}
@@ -1284,7 +1298,7 @@ func (t *realTunnel) setVLESS(x *xray.Instance) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
@@ -1381,7 +1395,14 @@ func profileEndpoint(p profile.Profile) (string, uint16, error) {
 	}
 }
 
+// ownResolver asks the network's resolvers from this process, not through Windows' DNS service.
+var ownResolver = &net.Resolver{PreferGo: true}
+
 func resolveServer(ctx context.Context, host string) (netip.Addr, error) {
+	return resolveServerVia(ctx, net.DefaultResolver, host)
+}
+
+func resolveServerVia(ctx context.Context, resolver *net.Resolver, host string) (netip.Addr, error) {
 	if err := ctx.Err(); err != nil {
 		return netip.Addr{}, err
 	}
@@ -1390,7 +1411,7 @@ func resolveServer(ctx context.Context, host string) (netip.Addr, error) {
 	}
 	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	addresses, err := net.DefaultResolver.LookupNetIP(lookupCtx, "ip", host)
+	addresses, err := resolver.LookupNetIP(lookupCtx, "ip", host)
 	if err != nil || len(addresses) == 0 {
 		return netip.Addr{}, errors.New("server lookup failed")
 	}

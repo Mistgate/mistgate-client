@@ -63,6 +63,55 @@ func inspectSignature(path string) signatureFacts {
 	return signatureFacts{Signed: true, Valid: valid, Thumbprint: thumbprint}
 }
 
+func inspectCallerSignature(path, servicePath string, serviceSigned bool) (signatureFacts, bool) {
+	return inspectCallerSignatureWith(path, servicePath, serviceSigned, driveType, inspectSignature)
+}
+
+func inspectCallerSignatureWith(path, servicePath string, serviceSigned bool, drive func(string) uint32, inspect func(string) signatureFacts) (signatureFacts, bool) {
+	if !callerPathMayBeInspected(path, servicePath, serviceSigned, drive) {
+		return signatureFacts{}, false
+	}
+	return inspect(path), true
+}
+
+func callerPathMayBeInspected(path, servicePath string, serviceSigned bool, drive func(string) uint32) bool {
+	path = strings.ReplaceAll(strings.TrimSpace(path), "/", `\`)
+	lower := strings.ToLower(path)
+	if strings.HasPrefix(path, `\\`) || strings.HasPrefix(lower, `\device\`) || strings.HasPrefix(lower, `\??\`) || strings.HasPrefix(lower, `\global??\`) {
+		return false
+	}
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	volume := filepath.VolumeName(path)
+	if len(volume) != 2 || volume[1] != ':' {
+		return false
+	}
+	if !serviceSigned {
+		servicePath = filepath.Clean(strings.ReplaceAll(strings.TrimSpace(servicePath), "/", `\`))
+		if !filepath.IsAbs(servicePath) || !strings.EqualFold(filepath.VolumeName(servicePath), volume) {
+			return false
+		}
+		dir := filepath.Dir(servicePath)
+		caller := strings.ToLower(strings.TrimRight(path, `\`))
+		directory := strings.ToLower(strings.TrimRight(dir, `\`))
+		if caller != directory && !strings.HasPrefix(caller, directory+`\`) {
+			return false
+		}
+	}
+	root := volume + `\`
+	return drive(root) == windows.DRIVE_FIXED
+}
+
+func driveType(root string) uint32 {
+	root16, err := windows.UTF16PtrFromString(root)
+	if err != nil {
+		return windows.DRIVE_UNKNOWN
+	}
+	return windows.GetDriveType(root16)
+}
+
 // ponytail: this slice recognizes embedded PE signatures; catalog-only signatures are not detected.
 func hasEmbeddedSignature(path string) bool {
 	// Keep signed-but-invalid files out of the unsigned development fallback.

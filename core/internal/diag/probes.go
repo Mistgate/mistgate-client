@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"github.com/mistgate/mistgate-client/core/internal/stun"
 	"golang.org/x/net/dns/dnsmessage"
 )
@@ -130,6 +131,7 @@ func checkDNS(ctx context.Context, physical interfaceInfo, config Config) (map[s
 		wait.Add(1)
 		go func(name string) {
 			defer wait.Done()
+			defer safe.Recover("diag")
 			queryCtx, cancel := context.WithTimeout(ctx, config.DNSTimeout)
 			defer cancel()
 			localResults <- localResult{name, localDNSAnswer(queryCtx, name, physical)}
@@ -151,13 +153,16 @@ func checkDNS(ctx context.Context, physical interfaceInfo, config Config) (map[s
 	name := config.DNSNames[0]
 	for i, resolver := range config.DoHResolvers {
 		go func(i int, resolver string) {
+			answer := dnsAnswer{}
+			defer safe.Recover("diag")
+			defer func() { probeResults <- dohResult{i, answer} }()
 			queryCtx, cancel := context.WithTimeout(ctx, config.DoHTimeout)
 			defer cancel()
-			answer, err := dohDNSAnswer(queryCtx, resolver, name, physical)
+			var err error
+			answer, err = dohDNSAnswer(queryCtx, resolver, name, physical)
 			if err != nil {
 				answer = dnsAnswer{}
 			}
-			probeResults <- dohResult{i, answer}
 		}(i, resolver)
 	}
 	probes := make([]dnsAnswer, len(config.DoHResolvers))
@@ -187,6 +192,7 @@ func checkDNS(ctx context.Context, physical interfaceInfo, config Config) (map[s
 		wait.Add(1)
 		go func(name string) {
 			defer wait.Done()
+			defer safe.Recover("diag")
 			queryCtx, cancel := context.WithTimeout(ctx, config.DoHTimeout)
 			defer cancel()
 			answer, err := dohDNSAnswer(queryCtx, resolver, name, physical)
@@ -218,9 +224,11 @@ func tunnelDNSAnswers(ctx context.Context, config Config) map[string]dnsAnswer {
 	results := make(chan result, len(config.DNSNames))
 	for _, name := range config.DNSNames {
 		go func(name string) {
+			answer := result{name: name}
+			defer safe.Recover("diag")
+			defer func() { results <- answer }()
 			query, id, err := makeDNSQuery(name)
 			if err != nil {
-				results <- result{name, dnsAnswer{}}
 				return
 			}
 			for _, server := range []string{"1.1.1.1:53", "8.8.8.8:53"} {
@@ -233,10 +241,10 @@ func tunnelDNSAnswers(ctx context.Context, config Config) map[string]dnsAnswer {
 					if _, err = conn.Write(query); err == nil {
 						var n int
 						if n, err = conn.Read(buffer); err == nil {
-							if answer, parseErr := parseDNSAnswer(buffer[:n], id); parseErr == nil && answer.Answered {
+							if parsed, parseErr := parseDNSAnswer(buffer[:n], id); parseErr == nil && parsed.Answered {
 								_ = conn.Close()
 								cancel()
-								results <- result{name, answer}
+								answer.answer = parsed
 								return
 							}
 						}
@@ -245,7 +253,6 @@ func tunnelDNSAnswers(ctx context.Context, config Config) map[string]dnsAnswer {
 				}
 				cancel()
 			}
-			results <- result{name, dnsAnswer{}}
 		}(name)
 	}
 	for range config.DNSNames {
@@ -269,16 +276,13 @@ func localDNSAnswer(ctx context.Context, name string, physical interfaceInfo) dn
 	answers := make(chan dnsAnswer, len(physical.DNS))
 	for _, server := range physical.DNS {
 		go func(server netip.Addr) {
+			answer := dnsAnswer{}
+			defer safe.Recover("diag")
+			defer func() { answers <- answer }()
 			response, err := dnsExchange(queryCtx, server, query, physical)
 			if err == nil {
-				var answer dnsAnswer
 				answer, err = parseDNSAnswer(response, id)
-				if err == nil && answer.Answered {
-					answers <- answer
-					return
-				}
 			}
-			answers <- dnsAnswer{}
 		}(server)
 	}
 	for range physical.DNS {
@@ -427,9 +431,12 @@ func checkForeign(ctx context.Context, physical interfaceInfo, config Config) (t
 	results := make(chan bool, total)
 	for _, host := range config.ForeignHosts {
 		go func(host string) {
+			ok := false
+			defer safe.Recover("diag")
+			defer func() { results <- ok }()
 			probeCtx, cancel := context.WithTimeout(ctx, config.ForeignTimeout)
 			defer cancel()
-			results <- tlsProbe(probeCtx, host, physical, config)
+			ok = tlsProbe(probeCtx, host, physical, config)
 		}(host)
 	}
 	for range config.ForeignHosts {

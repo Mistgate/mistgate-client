@@ -79,6 +79,9 @@ func Open(dir string) (*Store, error) {
 	}
 	value := Defaults()
 	for key, raw := range patch {
+		if !knownKey(key) {
+			continue
+		}
 		if !apply(&value, key, raw) {
 			return s, nil
 		}
@@ -213,6 +216,15 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 		return false
 	}
 	return true
+}
+
+func knownKey(key string) bool {
+	switch key {
+	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "proxy", "proxy_lan", "on_server_down", "dns", "mtu", "last_server", "last_sub":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeDNS(value string) (string, bool) {

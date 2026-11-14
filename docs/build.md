@@ -39,7 +39,8 @@ against (`go.mod` is at the version Xray asks for) and newer `x/net`, `x/sys`, `
   `mistgate-clientd.exe` (the service), `wintun.dll`, the uninstaller, Start menu and desktop shortcuts.
 - Registers and starts the service (`mistgate-clientd install`: LocalSystem, automatic start). Installing over an
   existing copy stops and removes the old service first, so a VPN connection drops during an update.
-- Uninstalling removes the service, the files and the "start with Windows" entry. Subscriptions and settings in
+- Uninstalling removes the service, the files and the "start with Windows" entry (the entry of the account that
+  confirmed the uninstall: when an administrator's password was asked for, the app user's own entry stays). Subscriptions and settings in
   `ProgramData\Mistgate` stay unless "delete application data" is ticked.
 - `/S` installs and uninstalls silently.
 

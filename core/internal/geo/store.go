@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mistgate/mistgate-client/core/internal/version"
 	"io"
 	"net/http"
 	"net/netip"
@@ -395,7 +396,7 @@ func (s *Store) fetch(ctx context.Context, cc string) ([]byte, *Set, error) {
 			cancel()
 			continue
 		}
-		request.Header.Set("User-Agent", "Mistgate/0.0.1")
+		request.Header.Set("User-Agent", "Mistgate/"+version.Service)
 		client := *s.client
 		client.Timeout = fetchTimeout
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {

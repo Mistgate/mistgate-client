@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"unicode/utf8"
+
+	"github.com/mistgate/mistgate-client/core/internal/ipcsize"
 )
 
-const MaxLineBytes = 1 << 20
+const MaxLineBytes = ipcsize.MaxLineBytes
 
 var ErrLineTooLong = errors.New("JSON line exceeds the one MiB limit")
 var ErrUnterminatedLine = errors.New("JSON line is missing its newline")

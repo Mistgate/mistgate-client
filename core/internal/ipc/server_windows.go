@@ -13,9 +13,80 @@ import (
 )
 
 const (
-	PipeName = `\\.\pipe\mistgate-client`
-	PipeSDDL = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
+	PipeName                    = `\\.\pipe\mistgate-client`
+	PipeSDDL                    = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
+	maxPipeConnections          = 8
+	maxUntrustedPipeConnections = maxPipeConnections - 1
 )
+
+type pipeConnectionSlots struct {
+	active   chan struct{}
+	regular  chan struct{}
+	reserved chan struct{}
+}
+
+type pipeConnectionPermit uint8
+
+const (
+	regularPermit pipeConnectionPermit = iota
+	reservedPermit
+)
+
+func newPipeConnectionSlots() *pipeConnectionSlots {
+	return &pipeConnectionSlots{
+		active:   make(chan struct{}, maxPipeConnections),
+		regular:  make(chan struct{}, maxUntrustedPipeConnections),
+		reserved: make(chan struct{}, 1),
+	}
+}
+
+func (s *pipeConnectionSlots) acquire() (pipeConnectionPermit, bool) {
+	select {
+	case s.active <- struct{}{}:
+	default:
+		return 0, false
+	}
+	select {
+	case s.regular <- struct{}{}:
+		return regularPermit, true
+	default:
+		select {
+		case s.reserved <- struct{}{}:
+			return reservedPermit, true
+		default:
+			<-s.active
+			return 0, false
+		}
+	}
+}
+
+func (s *pipeConnectionSlots) promoteUntrusted(permit pipeConnectionPermit) (pipeConnectionPermit, bool) {
+	if permit == regularPermit {
+		return permit, true
+	}
+	select {
+	case s.regular <- struct{}{}:
+		<-s.reserved
+		return regularPermit, true
+	default:
+		return permit, false
+	}
+}
+
+func (s *pipeConnectionSlots) releasePermit(permit pipeConnectionPermit) {
+	if permit == reservedPermit {
+		<-s.reserved
+	} else {
+		<-s.regular
+	}
+}
+
+func (s *pipeConnectionSlots) release(permit pipeConnectionPermit, holdsPermit bool) {
+	if holdsPermit {
+		s.releasePermit(permit)
+	}
+	<-s.active
+}
 
 func runPipeServer(ctx context.Context, server *Server) error {
 	logger := server.Logger
@@ -45,6 +116,7 @@ func runPipeServer(ctx context.Context, server *Server) error {
 
 	var clients sync.WaitGroup
 	defer clients.Wait()
+	slots := newPipeConnectionSlots()
 	for {
 		conn, acceptErr := listener.Accept()
 		if acceptErr != nil {
@@ -53,12 +125,18 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			}
 			return acceptErr
 		}
+		permit, acquired := slots.acquire()
+		if !acquired {
+			_ = conn.Close()
+			continue
+		}
 		clients.Add(1)
-		// The caller is checked beside the accept loop: reading a caller's file (it may sit on a slow share) must not
-		// keep the window from connecting.
-		go func(conn net.Conn) {
+		// The caller is checked beside the accept loop, after its path is restricted to a local fixed drive.
+		go func(conn net.Conn, permit pipeConnectionPermit) {
 			defer clients.Done()
-			pid, imagePath, callerSignature, inspectErr := inspectPipeCaller(conn)
+			holdsPermit := true
+			defer func() { slots.release(permit, holdsPermit) }()
+			pid, imagePath, callerSignature, callerAllowed, inspectErr := inspectPipeCaller(conn, servicePath, serviceSignature.Signed)
 			facts := CallerFacts{
 				PID:                     pid,
 				ServicePath:             servicePath,
@@ -73,14 +151,23 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			if !serviceSignature.Signed {
 				facts.DevelopmentClientPath = developmentClientPath()
 			}
-			trusted := inspectErr == nil && IsCallerTrusted(facts)
+			trusted := inspectErr == nil && callerAllowed && IsCallerTrusted(facts)
+			if trusted {
+				slots.releasePermit(permit)
+				holdsPermit = false
+			} else if promoted, ok := slots.promoteUntrusted(permit); !ok {
+				_ = conn.Close()
+				return
+			} else {
+				permit = promoted
+			}
 			if inspectErr != nil {
 				logger.Warn("IPC caller check failed", "pid", pid, "trusted", false) // no path, no error text: both name the Windows user
 			} else {
 				logger.Info("IPC caller checked", "pid", pid, "trusted", trusted)
 			}
 			server.ServeConn(ctx, conn, trusted)
-		}(conn)
+		}(conn, permit)
 	}
 }
 
@@ -95,23 +182,24 @@ func pipeSDDL() string {
 	return PipeSDDL
 }
 
-func inspectPipeCaller(conn net.Conn) (uint32, string, signatureFacts, error) {
+func inspectPipeCaller(conn net.Conn, servicePath string, serviceSigned bool) (uint32, string, signatureFacts, bool, error) {
 	pipe, ok := conn.(interface{ Fd() uintptr })
 	if !ok {
-		return 0, "", signatureFacts{}, windows.ERROR_INVALID_HANDLE
+		return 0, "", signatureFacts{}, false, windows.ERROR_INVALID_HANDLE
 	}
 	var pid uint32
 	if err := windows.GetNamedPipeClientProcessId(windows.Handle(pipe.Fd()), &pid); err != nil {
-		return 0, "", signatureFacts{}, err
+		return 0, "", signatureFacts{}, false, err
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
-		return pid, "", signatureFacts{}, err
+		return pid, "", signatureFacts{}, false, err
 	}
 	defer windows.CloseHandle(process)
 	imagePath, err := processImagePath(process)
 	if err != nil {
-		return pid, "", signatureFacts{}, err
+		return pid, "", signatureFacts{}, false, err
 	}
-	return pid, imagePath, inspectSignature(imagePath), nil
+	callerSignature, allowed := inspectCallerSignature(imagePath, servicePath, serviceSigned)
+	return pid, imagePath, callerSignature, allowed, nil
 }

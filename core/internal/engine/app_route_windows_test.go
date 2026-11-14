@@ -56,8 +56,8 @@ func appBridge(t *testing.T, mode *string, rules geo.Rules, owners *fakeOwners) 
 		vpn:    vpn,
 		direct: direct,
 		// the plain decision: "selected" sends everything direct but the VPN sites, "smart" only the region
-		shouldDirect: func(address netip.Addr, name string) bool {
-			return directByRules(address, name, *mode, nil, store.ActiveSiteRules())
+		shouldDirect: func(address netip.Addr, name string, remembered []string) bool {
+			return directByRulesNames(address, name, remembered, *mode, nil, store.ActiveSiteRules())
 		},
 		apps: &appRouter{
 			owners: owners,

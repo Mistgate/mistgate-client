@@ -29,9 +29,20 @@ process and reads its image path. The connection is **trusted** when:
 - the service binary is unsigned (a development build): the caller's image is `Mistgate.exe` or `mistgate.exe` in the
   service's own directory, or the path in `MISTGATE_DEV_CLIENT` (read only by an unsigned build).
 
+What this check is, and is not. It tells the app from any other program that opens the pipe. It does not tell the
+app from a program that drives the app: one running as the same user can inject into the window or start it with a
+debugging port, and then calls everything the window may call. Any interactive user of the machine can start the
+window, too. So every program of every interactive user is, in effect, a caller of the service: it can read the
+subscription link and the proxy password, switch the kill switch off, or connect the machine to a server of its
+choice. That is more than those programs could do without the service (system-wide routes, storage encrypted for
+SYSTEM). Narrowing the pipe to the user who installed the app is not done yet.
+
 The window checks the other end too. The installed service runs as LocalSystem, and Windows does not let an ordinary
 program open such a process to read its path; so the service names LocalSystem the pipe's owner, and the window
 trusts a pipe with that owner (a program without those rights that takes the pipe name first cannot be that owner).
+The owner belongs to the pipe's name, though, and the DACL lets an interactive user's program add an instance of its
+own to the service's pipe: so the window also wants the process that answered to run in session 0, where services
+run and no user's program does (from 0.1.6).
 A console service (development) runs as the user: there the window reads the server's path and wants
 `mistgate-clientd.exe` in its own directory, or the path in `MISTGATE_DEV_SERVICE` (debug builds only).
 
@@ -392,7 +403,7 @@ Where it does not apply: in `all`, where the forwarder takes no decisions and ev
 kept for when the mode changes); with AmneziaWG in `all` and no IPv6 address the tunnel does not even pass through the
 forwarder. A program's own DNS questions (port 53) are decided like anyone's.
 
-`apps.list` gives the window the programs to choose from, at most 300: those running in a user's session (not the
+`apps.list` gives the window the programs to choose from, at most 300: those running in any user's session, not only the caller's (not the
 services of session 0, not the Windows directory, not the client's own folder) and, even when they are not running,
 the ones already named in `rules.direct.apps` and `rules.vpn.apps` (`running: false`). Each `path` is lower case in the
 form the rules store; `name` is the file description of the exe, or the file name without the extension. Running
@@ -708,6 +719,16 @@ and NDP, optionally the local network (private and link-local ranges; not its DN
 DNS to the tunnel's resolvers. With `off`, a connected tunnel keeps only its DNS rules. The rules name the service
 SID, so a console run cannot install them. The dynamic session ends with the process, so a service crash opens the
 network.
+
+Choosing another server while connected (a `connect` in the `connected` state, or while an attempt has its tunnel
+up) keeps the network held for the new attempt when the kill switch is not `off`: the old tunnel goes, the filters
+stay. The new server's name is then asked for by the service's own sockets, since Windows' resolver is behind the
+filters. Before 0.1.6 this opened the network until the new tunnel was up.
+
+The pipe takes at most eight connections at once. A caller that is not trusted gets one answer (`status`) and is
+closed; one place is always kept for a trusted caller. The caller's file is read only from a local fixed drive (and,
+in an unsigned build, only from the service's own directory): a caller started from a network path is simply not
+trusted.
 
 ## The local proxy
 

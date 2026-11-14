@@ -5,7 +5,7 @@ open: another panel may implement it and get the same client. Until a panel answ
 mode (the plain subscription a link gives to any app, see `docs/ipc.md`).
 
 Status: draft 4. `enrol`, `sync`, `leave` and the settings format are written as the panel implements them (on
-panel branches, not released yet). Nothing is built in the client.
+panel branches, not released yet). The client implements enrol, sync, the block reports and the debug bundle.
 
 ## Principles
 
@@ -189,7 +189,7 @@ The body (stable key order; the client ignores fields it does not know):
   with `tls: "pin"`, and then the pin ALONE is the check; `sni` is absent for nodes known by address only; `obfs` is
   absent without obfuscation, and `gecko` is given only to caps with `gecko=1`. A relay path has the forwarded port
   and no `ports`. `tls: "ca"` without `sni`: the certificate must verify for `server` as dialled (a host name:
-  that name, also as SNI; an address: its IP SAN, no SNI). Verification is never skipped.
+  that name, also as SNI; an address: its IP SAN, no SNI). Verification is never skipped for paths that come from this API. (A plain `hysteria2://` link or Mihomo profile that asks for no verification, with no pin, is still taken as it asks.)
 - `awg`: `{ "version": "2.0|3.1", "endpoint": { "host": "…", "port": 0 }, "public_key": "…", "private_key": "…",
   "preshared_key": "…", "address_v4": "a.b.c.d/32", "address_v6": "…/128", "allowed_ips": ["0.0.0.0/0", "::/0"],
   "dns": ["ip", "ip"], "mtu": 1280, "keepalive_s": 25, "params": { } }`. `address_v6` is absent without IPv6;

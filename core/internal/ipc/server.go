@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"io"
 	"log/slog"
 	"net"
@@ -19,22 +18,25 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/probereport"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/proxy"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
+	"github.com/mistgate/mistgate-client/core/internal/version"
 )
 
 // PingFunc is one round trip to a profile's server outside the tunnel (diag.Handshake in the real service).
 type PingFunc func(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error)
 
 const (
-	pingTimeout  = 3 * time.Second  // per server
-	pingTotal    = 20 * time.Second // per request; servers not reached by then are left out
-	pingParallel = 8
+	pingTimeout          = 3 * time.Second  // per server
+	pingTotal            = 20 * time.Second // per request; servers not reached by then are left out
+	pingParallel         = 8
+	untrustedReadTimeout = 2 * time.Second
 )
 
 const (
-	ServiceVersion = "0.1.5"
+	ServiceVersion = version.Service
 	API            = 0
 	DefaultQueue   = 64
 )
@@ -60,6 +62,12 @@ type Server struct {
 }
 
 func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
+	if !trusted {
+		if err := conn.SetReadDeadline(time.Now().Add(untrustedReadTimeout)); err != nil {
+			_ = conn.Close()
+			return
+		}
+	}
 	logger := s.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -101,6 +109,10 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 		request, parseError := ParseRequest(line)
 		if parseError != nil {
 			response, _ := MarshalResponse(Response{ID: json.RawMessage("null"), Error: parseError})
+			if !trusted {
+				client.enqueueAndWait(response)
+				return
+			}
 			if !client.enqueue(response) {
 				return
 			}
@@ -109,7 +121,7 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 		// A call that waits on the network (a ping of a dead server, a panel that is slow) runs beside the loop, a few
 		// at a time: the window has one connection, and its connect or status must not queue behind it. The window
 		// pairs answers by id. None of these calls opens a subscription.
-		if slowMethods[request.Method] {
+		if trusted && slowMethods[request.Method] {
 			select {
 			case slow <- struct{}{}:
 				go func() {
@@ -126,7 +138,14 @@ func (s *Server) ServeConn(ctx context.Context, conn net.Conn, trusted bool) {
 		result, nextSubscription, rpcError := s.dispatch(ctx, request, trusted)
 		response := Response{ID: request.ID, Result: result, Error: rpcError}
 		encoded, marshalErr := MarshalResponse(response)
-		if marshalErr != nil || !client.enqueue(encoded) {
+		if marshalErr != nil {
+			return
+		}
+		if !trusted {
+			client.enqueueAndWait(encoded)
+			return
+		}
+		if !client.enqueue(encoded) {
 			return
 		}
 		if nextSubscription != nil {
@@ -755,27 +774,53 @@ func emptyParams(raw json.RawMessage) bool {
 
 type clientConn struct {
 	conn   net.Conn
-	out    chan []byte
+	out    chan clientMessage
 	done   chan struct{}
 	once   sync.Once
 	closed bool
 	mu     sync.Mutex
 }
 
+type clientMessage struct {
+	line    []byte
+	written chan struct{}
+}
+
 func newClient(conn net.Conn, queueSize int) *clientConn {
-	client := &clientConn{conn: conn, out: make(chan []byte, queueSize), done: make(chan struct{})}
+	client := &clientConn{conn: conn, out: make(chan clientMessage, queueSize), done: make(chan struct{})}
 	go client.writeLoop()
 	return client
 }
 
 func (c *clientConn) enqueue(message []byte) bool {
+	return c.enqueueMessage(message, nil)
+}
+
+func (c *clientConn) enqueueAndWait(message []byte) bool {
+	written := make(chan struct{})
+	if !c.enqueueMessage(message, written) {
+		return false
+	}
+	select {
+	case <-written:
+		return true
+	case <-c.done:
+		return false
+	}
+}
+
+func (c *clientConn) enqueueMessage(message []byte, written chan struct{}) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return false
 	}
+	if len(message) == 0 || message[len(message)-1] != '\n' || len(message)-1 > MaxLineBytes {
+		c.closeLocked()
+		return false
+	}
 	select {
-	case c.out <- message:
+	case c.out <- clientMessage{line: message, written: written}:
 		return true
 	default:
 		c.closeLocked()
@@ -811,13 +856,17 @@ func (c *clientConn) writeLoop() {
 		case <-c.done:
 			return
 		case message := <-c.out:
-			for len(message) > 0 {
-				written, err := c.conn.Write(message)
+			line := message.line
+			for len(line) > 0 {
+				written, err := c.conn.Write(line)
 				if err != nil || written == 0 {
 					c.close()
 					return
 				}
-				message = message[written:]
+				line = line[written:]
+			}
+			if message.written != nil {
+				close(message.written)
 			}
 		}
 	}

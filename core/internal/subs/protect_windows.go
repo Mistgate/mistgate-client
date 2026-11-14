@@ -3,51 +3,249 @@
 package subs
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-// SYSTEM, Administrators and the owner. For the installed service the owner is SYSTEM, so nothing is widened; a
-// development run from a plain console keeps access to the directory it has just created.
-const directorySDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
+const directorySDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
+var errDataDirectory = errors.New("cannot safely use subscription data directory")
+
+// foreignMark names what was moved out of the way: a planted directory, or a planted object inside the real one.
+const foreignMark = ".foreign-"
+
+type directoryIdentity struct {
+	user     *windows.SID
+	isSystem bool
+}
+
+func currentDirectoryIdentity() (directoryIdentity, error) {
+	token := windows.GetCurrentProcessToken()
+	user, err := token.GetTokenUser()
+	if err != nil || user == nil || user.User.Sid == nil {
+		return directoryIdentity{}, errDataDirectory
+	}
+	return directoryIdentity{user: user.User.Sid, isSystem: user.User.Sid.IsWellKnown(windows.WinLocalSystemSid)}, nil
+}
+
+func directoryDescriptor(identity directoryIdentity) (*windows.SECURITY_DESCRIPTOR, error) {
+	sddl := directorySDDL
+	if !identity.isSystem && !identity.user.IsWellKnown(windows.WinLocalSystemSid) && !identity.user.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		sddl += "(A;OICI;FA;;;" + identity.user.String() + ")"
+	}
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		return nil, errDataDirectory
+	}
+	return sd, nil
+}
 
 func secureDirectory(path string) error {
-	sd, err := windows.SecurityDescriptorFromString(directorySDDL)
+	identity, err := currentDirectoryIdentity()
 	if err != nil {
-		return err
+		return errDataDirectory
+	}
+	return prepareDirectory(path, identity, false)
+}
+
+func prepareStoreDirectory(path string, secureDir func(string) error) error {
+	return secureDir(path)
+}
+
+// ClaimDirectory closes the directory before the service writes crash.log or opens its stores. A directory planted in
+// ProgramData is moved aside before the service creates a new one. Existing nested objects are checked without
+// following reparse points, so a user cannot redirect a service write through a junction or symlink.
+func ClaimDirectory(path string) error {
+	identity, err := currentDirectoryIdentity()
+	if err != nil {
+		return errDataDirectory
+	}
+	return prepareDirectory(path, identity, identity.isSystem)
+}
+
+func prepareDirectory(path string, identity directoryIdentity, quarantineForeignRoot bool) error {
+	if path == "" {
+		return errDataDirectory
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return errDataDirectory
+	}
+	sd, err := directoryDescriptor(identity)
+	if err != nil {
+		return errDataDirectory
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil {
-		return err
+		return errDataDirectory
 	}
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+
+	handle, err := openDirectoryObject(path)
+	if isMissingPath(err) {
+		if err = createClosedDirectory(path, sd); err == nil {
+			handle, err = openDirectoryObject(path)
+		} else if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			handle, err = openDirectoryObject(path)
+		}
+	}
+	if err != nil {
+		return errDataDirectory
+	}
+	defer func() {
+		if handle != windows.InvalidHandle {
+			_ = windows.CloseHandle(handle)
+		}
+	}()
+
+	info, err := directoryInfo(handle)
+	if err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
+		return errDataDirectory
+	}
+	owner, err := directoryOwner(handle)
+	if err != nil {
+		return errDataDirectory
+	}
+	if !allowedDirectoryOwner(owner, identity) {
+		if !quarantineForeignRoot {
+			return errDataDirectory
+		}
+		if err := windows.CloseHandle(handle); err != nil {
+			return errDataDirectory
+		}
+		handle = windows.InvalidHandle
+		moved := path + foreignMark + strconv.FormatInt(time.Now().UnixNano(), 10)
+		if err := os.Rename(path, moved); err != nil {
+			return errDataDirectory
+		}
+		if err := createClosedDirectory(path, sd); err != nil {
+			return errDataDirectory
+		}
+		handle, err = openDirectoryObject(path)
+		if err != nil {
+			return errDataDirectory
+		}
+		info, err = directoryInfo(handle)
+		if err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
+			return errDataDirectory
+		}
+	}
+	if err := setDirectoryACL(handle, dacl); err != nil {
+		return errDataDirectory
+	}
+	return secureChildren(path, identity, dacl)
+}
+
+func allowedDirectoryOwner(owner *windows.SID, identity directoryIdentity) bool {
+	if owner == nil {
+		return false
+	}
+	if owner.IsWellKnown(windows.WinLocalSystemSid) || owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		return true
+	}
+	return !identity.isSystem && owner.Equals(identity.user)
+}
+
+func createClosedDirectory(path string, sd *windows.SECURITY_DESCRIPTOR) error {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return errDataDirectory
+	}
+	attributes := windows.SecurityAttributes{
+		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		SecurityDescriptor: sd,
+	}
+	return windows.CreateDirectory(name, &attributes)
+}
+
+func openDirectoryObject(path string) (windows.Handle, error) {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return windows.InvalidHandle, errDataDirectory
+	}
+	return windows.CreateFile(name, windows.READ_CONTROL|windows.WRITE_DAC|windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+}
+
+func isMissingPath(err error) bool {
+	return errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND)
+}
+
+func directoryInfo(handle windows.Handle) (windows.ByHandleFileInformation, error) {
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &info); err != nil {
+		return info, errDataDirectory
+	}
+	return info, nil
+}
+
+func directoryOwner(handle windows.Handle) (*windows.SID, error) {
+	sd, err := windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil || sd == nil {
+		return nil, errDataDirectory
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner == nil {
+		return nil, errDataDirectory
+	}
+	return owner, nil
+}
+
+func setDirectoryACL(handle windows.Handle, dacl *windows.ACL) error {
+	return windows.SetSecurityInfo(handle, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 		nil, nil, dacl, nil)
 }
 
-// ClaimDirectory makes sure the data directory is not somebody else's before the service writes into it. ProgramData
-// lets any user create a folder there: one made ahead of the first start would stay its maker's, with full control
-// over where the service (as SYSTEM) writes. Such a directory is moved aside and a new one is made later. Only the
-// installed service does this; a console run keeps what it finds. A directory that cannot be judged is left alone.
-func ClaimDirectory(path string) error {
-	token := windows.GetCurrentProcessToken()
-	user, err := token.GetTokenUser()
-	if err != nil || !user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
-		return nil
-	}
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+func secureChildren(path string, identity directoryIdentity, dacl *windows.ACL) error {
+	entries, err := os.ReadDir(path)
 	if err != nil {
-		return nil // not there yet, or unreadable
+		return errDataDirectory
 	}
-	owner, _, err := sd.Owner()
-	if err != nil || owner == nil || owner.IsWellKnown(windows.WinLocalSystemSid) || owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
-		return nil
+	for _, entry := range entries {
+		// set aside on an earlier start: never read, never judged again
+		if strings.Contains(entry.Name(), foreignMark) {
+			continue
+		}
+		childPath := filepath.Join(path, entry.Name())
+		handle, err := openDirectoryObject(childPath)
+		if err != nil {
+			return errDataDirectory
+		}
+		info, infoErr := directoryInfo(handle)
+		owner, ownerErr := directoryOwner(handle)
+		if infoErr != nil || ownerErr != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || !allowedDirectoryOwner(owner, identity) {
+			// Somebody else's object, or a link to elsewhere. Refusing to start over it would let any program keep
+			// the service down for good with one file; the directory above is closed by now, so the object is moved
+			// out of the service's way under a name nothing reads (a rename does not follow a link), and the start
+			// goes on. Only if that fails is the directory unusable.
+			_ = windows.CloseHandle(handle)
+			if os.Rename(childPath, childPath+foreignMark+strconv.FormatInt(time.Now().UnixNano(), 10)) != nil {
+				return errDataDirectory
+			}
+			continue
+		}
+		if err := setDirectoryACL(handle, dacl); err != nil {
+			_ = windows.CloseHandle(handle)
+			return errDataDirectory
+		}
+		if info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+			if err := secureChildren(childPath, identity, dacl); err != nil {
+				_ = windows.CloseHandle(handle)
+				return err
+			}
+		}
+		if err := windows.CloseHandle(handle); err != nil {
+			return errDataDirectory
+		}
 	}
-	return os.Rename(path, path+".foreign-"+strconv.FormatInt(time.Now().Unix(), 10))
+	return nil
 }
 
 func protect(data []byte) ([]byte, error) {

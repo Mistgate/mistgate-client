@@ -115,7 +115,8 @@ func refusedProfile(proxies []any) (string, bool) {
 			return "", false
 		}
 	}
-	return strings.Join(strings.Fields(strings.ToValidUTF8(stringValue(first["name"]), "�")), " "), true
+	notice := strings.Join(strings.Fields(strings.ToValidUTF8(stringValue(first["name"]), "�")), " ")
+	return shortTextN(notice, maxNotice), true
 }
 
 func parseMihomoEntry(raw, expectedProtocol string) (*profile.Hy2, *profile.AWG, error) {

@@ -4,7 +4,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { DCLogic } from './dc';
 
-type Info = { path: string; need_mb: number; free_mb: number; version: string; open: boolean };
+type Info = { path: string; need_mb: number; free_mb: number; version: string; open: boolean; used: boolean };
+// a folder with somebody else's files is refused too: they would run beside the service
+const USED: Record<string, string> = {
+  en: 'This folder already has files in it. Choose an empty or a new folder.',
+  ru: 'В этой папке уже есть файлы. Выберите пустую или новую папку.',
+  zh: '此文件夹中已有文件。请选择空文件夹或新文件夹。',
+  fa: 'این پوشه از قبل فایل دارد. یک پوشهٔ خالی یا جدید انتخاب کنید.',
+  tr: 'Bu klasörde zaten dosyalar var. Boş veya yeni bir klasör seçin.',
+};
 // a folder any program could swap for its own is refused (the service in it runs as the system)
 const OPEN: Record<string, string> = {
   en: 'Any program can change this folder without administrator rights. Choose another one, for example in Program Files.',
@@ -123,8 +131,9 @@ export function liveSetup(Base: typeof DCLogic): typeof DCLogic {
       v.spaceT = short
         ? sample('space').replace('D:', drive).replace('86', String(i.need_mb)).replace('41', String(i.free_mb))
         : sample('none').replace('C:', drive).replace('86', String(i.need_mb)).replace('212', String(Math.floor(i.free_mb / 1024)));
-      if (i.open) v.spaceT = OPEN[document.documentElement.lang] ?? OPEN.en;
-      const no = short || i.open;
+      const why = i.open ? OPEN : i.used ? USED : null;
+      if (why) v.spaceT = why[document.documentElement.lang] ?? why.en;
+      const no = short || !!why;
       v.path = i.path;
       v.pathC = no ? 'bad' : '';
       v.instC = no ? 'dis' : '';

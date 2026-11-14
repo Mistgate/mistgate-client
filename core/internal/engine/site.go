@@ -305,9 +305,15 @@ func sniffTCPName(conn net.Conn, port uint16) (string, []byte) {
 }
 
 type dnsEntry struct {
+	names []rememberedDNSName
+}
+
+type rememberedDNSName struct {
 	name    string
 	expires time.Time
 }
+
+const rememberedNamesPerAddress = 4
 
 // ponytail: encrypted DNS hides its answers from this cache; upgrade = observe a local DNS proxy, while TCP uses SNI.
 type dnsMemory struct {
@@ -316,8 +322,30 @@ type dnsMemory struct {
 }
 
 func directByRules(address netip.Addr, name, mode string, region *geo.Set, rules *geo.SiteRules) bool {
+	return directByRulesNames(address, name, nil, mode, region, rules)
+}
+
+func directByRulesNames(address netip.Addr, name string, remembered []string, mode string, region *geo.Set, rules *geo.SiteRules) bool {
 	if !directAddressAllowed(address) {
 		return false
+	}
+	if name == "" && len(remembered) > 0 {
+		switch mode {
+		case "selected":
+			for _, rememberedName := range remembered {
+				if rules.ByName(mode, rememberedName) == geo.RuleVPN {
+					return false
+				}
+			}
+			return true
+		case "smart":
+			for _, rememberedName := range remembered {
+				if rules.ByName(mode, rememberedName) != geo.RuleDirect {
+					return false
+				}
+			}
+			return true
+		}
 	}
 	switch mode {
 	case "smart":
@@ -478,7 +506,7 @@ func (m *dnsMemory) rememberAddressAt(address netip.Addr, name string, ttl time.
 	}
 	if _, exists := m.entries[address]; !exists && len(m.entries) >= dnsMemoryLimit {
 		for key, entry := range m.entries {
-			if !entry.expires.After(now) {
+			if !entry.hasLiveName(now) {
 				delete(m.entries, key)
 			}
 		}
@@ -486,7 +514,18 @@ func (m *dnsMemory) rememberAddressAt(address netip.Addr, name string, ttl time.
 			clear(m.entries)
 		}
 	}
-	m.entries[address] = dnsEntry{name: name, expires: now.Add(ttl)}
+	entry := m.entries[address]
+	names := make([]rememberedDNSName, 0, rememberedNamesPerAddress)
+	for _, saved := range entry.names {
+		if saved.expires.After(now) && saved.name != name {
+			names = append(names, saved)
+		}
+	}
+	if len(names) >= rememberedNamesPerAddress {
+		names = names[len(names)-rememberedNamesPerAddress+1:]
+	}
+	names = append(names, rememberedDNSName{name: name, expires: now.Add(ttl)})
+	m.entries[address] = dnsEntry{names: names}
 }
 
 func (m *dnsMemory) lookup(address netip.Addr) string {
@@ -494,18 +533,49 @@ func (m *dnsMemory) lookup(address netip.Addr) string {
 }
 
 func (m *dnsMemory) lookupAt(address netip.Addr, now time.Time) string {
-	if m == nil {
+	names := m.lookupNamesAt(address, now)
+	if len(names) == 0 {
 		return ""
+	}
+	return names[len(names)-1]
+}
+
+func (m *dnsMemory) lookupNames(address netip.Addr) []string {
+	return m.lookupNamesAt(address, time.Now())
+}
+
+func (m *dnsMemory) lookupNamesAt(address netip.Addr, now time.Time) []string {
+	if m == nil {
+		return nil
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	entry, ok := m.entries[address]
 	if !ok {
-		return ""
+		return nil
 	}
-	if !entry.expires.After(now) {
+	names := make([]string, 0, len(entry.names))
+	live := entry.names[:0]
+	for _, saved := range entry.names {
+		if saved.expires.After(now) {
+			live = append(live, saved)
+			names = append(names, saved.name)
+		}
+	}
+	if len(live) == 0 {
 		delete(m.entries, address)
-		return ""
+	} else if len(live) != len(entry.names) {
+		entry.names = live
+		m.entries[address] = entry
 	}
-	return entry.name
+	return names
+}
+
+func (entry dnsEntry) hasLiveName(now time.Time) bool {
+	for _, name := range entry.names {
+		if name.expires.After(now) {
+			return true
+		}
+	}
+	return false
 }

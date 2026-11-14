@@ -65,6 +65,21 @@ func TestStoreDefaultsOnBrokenFile(t *testing.T) {
 	}
 }
 
+func TestStoreKeepsKnownValuesWithUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`{"kill_switch":"always","future_setting":true}`)
+	if err := os.WriteFile(filepath.Join(dir, fileName), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Get(); got.KillSwitch != "always" || got.Protocol != Defaults().Protocol {
+		t.Fatalf("settings with an unknown key = %#v", got)
+	}
+}
+
 func TestStoreConnectionSettings(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

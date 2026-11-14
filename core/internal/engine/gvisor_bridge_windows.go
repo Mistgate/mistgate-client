@@ -43,7 +43,7 @@ type gvisorBridge struct {
 	vpn          outbound
 	vpnRx        atomic.Uint64 // bytes that arrived from the VPN side: the link guard's sign of a live server
 	direct       outbound
-	shouldDirect func(netip.Addr, string) bool
+	shouldDirect func(netip.Addr, string, []string) bool
 	hasSiteRules func() bool
 	apps         *appRouter   // nil: no program has a rule of its own
 	track        *geo.Tracker // nil: flows are not watched for "doesn't open?"
@@ -68,7 +68,7 @@ type gvisorBridge struct {
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) (*gvisorBridge, error) {
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) (*gvisorBridge, error) {
 	if vpn == nil {
 		return nil, errors.New("VPN outbound is unavailable")
 	}
@@ -862,32 +862,34 @@ func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.
 
 // dialTCPName also says which route the flow was given, even when the dial fails.
 func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string, app appVerdict) (net.Conn, geo.Route, error) {
+	var remembered []string
 	if app == appNone && name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
-		name = b.dns.lookup(target.Addr())
+		remembered = b.dns.lookupNames(target.Addr())
 	}
-	out, route := selectOutbound(target, name, b.shouldDirect, app, b.vpn, b.direct)
+	out, route := selectOutbound(target, name, remembered, b.shouldDirect, app, b.vpn, b.direct)
 	conn, err := out.DialTCP(ctx, target)
 	return conn, route, err
 }
 
 func (b *gvisorBridge) listenUDP(ctx context.Context, target netip.AddrPort, app appVerdict) (packetFlow, error) {
 	name := ""
+	var remembered []string
 	if app == appNone && target.Port() != 53 && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
-		name = b.dns.lookup(target.Addr())
+		remembered = b.dns.lookupNames(target.Addr())
 	}
-	out, _ := selectOutbound(target, name, b.shouldDirect, app, b.vpn, b.direct)
+	out, _ := selectOutbound(target, name, remembered, b.shouldDirect, app, b.vpn, b.direct)
 	return out.ListenUDP(ctx)
 }
 
 // selectOutbound: the program's verdict replaces the site and address rules in its own direction. The DNS port, the
 // addresses that cannot go direct and IPv6 without a direct path stay as they are (block works before this, by name).
-func selectOutbound(target netip.AddrPort, name string, shouldDirect func(netip.Addr, string) bool, app appVerdict, vpn, direct outbound) (outbound, geo.Route) {
+func selectOutbound(target netip.AddrPort, name string, remembered []string, shouldDirect func(netip.Addr, string, []string) bool, app appVerdict, vpn, direct outbound) (outbound, geo.Route) {
 	address := target.Addr()
 	if app == appVPN {
 		return vpn, geo.ViaVPN
 	}
 	// Keep the adapter's configured DNS resolver on the VPN.
-	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && (app == appDirect || shouldDirect != nil && shouldDirect(address, name)) && (address.Is4() || directIPv6()) {
+	if direct != nil && target.Port() != 53 && directAddressAllowed(address) && (app == appDirect || shouldDirect != nil && shouldDirect(address, name, remembered)) && (address.Is4() || directIPv6()) {
 		return direct, geo.ViaDirect
 	}
 	return vpn, geo.ViaVPN

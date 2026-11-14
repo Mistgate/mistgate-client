@@ -135,7 +135,11 @@ func fileDescription(path string) string {
 		if windows.VerQueryValue(block, `\StringFileInfo\`+lang+`\FileDescription`, unsafe.Pointer(&text), &length) != nil || length < 2 || text == nil {
 			continue
 		}
-		name := strings.TrimSpace(windows.UTF16ToString(unsafe.Slice((*uint16)(text), length)))
+		units, ok := boundedVersionText(data, text, length)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(windows.UTF16ToString(units))
 		if strings.ContainsFunc(name, func(r rune) bool { return r < ' ' || r == 0x7f }) || !utf8.ValidString(name) {
 			continue
 		}
@@ -147,4 +151,21 @@ func fileDescription(path string) string {
 		}
 	}
 	return ""
+}
+
+func boundedVersionText(block []byte, text unsafe.Pointer, length uint32) ([]uint16, bool) {
+	if len(block) == 0 || text == nil || length == 0 {
+		return nil, false
+	}
+	base := uintptr(unsafe.Pointer(&block[0]))
+	address := uintptr(text)
+	if address < base || address-base >= uintptr(len(block)) || (address-base)%unsafe.Alignof(uint16(0)) != 0 {
+		return nil, false
+	}
+	remaining := (uintptr(len(block)) - (address - base)) / unsafe.Sizeof(uint16(0))
+	count := min(uintptr(length), remaining)
+	if count == 0 {
+		return nil, false
+	}
+	return unsafe.Slice((*uint16)(text), int(count)), true
 }

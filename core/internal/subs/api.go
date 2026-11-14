@@ -21,16 +21,19 @@ import (
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/version"
 )
 
 const (
 	capsHeader         = "v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1"
-	apiUserAgent       = "Mistgate/0.0.1 (Windows)"
+	apiUserAgent       = "Mistgate/" + version.Service + " (Windows)"
 	minSyncSeconds     = 600
 	maxSyncSeconds     = 7 * 24 * 3600
 	defaultSyncSeconds = 3600
 	maxRetryAfter      = 24 * 3600
 )
+
+func plainUserAgent() string { return "mihomo/1.19.33 " + apiUserAgent }
 
 // Enrol answers that a retry does not fix: the user has to act, or refresh by hand.
 var noRetryCodes = map[string]bool{
@@ -326,7 +329,7 @@ func replyCode(body []byte) string {
 	if json.Unmarshal(body, &answer) != nil {
 		return ""
 	}
-	return answer.Error
+	return shortText(answer.Error)
 }
 
 func originOf(link string) string {
@@ -501,7 +504,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	if b.Status != "active" {
 		st.Error = "inactive"
 		if st.Notice == "" {
-			st.Notice = b.Status
+			st.Notice = shortTextN(b.Status, maxNotice)
 		}
 		return st, nil
 	}
@@ -552,8 +555,8 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	}
 	for _, proxy := range b.Telegram {
 		if len(st.Telegram) < maxTelegram && telegramLink(proxy.Link) {
-			st.Telegram = append(st.Telegram, Telegram{Node: proxy.ServerID, Country: countryCode(proxy.Country), City: shortText(proxy.City),
-				Via: proxy.Via, ViaCountry: countryCode(proxy.ViaCountry), IPv6: proxy.IPv6, Link: proxy.Link})
+			st.Telegram = append(st.Telegram, Telegram{Node: shortText(proxy.ServerID), Country: countryCode(proxy.Country), City: shortText(proxy.City),
+				Via: shortText(proxy.Via), ViaCountry: countryCode(proxy.ViaCountry), IPv6: proxy.IPv6, Link: proxy.Link})
 		}
 	}
 	return st, nil

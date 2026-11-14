@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func TestListAppsOnThisMachine(t *testing.T) {
@@ -64,5 +65,18 @@ func TestFileDescription(t *testing.T) {
 	}
 	if got := appName(`c:\definitely\not\installed\nothing.exe`); got != "nothing" {
 		t.Errorf("appName of a missing file = %q; want its file name", got)
+	}
+}
+
+func TestBoundedVersionTextStopsAtBlockEnd(t *testing.T) {
+	storage := []uint16{'a', 'b', 0}
+	block := unsafe.Slice((*byte)(unsafe.Pointer(&storage[0])), len(storage)*int(unsafe.Sizeof(storage[0])))
+	text, ok := boundedVersionText(block, unsafe.Pointer(&storage[1]), 100)
+	if !ok || len(text) != 2 || text[0] != 'b' || text[1] != 0 {
+		t.Fatalf("bounded text has %d units; want the two units left in the version block", len(text))
+	}
+	outside := new(uint16)
+	if _, ok := boundedVersionText(block, unsafe.Pointer(outside), 1); ok {
+		t.Fatal("a string pointer outside the version block was accepted")
 	}
 }

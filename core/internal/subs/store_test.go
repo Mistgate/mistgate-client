@@ -21,7 +21,7 @@ import (
 func TestPreviewURLBodyAndHeaders(t *testing.T) {
 	body := "hy2://auth@one.example:443#first"
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("x-hwid") == "" || r.Header.Get("x-device-os") != "Windows" || r.UserAgent() != "mihomo/1.19.33 Mistgate/0.0.1 (Windows)" {
+		if r.Header.Get("x-hwid") == "" || r.Header.Get("x-device-os") != "Windows" || r.UserAgent() != plainUserAgent() {
 			t.Errorf("missing fetch headers: %#v", r.Header)
 		}
 		w.Header().Set("subscription-userinfo", "upload=12; download=34; total=1000; expire=1700000000")
@@ -309,7 +309,7 @@ func TestMihomoProfileSubscription(t *testing.T) {
 	body := mihomoProfileFixture(key)
 	var renamed atomic.Bool
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("x-hwid") == "" || r.Header.Get("x-device-os") != "Windows" || r.UserAgent() != "mihomo/1.19.33 Mistgate/0.0.1 (Windows)" {
+		if r.Header.Get("x-hwid") == "" || r.Header.Get("x-device-os") != "Windows" || r.UserAgent() != plainUserAgent() {
 			t.Errorf("unexpected subscription headers: %#v", r.Header)
 		}
 		responseBody := body

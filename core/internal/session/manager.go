@@ -427,6 +427,7 @@ func (m *Manager) run() {
 					state.retryIndex = 0
 					state.failures = 0
 					state.holdReconnect = false
+					state.runCancel = nil
 					m.hub.Publish("status", state.status)
 					resetTimer(&healthTimer, &healthC, m.probeInterval)
 				}
@@ -505,6 +506,11 @@ func (m *Manager) run() {
 
 func (m *Manager) connect(state *actorState, target engine.Target) (Status, error) {
 	reconnecting := state.status.State == "reconnecting" || state.status.State == "blocked" && state.status.Error != "kill_switch"
+	settingsNow := m.currentSettings()
+	// StepVerify means an in-progress attempt has brought its tunnel up; replacing it must keep the firewall closed.
+	connectingWithTunnel := state.status.State == "connecting" &&
+		(state.target.Hold || state.status.Step == string(engine.StepVerify))
+	switching := (state.status.State == "connected" || connectingWithTunnel) && settingsNow.KillSwitch != "off"
 	if reconnecting || state.status.State == "blocked" {
 		if target.Server == "" || target.Server == "auto" {
 			target.Server = state.userServer // not state.target.Server: that may be a server "next" moved to
@@ -519,7 +525,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	if target.Protocol == "" {
 		target.Protocol = "auto"
 	}
-	target.Hold = state.holdReconnect || holdFor(m.currentSettings(), reconnecting)
+	target.Hold = state.holdReconnect || holdFor(settingsNow, reconnecting) || switching
 	if m.engine == nil {
 		state.generation++
 		state.status = Status{State: "error", SinceUnix: time.Now().Unix(), Server: target.Server, Protocol: target.Protocol, Error: "no_subscription"}
@@ -550,9 +556,11 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 		return state.status, nil
 	}
 
-	if state.runCancel != nil {
-		state.runCancel()
-		state.runCancel = nil
+	if state.runCancel != nil || state.status.State == "connected" || state.status.State == "connecting" {
+		if state.runCancel != nil {
+			state.runCancel()
+			state.runCancel = nil
+		}
 		if target.Hold {
 			m.engine.Hold()
 		} else {

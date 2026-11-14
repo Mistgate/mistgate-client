@@ -112,21 +112,21 @@ func TestDNSMemoryTTLChainAndCap(t *testing.T) {
 	if got := memory.lookupAt(netip.MustParseAddr("192.0.2.10"), base.Add(120*time.Second)); got != "" {
 		t.Fatalf("CNAME address remained past chain TTL: %q", got)
 	}
-	if got := memory.entries[netip.MustParseAddr("192.0.2.11")].expires.Sub(base); got != time.Minute {
+	if got := memory.entries[netip.MustParseAddr("192.0.2.11")].names[0].expires.Sub(base); got != time.Minute {
 		t.Fatalf("minimum TTL = %s; want 1m", got)
 	}
 
 	memory.rememberAt(dnsAnswer(t, "long.example", []dnsRecord{
 		{owner: "long.example.", address: netip.MustParseAddr("192.0.2.12"), ttl: 7200},
 	}), base)
-	if got := memory.entries[netip.MustParseAddr("192.0.2.12")].expires.Sub(base); got != time.Hour {
+	if got := memory.entries[netip.MustParseAddr("192.0.2.12")].names[0].expires.Sub(base); got != time.Hour {
 		t.Fatalf("maximum TTL = %s; want 1h", got)
 	}
 
 	memory.entries = make(map[netip.Addr]dnsEntry)
 	for i := 0; i < dnsMemoryLimit; i++ {
 		address := netip.AddrFrom4([4]byte{10, byte(i >> 8), byte(i), 1})
-		memory.entries[address] = dnsEntry{name: "expired.example", expires: base.Add(-time.Second)}
+		memory.entries[address] = dnsEntry{names: []rememberedDNSName{{name: "expired.example", expires: base.Add(-time.Second)}}}
 	}
 	memory.rememberAddressAt(netip.MustParseAddr("192.0.2.20"), "new.example", time.Minute, base)
 	if len(memory.entries) != 1 || memory.lookupAt(netip.MustParseAddr("192.0.2.20"), base) != "new.example" {
@@ -134,7 +134,7 @@ func TestDNSMemoryTTLChainAndCap(t *testing.T) {
 	}
 	for i := 0; i < dnsMemoryLimit; i++ {
 		address := netip.AddrFrom4([4]byte{10, byte(i >> 8), byte(i), 2})
-		memory.entries[address] = dnsEntry{name: "live.example", expires: base.Add(time.Hour)}
+		memory.entries[address] = dnsEntry{names: []rememberedDNSName{{name: "live.example", expires: base.Add(time.Hour)}}}
 	}
 	memory.rememberAddressAt(netip.MustParseAddr("192.0.2.21"), "new.example", time.Minute, base)
 	if len(memory.entries) != 1 || memory.lookupAt(netip.MustParseAddr("192.0.2.21"), base) != "new.example" {

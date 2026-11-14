@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 )
 
 type Server struct {
@@ -171,7 +172,10 @@ func (r *Runner) Start(sub string) State {
 	if flush {
 		r.flush()
 	}
-	go r.run(ctx, sub)
+	go func() {
+		defer safe.Recover("diag")
+		r.run(ctx, sub)
+	}()
 	return state
 }
 
@@ -211,7 +215,10 @@ func (r *Runner) run(ctx context.Context, sub string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		r.cancel = cancel
 		r.mu.Unlock()
-		go r.run(ctx, sub)
+		go func() {
+			defer safe.Recover("diag")
+			r.run(ctx, sub)
+		}()
 		return
 	}
 	if r.state.State == "failed" && r.state.Error == "cancelled" {
@@ -321,6 +328,7 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 	wait.Add(1)
 	go func() {
 		defer wait.Done()
+		defer safe.Recover("diag")
 		result.Freeze.Verdict, result.Freeze.Targets, facts = checkFreeze(ctx, freezeClient(physical))
 	}()
 	result.Foreign.Total, result.Foreign.Open = checkForeign(ctx, physical, r.config)
@@ -427,6 +435,7 @@ func checkProfiles(ctx context.Context, profiles []profile.Profile, physical int
 		wait.Add(1)
 		go func(i int, p profile.Profile) {
 			defer wait.Done()
+			defer safe.Recover("diag")
 			select {
 			case limit <- struct{}{}:
 			case <-ctx.Done():
@@ -608,13 +617,16 @@ func hostAlive(ctx context.Context, dial dialContextFunc, host string, ports []u
 	results := make(chan outcome, len(ports))
 	for _, port := range ports {
 		go func(port uint16) {
+			result := outcome{}
+			defer safe.Recover("diag")
+			defer func() { results <- result }()
 			dialCtx, stop := context.WithTimeout(checkCtx, timeout)
 			defer stop()
 			conn, err := dial(dialCtx, "tcp4", net.JoinHostPort(host, strconv.Itoa(int(port))))
 			if conn != nil {
 				_ = conn.Close()
 			}
-			results <- outcome{alive: err == nil || connectionRefused(err)}
+			result.alive = err == nil || connectionRefused(err)
 		}(port)
 	}
 	for range ports {

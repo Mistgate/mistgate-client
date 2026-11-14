@@ -23,13 +23,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/ipcsize"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
 
 const (
-	fileName             = "subscriptions.bin"
-	maxBodyBytes         = 4 << 20
-	defaultIntervalHours = 12
+	fileName                   = "subscriptions.bin"
+	maxBodyBytes               = 4 << 20
+	maxPublicSubscriptionBytes = ipcsize.MaxLineBytes / 4
+	defaultIntervalHours       = 12
 )
 
 type Subscription struct {
@@ -142,11 +144,8 @@ func Open(dir string) (*Store, error) {
 }
 
 func openStore(dir string, protectData, unprotectData func([]byte) ([]byte, error), secureDir func(string) error) (*Store, error) {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := prepareStoreDirectory(dir, secureDir); err != nil {
 		return nil, errors.New("cannot create subscription data directory")
-	}
-	if err := secureDir(dir); err != nil {
-		return nil, errors.New("cannot protect subscription data directory")
 	}
 	s := &Store{
 		dir:     dir,
@@ -568,7 +567,7 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 	if err != nil {
 		return storedSubscription{}, &Error{Code: "service_error"}
 	}
-	request.Header.Set("User-Agent", "mihomo/1.19.33 Mistgate/0.0.1 (Windows)")
+	request.Header.Set("User-Agent", plainUserAgent())
 	request.Header.Set("x-hwid", hwid)
 	request.Header.Set("x-device-os", "Windows")
 	request.Header.Set("X-Mistgate-Caps", capsHeader)
@@ -603,7 +602,7 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 	name := responseName(response.Header.Get("profile-title"), parsed.Host)
 	used, total, expire := parseUserInfo(response.Header.Get("subscription-userinfo"))
 	sub := Subscription{
-		ID: id, Kind: "url", Name: name, Host: parsed.Host, UpdatedUnix: time.Now().Unix(),
+		ID: id, Kind: "url", Name: name, Host: shortText(parsed.Host), UpdatedUnix: time.Now().Unix(),
 		ExpireUnix: expire, UsedBytes: used, TotalBytes: total, Notice: responseNotice(response.Header.Get("Announce")),
 	}
 	servers, entries, unsupported, kinds, err := parseURLBody(string(body), id)
@@ -611,7 +610,7 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 	sub.Name, sub.Notice = shortText(sub.Name), shortTextN(sub.Notice, maxNotice)
 	var coded *Error
 	if err != nil && errors.As(err, &coded) && coded.Notice != "" {
-		sub.Notice = coded.Notice
+		sub.Notice = shortTextN(coded.Notice, maxNotice)
 	}
 	if err == nil {
 		sub.Unsupported, sub.UnsupportedKinds, sub.Servers = unsupported, kinds, servers
@@ -894,10 +893,20 @@ func (s *Store) changed() {
 }
 
 func publicCopy(sub Subscription) Subscription {
+	sub.ID = shortTextN(sub.ID, 128)
+	sub.Kind = shortText(sub.Kind)
+	sub.Name = shortText(sub.Name)
+	sub.Host = shortText(sub.Host)
+	sub.Error = shortText(sub.Error)
+	sub.Notice = shortTextN(sub.Notice, maxNotice)
 	if sub.Debug != nil { // a copy of its own; a request past its time is not shown
 		d := *sub.Debug
 		if d.Request != nil && d.Request.ExpiresUnix <= time.Now().Unix() {
 			d.Request = nil
+		} else if d.Request != nil {
+			request := *d.Request
+			request.ID, request.Level, request.Note = shortTextN(request.ID, 64), shortText(request.Level), shortTextN(request.Note, 300)
+			d.Request = &request
 		}
 		sub.Debug = &d
 	}
@@ -905,10 +914,69 @@ func publicCopy(sub Subscription) Subscription {
 		p := *sub.Probe
 		sub.Probe = &p
 	}
+	if sub.ReportLast != nil {
+		last := *sub.ReportLast
+		last.Error = shortText(last.Error)
+		sub.ReportLast = &last
+	}
 	sub.UnsupportedKinds = maps.Clone(sub.UnsupportedKinds)
+	if sub.UnsupportedKinds != nil {
+		keys := make([]string, 0, len(sub.UnsupportedKinds))
+		for kind, count := range sub.UnsupportedKinds {
+			if kindName.MatchString(kind) && count > 0 {
+				keys = append(keys, kind)
+			}
+		}
+		slices.Sort(keys)
+		kinds := make(map[string]int, min(len(keys), maxKinds))
+		for _, kind := range keys[:min(len(keys), maxKinds)] {
+			kinds[shortTextN(kind, 40)] = min(sub.UnsupportedKinds[kind], maxBodyBytes)
+		}
+		sub.UnsupportedKinds = kinds
+	}
 	sub.Servers = append([]Server(nil), sub.Servers...)
 	if sub.Servers == nil {
 		sub.Servers = []Server{}
+	}
+	for i := range sub.Servers {
+		server := &sub.Servers[i]
+		server.ID = shortTextN(server.ID, 128)
+		server.Name, server.Protocol = shortText(server.Name), shortText(server.Protocol)
+		server.Node, server.Country, server.City = shortText(server.Node), shortText(server.Country), shortText(server.City)
+		server.Via, server.Version, server.Load = shortText(server.Via), shortText(server.Version), shortText(server.Load)
+		server.Label, server.NodeLabel = shortText(server.Label), shortText(server.NodeLabel)
+		server.ViaCountry = countryCode(server.ViaCountry)
+	}
+	if sub.Telegram != nil {
+		telegram := append([]Telegram(nil), sub.Telegram...)
+		if len(telegram) > maxTelegram {
+			telegram = telegram[:maxTelegram]
+		}
+		for i := range telegram {
+			telegram[i].Node, telegram[i].City, telegram[i].Via = shortText(telegram[i].Node), shortText(telegram[i].City), shortText(telegram[i].Via)
+			telegram[i].Country, telegram[i].ViaCountry = countryCode(telegram[i].Country), countryCode(telegram[i].ViaCountry)
+			if !telegramLink(telegram[i].Link) {
+				telegram[i].Link = ""
+			} else {
+				telegram[i].Link = shortTextN(telegram[i].Link, 2048)
+			}
+		}
+		sub.Telegram = telegram
+	}
+	if len(sub.Servers) > 0 {
+		servers := sub.Servers
+		low, high := 0, len(servers)
+		for low < high {
+			mid := low + (high-low+1)/2
+			sub.Servers = servers[:mid]
+			encoded, _ := json.Marshal(sub)
+			if len(encoded) <= maxPublicSubscriptionBytes {
+				low = mid
+			} else {
+				high = mid - 1
+			}
+		}
+		sub.Servers = servers[:low]
 	}
 	return sub
 }

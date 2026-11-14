@@ -85,9 +85,6 @@ func shouldConnectAtStart(configured settings.Settings) bool {
 // keepCrashOutput: a service has no console, so what the runtime says when it dies (the panic and the goroutines'
 // stacks) goes to crash.log in the data directory. The file is started again once it is over 256 KiB.
 func keepCrashOutput(dataDir string) {
-	if os.MkdirAll(dataDir, 0700) != nil {
-		return
-	}
 	path := filepath.Join(dataDir, "crash.log")
 	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	if info, err := os.Stat(path); err == nil && info.Size() > 256<<10 {
@@ -114,7 +111,7 @@ func defaultDataDir() string {
 func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents <-chan time.Duration) error {
 	// before anything is written there: a folder planted by another user is not used
 	if err := subs.ClaimDirectory(dataDir); err != nil {
-		fmt.Fprintln(os.Stderr, "the data directory belongs to another user and could not be moved aside")
+		fmt.Fprintln(os.Stderr, "the data directory could not be secured")
 		return err
 	}
 	keepCrashOutput(dataDir)

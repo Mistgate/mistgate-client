@@ -5,11 +5,11 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"os"
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/proxy"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -131,13 +131,22 @@ func install(args []string) error {
 		return err
 	}
 	defer manager.Disconnect()
-	service, err := manager.CreateService(serviceName, exe, mgr.Config{
-		DisplayName: "Mistgate Client",
-		Description: "Runs the Mistgate VPN connection for the Mistgate app.",
-		StartType:   mgr.StartAutomatic,
-		SidType:     windows.SERVICE_SID_TYPE_UNRESTRICTED,
-	}, append([]string{"run"}, args...)...)
-	if err != nil {
+	service, err := manager.CreateService(serviceName, exe, serviceConfiguration(), append([]string{"run"}, args...)...)
+	if errors.Is(err, windows.ERROR_SERVICE_EXISTS) {
+		service, err = manager.OpenService(serviceName)
+		if err != nil {
+			return err
+		}
+		configured, configErr := service.Config()
+		if configErr != nil {
+			_ = service.Close()
+			return configErr
+		}
+		if err := service.UpdateConfig(withServiceDependencies(configured)); err != nil {
+			_ = service.Close()
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	defer service.Close()
@@ -148,7 +157,24 @@ func install(args []string) error {
 		{Type: mgr.ServiceRestart, Delay: 10 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: time.Minute},
 	}, 24*3600)
-	return service.Start()
+	if err := service.Start(); err != nil && !errors.Is(err, windows.ERROR_SERVICE_ALREADY_RUNNING) {
+		return err
+	}
+	return nil
+}
+
+func serviceConfiguration() mgr.Config {
+	return withServiceDependencies(mgr.Config{
+		DisplayName: "Mistgate Client",
+		Description: "Runs the Mistgate VPN connection for the Mistgate app.",
+		StartType:   mgr.StartAutomatic,
+		SidType:     windows.SERVICE_SID_TYPE_UNRESTRICTED,
+	})
+}
+
+func withServiceDependencies(config mgr.Config) mgr.Config {
+	config.Dependencies = []string{"BFE", "Tcpip"}
+	return config
 }
 
 func uninstall() error {

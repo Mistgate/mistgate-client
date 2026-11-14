@@ -461,6 +461,12 @@ fn open_verified_pipe() -> Result<tokio::net::windows::named_pipe::NamedPipeClie
     // The installed service runs as LocalSystem: Windows does not let an ordinary program open that process, so its
     // path cannot be read. The pipe's owner says the same thing: only LocalSystem itself can be that owner.
     if pipe_owner_is_system(pipe_handle) {
+        // The owner belongs to the pipe's name, not to the end that answered: an ordinary program may add an
+        // instance of its own to the service's pipe, and its instance shows the same owner. What it cannot be is a
+        // process of session 0, where services run and no user's program does.
+        if session_of(server_pid) != Some(0) {
+            return Err("the pipe was answered by a program that is not the service".into());
+        }
         return Ok(pipe);
     }
     // a console service (development) runs as this user: its path can be read
@@ -493,6 +499,22 @@ fn open_verified_pipe() -> Result<tokio::net::windows::named_pipe::NamedPipeClie
         return Err("pipe server image is outside the trusted service path".into());
     }
     Ok(pipe)
+}
+
+/// The Windows session a process runs in, read from the system's list of processes: the service's own process
+/// cannot be opened by an ordinary program (ProcessIdToSessionId is refused for it), the list can be read by anyone.
+#[cfg(windows)]
+fn session_of(pid: u32) -> Option<u32> {
+    use windows_sys::Win32::System::RemoteDesktop::{WTSEnumerateProcessesW, WTSFreeMemory, WTS_PROCESS_INFOW};
+    let mut list: *mut WTS_PROCESS_INFOW = std::ptr::null_mut();
+    let mut count = 0u32;
+    // null: this machine (WTS_CURRENT_SERVER_HANDLE)
+    if unsafe { WTSEnumerateProcessesW(std::ptr::null_mut(), 0, 1, &mut list, &mut count) } == 0 || list.is_null() {
+        return None;
+    }
+    let found = unsafe { std::slice::from_raw_parts(list, count as usize) }.iter().find(|p| p.ProcessId == pid).map(|p| p.SessionId);
+    unsafe { WTSFreeMemory(list as _) };
+    found
 }
 
 #[cfg(windows)]

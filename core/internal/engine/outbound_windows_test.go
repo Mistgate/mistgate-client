@@ -47,7 +47,7 @@ func TestBridgeSelectsExitForNewTCPAndUDPFlows(t *testing.T) {
 	bridge := &gvisorBridge{
 		vpn:    vpn,
 		direct: direct,
-		shouldDirect: func(netip.Addr, string) bool {
+		shouldDirect: func(netip.Addr, string, []string) bool {
 			return true
 		},
 	}
@@ -70,7 +70,7 @@ func TestBridgeSelectsExitForNewTCPAndUDPFlows(t *testing.T) {
 func TestPrivateAndDNSDestinationsNeverUseDirectExit(t *testing.T) {
 	vpn := &countOutbound{}
 	direct := &countOutbound{}
-	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string) bool { return true }}
+	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string, []string) bool { return true }}
 	addresses := []string{"10.1.2.3:443", "127.0.0.1:443", "169.254.1.2:443", "224.0.0.1:443", "203.0.113.7:53", "[::1]:443", "[fd00::1]:443", "[fe80::1]:443", "[ff02::1]:443"}
 	for _, address := range addresses {
 		if _, err := bridge.dialTCP(context.Background(), netip.MustParseAddrPort(address)); err != nil {
@@ -91,14 +91,14 @@ func TestPublicIPv6CanUseDirectExit(t *testing.T) {
 	defer func() { directIPv6 = real }()
 	for _, has := range []bool{false, true} {
 		directIPv6 = func() bool { return has }
-		out, _ := selectOutbound(netip.MustParseAddrPort("[2001:4860:4860::8888]:443"), "", func(netip.Addr, string) bool { return true }, appNone, hy2Outbound{}, directOutbound{})
+		out, _ := selectOutbound(netip.MustParseAddrPort("[2001:4860:4860::8888]:443"), "", nil, func(netip.Addr, string, []string) bool { return true }, appNone, hy2Outbound{}, directOutbound{})
 		if _, direct := out.(directOutbound); direct != has {
 			t.Fatalf("direct IPv6 available = %v, flow direct = %v", has, direct)
 		}
 	}
 	vpn := &countOutbound{}
 	direct := &countOutbound{}
-	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string) bool { return true }}
+	bridge := &gvisorBridge{vpn: vpn, direct: direct, shouldDirect: func(netip.Addr, string, []string) bool { return true }}
 	target := netip.MustParseAddrPort("[2001:4860:4860::8888]:443")
 	if _, err := bridge.dialTCP(context.Background(), target); err != nil {
 		t.Fatal(err)
