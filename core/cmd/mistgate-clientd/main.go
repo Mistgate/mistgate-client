@@ -27,17 +27,28 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/subs"
+	"github.com/mistgate/mistgate-client/core/internal/users"
 )
 
 func main() {
 	usage := func() {
-		fmt.Fprintln(os.Stderr, "usage: mistgate-clientd run [-fake] [-data <dir>] [-verify host:port] | install [run flags] | uninstall")
+		fmt.Fprintln(os.Stderr, "usage: mistgate-clientd run [-fake] [-data <dir>] [-verify host:port] | allow <SID> | install [run flags] | uninstall")
 		os.Exit(2)
 	}
 	if len(os.Args) < 2 {
 		usage()
 	}
 	switch os.Args[1] {
+	case "allow":
+		if len(os.Args) != 3 {
+			fmt.Fprintln(os.Stderr, "usage: mistgate-clientd allow <SID>")
+			os.Exit(2)
+		}
+		if err := allowAccount(os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	case "install", "uninstall":
 		var err error
 		if os.Args[1] == "install" {
@@ -114,6 +125,18 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		fmt.Fprintln(os.Stderr, "the data directory could not be secured")
 		return err
 	}
+	var callerAccess *ipc.CallerAccess
+	allowListReadFailed := false
+	if isLocalSystemProcess() {
+		allowedSIDs, err := users.Read(dataDir)
+		if err != nil {
+			allowedSIDs = nil
+			allowListReadFailed = true
+		}
+		callerAccess = ipc.NewCallerAccess(allowedSIDs, func(sids []string) error {
+			return users.Write(dataDir, sids)
+		})
+	}
 	keepCrashOutput(dataDir)
 	var eventMu sync.RWMutex
 	var eventHub *session.Hub
@@ -127,6 +150,9 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		}
 	}, logs)
 	slog.SetDefault(logger.With("src", "subs"))
+	if allowListReadFailed {
+		logger.Warn("IPC allow-list read failed", "code", "read_failed")
+	}
 	store, err := subs.Open(dataDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot open the data directory:", err)
@@ -236,7 +262,7 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	})
 	defer localProxy.Close()
 	localProxy.Reload()
-	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, apps, ping, localProxy); err != nil {
+	if err := ipc.Run(ctx, manager, logger, store, settingsStore, diagnostics, logs, geoStore, routes, check, apps, ping, localProxy, callerAccess); err != nil {
 		logger.With("src", "ipc").Error("service stopped", "error", err)
 		return err
 	}

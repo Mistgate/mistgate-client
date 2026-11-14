@@ -50,6 +50,15 @@ fn open_to_user(path: &str) -> bool {
     })
 }
 
+/// The SID of the account this program runs as ("S-1-5-21-…"), asked of Windows' own whoami.
+fn own_sid() -> Option<String> {
+    let whoami = PathBuf::from(std::env::var("SystemRoot").ok()?).join("System32").join("whoami.exe");
+    let out = std::process::Command::new(whoami).args(["/user", "/fo", "csv", "/nh"]).creation_flags(NO_WINDOW).output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let sid = text.rsplit('"').find(|part| part.starts_with("S-1-"))?;
+    sid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-').then(|| sid.to_string())
+}
+
 /// A folder that already holds something and is not Mistgate's own install: whatever lies there (a library the
 /// service would load from beside itself, a file under the service's name) was put by somebody else, and after the
 /// install it would run as the system. A new or empty folder, or the one Mistgate is in, is fine.
@@ -169,7 +178,10 @@ fn install(path: &str, desktop: bool) -> Outcome {
         failed(0)
     } else {
         // /D= goes last and unquoted: the installer reads everything after it as the folder
-        let args = format!("/S {}/D={}", if desktop { "" } else { "/NODESK " }, path);
+        // /USER=: the Windows account this setup runs as. The service serves only accounts an administrator allowed,
+        // and the permission prompt may be answered by another account than the one that will use the app.
+        let user = own_sid().map(|sid| format!("/USER={sid} ")).unwrap_or_default();
+        let args = format!("/S {}{}/D={}", if desktop { "" } else { "/NODESK " }, user, path);
         let (verb, exe, args) = (wide("runas".as_ref()), wide(file.as_os_str()), wide(args.as_ref()));
         unsafe {
             let mut run: SHELLEXECUTEINFOW = std::mem::zeroed();

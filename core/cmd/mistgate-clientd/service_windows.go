@@ -10,12 +10,59 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/proxy"
 	"github.com/mistgate/mistgate-client/core/internal/safe"
+	"github.com/mistgate/mistgate-client/core/internal/subs"
+	"github.com/mistgate/mistgate-client/core/internal/users"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
 const serviceName = "MistgateClient"
+
+func isLocalSystemProcess() bool {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	return err == nil && user != nil && user.User.Sid != nil && user.User.Sid.IsWellKnown(windows.WinLocalSystemSid)
+}
+
+func elevatedAdministrator() bool {
+	token := windows.GetCurrentProcessToken()
+	if !token.IsElevated() {
+		return false
+	}
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return false
+	}
+	member, err := token.IsMember(admins)
+	return err == nil && member
+}
+
+func allowAccount(sid string) error {
+	canonicalSID, valid := users.ValidateSID(sid)
+	if !valid {
+		return errors.New("invalid account SID")
+	}
+	if !elevatedAdministrator() {
+		return errors.New("administrator rights required")
+	}
+
+	dataDir := defaultDataDir()
+	if err := subs.ClaimDirectoryForAdministrators(dataDir); err != nil {
+		return errors.New("the data directory could not be secured")
+	}
+	allowedSIDs, err := users.Read(dataDir)
+	if err != nil {
+		return errors.New("cannot read allowed users")
+	}
+	if users.Contains(allowedSIDs, canonicalSID) {
+		return nil
+	}
+	allowedSIDs = append(allowedSIDs, canonicalSID)
+	if err := users.WriteForAdministrators(dataDir, allowedSIDs); err != nil {
+		return errors.New("cannot write allowed users")
+	}
+	return nil
+}
 
 // runAsService reports false when the process was started from a console; then the caller runs in the foreground.
 func runAsService(run func(context.Context, <-chan time.Duration) error) (bool, error) {

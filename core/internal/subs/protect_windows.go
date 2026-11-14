@@ -70,6 +70,70 @@ func ClaimDirectory(path string) error {
 	return prepareDirectory(path, identity, identity.isSystem)
 }
 
+// ClaimDirectoryForAdministrators prepares the same protected tree for the allow command before service install.
+func ClaimDirectoryForAdministrators(path string) error {
+	if err := ClaimDirectory(path); err != nil {
+		return err
+	}
+	return setDirectoryOwnerAdministrators(path)
+}
+
+func setDirectoryOwnerAdministrators(path string) error {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return errDataDirectory
+	}
+	handle, err := windows.CreateFile(name, windows.READ_CONTROL|windows.WRITE_OWNER|windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return errDataDirectory
+	}
+	defer windows.CloseHandle(handle)
+	info, err := directoryInfo(handle)
+	if err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
+		return errDataDirectory
+	}
+	owner, err := directoryOwner(handle)
+	if err != nil {
+		return errDataDirectory
+	}
+	if owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) || owner.IsWellKnown(windows.WinLocalSystemSid) {
+		return nil
+	}
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil || setObjectOwner(handle, admins) != nil {
+		return errDataDirectory
+	}
+	return nil
+}
+
+func setObjectOwner(handle windows.Handle, owner *windows.SID) error {
+	token := windows.GetCurrentProcessToken()
+	privilegeName, err := windows.UTF16PtrFromString("SeRestorePrivilege")
+	if err != nil {
+		return errDataDirectory
+	}
+	var restorePrivilege windows.LUID
+	if err := windows.LookupPrivilegeValue(nil, privilegeName, &restorePrivilege); err != nil {
+		return errDataDirectory
+	}
+	enabled := windows.Tokenprivileges{PrivilegeCount: 1}
+	enabled.Privileges[0] = windows.LUIDAndAttributes{Luid: restorePrivilege, Attributes: windows.SE_PRIVILEGE_ENABLED}
+	var previous windows.Tokenprivileges
+	var returned uint32
+	if err := windows.AdjustTokenPrivileges(token, false, &enabled, uint32(unsafe.Sizeof(previous)), &previous, &returned); err != nil {
+		return errDataDirectory
+	}
+	if previous.PrivilegeCount > 0 {
+		defer windows.AdjustTokenPrivileges(token, false, &previous, 0, nil, nil)
+	}
+	if err := windows.SetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, owner, nil, nil, nil); err != nil {
+		return errDataDirectory
+	}
+	return nil
+}
+
 func prepareDirectory(path string, identity directoryIdentity, quarantineForeignRoot bool) error {
 	if path == "" {
 		return errDataDirectory

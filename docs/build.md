@@ -43,6 +43,10 @@ against (`go.mod` is at the version Xray asks for) and newer `x/net`, `x/sys`, `
   confirmed the uninstall: when an administrator's password was asked for, the app user's own entry stays). Subscriptions and settings in
   `ProgramData\Mistgate` stay unless "delete application data" is ticked.
 - `/S` installs and uninstalls silently.
+- `/USER=<SID>` names the Windows account to allow (the setup window passes its own); see "Who may call" in
+  `ipc.md`.
+- To debug the installed window (a DevTools port through `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`), an administrator
+  puts an empty file `debug.allow` into the install folder; without it a release window ignores that variable.
 
 The build is not signed yet: Windows SmartScreen warns about the installer, and the service and the window trust
 each other by sitting in the same directory (see `docs/ipc.md`), not by a signature.

@@ -42,20 +42,21 @@ const (
 )
 
 type Server struct {
-	Manager   *session.Manager
-	Diag      *diag.Runner
-	Subs      *subs.Store
-	Settings  *settings.Store
-	Geo       *geo.Store
-	Routes    func() geo.Routes
-	Check     func(name string) geo.Check // routes.check
-	Apps      func() []engine.AppInfo     // apps.list
-	Ping      PingFunc                    // servers.ping
-	Logs      *LogStore
-	Proxy     *proxy.Proxy
-	Report    *probereport.Reporter // report.*
-	Logger    *slog.Logger
-	QueueSize int
+	Manager      *session.Manager
+	Diag         *diag.Runner
+	Subs         *subs.Store
+	Settings     *settings.Store
+	Geo          *geo.Store
+	Routes       func() geo.Routes
+	Check        func(name string) geo.Check // routes.check
+	Apps         func() []engine.AppInfo     // apps.list
+	Ping         PingFunc                    // servers.ping
+	Logs         *LogStore
+	Proxy        *proxy.Proxy
+	Report       *probereport.Reporter // report.*
+	Logger       *slog.Logger
+	QueueSize    int
+	callerAccess *CallerAccess
 
 	debugMu   sync.Mutex
 	debugSnap *debugSnapshot // the bundle of the latest debug.preview
@@ -886,13 +887,13 @@ func (c *clientConn) closeLocked() {
 	})
 }
 
-func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, apps func() []engine.AppInfo, ping PingFunc, localProxy *proxy.Proxy) error {
+func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, store *subs.Store, settingsStore *settings.Store, diagnostics *diag.Runner, logs *LogStore, geoStore *geo.Store, routes func() geo.Routes, check func(string) geo.Check, apps func() []engine.AppInfo, ping PingFunc, localProxy *proxy.Proxy, callerAccess *CallerAccess) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Apps: apps, Ping: ping, Logs: logs, Proxy: localProxy}
+	server := &Server{Manager: manager, Diag: diagnostics, Logger: logger.With("src", "ipc"), Subs: store, Settings: settingsStore, Geo: geoStore, Routes: routes, Check: check, Apps: apps, Ping: ping, Logs: logs, Proxy: localProxy, callerAccess: callerAccess}
 	if store != nil {
 		server.Report = &probereport.Reporter{Subs: store, Log: logger.With("src", "report")}
 	}

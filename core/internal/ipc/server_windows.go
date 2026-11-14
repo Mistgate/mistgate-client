@@ -14,7 +14,6 @@ import (
 
 const (
 	PipeName                    = `\\.\pipe\mistgate-client`
-	PipeSDDL                    = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
 	maxPipeConnections          = 8
 	maxUntrustedPipeConnections = maxPipeConnections - 1
 )
@@ -100,7 +99,7 @@ func runPipeServer(ctx context.Context, server *Server) error {
 	serviceSignature := inspectSignature(servicePath)
 	// go-winio v0.6.2 creates server pipes with FILE_PIPE_REJECT_REMOTE_CLIENTS.
 	listener, err := winio.ListenPipe(PipeName, &winio.PipeConfig{
-		SecurityDescriptor: pipeSDDL(),
+		SecurityDescriptor: pipeSDDL(server.callerAccess.AllowedSIDs()),
 		MessageMode:        false,
 		InputBufferSize:    32 * 1024,
 		OutputBufferSize:   32 * 1024,
@@ -136,7 +135,7 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			defer clients.Done()
 			holdsPermit := true
 			defer func() { slots.release(permit, holdsPermit) }()
-			pid, imagePath, callerSignature, callerAllowed, inspectErr := inspectPipeCaller(conn, servicePath, serviceSignature.Signed)
+			pid, imagePath, callerSignature, callerAllowed, callerSID, inspectErr := inspectPipeCaller(conn, servicePath, serviceSignature.Signed, server.callerAccess != nil)
 			facts := CallerFacts{
 				PID:                     pid,
 				ServicePath:             servicePath,
@@ -151,7 +150,15 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			if !serviceSignature.Signed {
 				facts.DevelopmentClientPath = developmentClientPath()
 			}
-			trusted := inspectErr == nil && callerAllowed && IsCallerTrusted(facts)
+			trusted := false
+			var allowListWriteErr error
+			if inspectErr == nil && callerAllowed {
+				if server.callerAccess == nil {
+					trusted = IsCallerTrusted(facts)
+				} else {
+					trusted, allowListWriteErr = server.callerAccess.IsTrusted(facts, callerSID)
+				}
+			}
 			if trusted {
 				slots.releasePermit(permit)
 				holdsPermit = false
@@ -166,6 +173,9 @@ func runPipeServer(ctx context.Context, server *Server) error {
 			} else {
 				logger.Info("IPC caller checked", "pid", pid, "trusted", trusted)
 			}
+			if allowListWriteErr != nil {
+				logger.Warn("IPC allow-list write failed", "code", "write_failed")
+			}
 			server.ServeConn(ctx, conn, trusted)
 		}(conn, permit)
 	}
@@ -175,31 +185,52 @@ func runPipeServer(ctx context.Context, server *Server) error {
 // Administrators group). The window cannot open a LocalSystem process to read its path, so the owner is how it knows
 // the pipe belongs to the service: a program without those rights that takes the name first cannot be that owner.
 // A console run (development) keeps its own owner: the window checks that one by path.
-func pipeSDDL() string {
+func pipeSDDL(allowedSIDs []string) string {
+	sddl := PipeSDDLForUsers(allowedSIDs)
 	if user, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil && user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
-		return "O:SY" + PipeSDDL
+		return "O:SY" + sddl
 	}
-	return PipeSDDL
+	return sddl
 }
 
-func inspectPipeCaller(conn net.Conn, servicePath string, serviceSigned bool) (uint32, string, signatureFacts, bool, error) {
+func inspectPipeCaller(conn net.Conn, servicePath string, serviceSigned, readCallerSID bool) (uint32, string, signatureFacts, bool, string, error) {
 	pipe, ok := conn.(interface{ Fd() uintptr })
 	if !ok {
-		return 0, "", signatureFacts{}, false, windows.ERROR_INVALID_HANDLE
+		return 0, "", signatureFacts{}, false, "", windows.ERROR_INVALID_HANDLE
 	}
 	var pid uint32
 	if err := windows.GetNamedPipeClientProcessId(windows.Handle(pipe.Fd()), &pid); err != nil {
-		return 0, "", signatureFacts{}, false, err
+		return 0, "", signatureFacts{}, false, "", err
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
-		return pid, "", signatureFacts{}, false, err
+		return pid, "", signatureFacts{}, false, "", err
 	}
 	defer windows.CloseHandle(process)
 	imagePath, err := processImagePath(process)
 	if err != nil {
-		return pid, "", signatureFacts{}, false, err
+		return pid, "", signatureFacts{}, false, "", err
 	}
 	callerSignature, allowed := inspectCallerSignature(imagePath, servicePath, serviceSigned)
-	return pid, imagePath, callerSignature, allowed, nil
+	if !readCallerSID {
+		return pid, imagePath, callerSignature, allowed, "", nil
+	}
+	callerSID, err := processUserSID(process)
+	if err != nil {
+		return pid, imagePath, signatureFacts{}, false, "", err
+	}
+	return pid, imagePath, callerSignature, allowed, callerSID, nil
+}
+
+func processUserSID(process windows.Handle) (string, error) {
+	var token windows.Token
+	if err := windows.OpenProcessToken(process, windows.TOKEN_QUERY, &token); err != nil {
+		return "", err
+	}
+	defer token.Close()
+	user, err := token.GetTokenUser()
+	if err != nil || user == nil || user.User.Sid == nil {
+		return "", windows.ERROR_INVALID_DATA
+	}
+	return user.User.Sid.String(), nil
 }

@@ -42,6 +42,14 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
   Pop $0
   nsExec::ExecToLog 'icacls "$INSTDIR\*" /reset /T /C /Q'
   Pop $0
+  ; The service serves only the Windows accounts it was told to: the setup window names the account it runs as
+  ; (the permission prompt may have been answered by another). The service's program checks what it is given.
+  ClearErrors
+  ${GetOptions} $CMDLINE "/USER=" $R1
+  ${IfNot} ${Errors}
+    nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" allow "$R1"'
+    Pop $0
+  ${EndIf}
   ClearErrors
   nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" install'
   Pop $0

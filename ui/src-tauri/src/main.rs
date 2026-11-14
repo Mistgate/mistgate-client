@@ -341,6 +341,20 @@ fn main() {
 
 #[cfg(not(feature = "setup"))]
 fn main() {
+    // The engine of the window reads its environment before it starts. With these variables any program of this
+    // user could open a debugging port into the window and call the service through it, or point the window at
+    // another browser program or another profile. They are dropped, unless an administrator left a file
+    // `debug.allow` beside the program (the install folder is the administrators' alone): that is how the window
+    // is debugged on purpose.
+    #[cfg(not(debug_assertions))]
+    {
+        let allowed = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("debug.allow").is_file())).unwrap_or(false);
+        if !allowed {
+            for name in ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_USER_DATA_FOLDER", "WEBVIEW2_RELEASE_CHANNEL_PREFERENCE", "WEBVIEW2_CHANNEL_SEARCH_KIND"] {
+                std::env::remove_var(name);
+            }
+        }
+    }
     tauri::Builder::default()
         // One Mistgate per user session: a second start hands its arguments to the first and leaves. The first
         // brings its window up, and takes a mistgate:// link if that is what the start was for.

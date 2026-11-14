@@ -6,8 +6,8 @@ The window (`Mistgate.exe`, the user's rights) never touches the network. Everyt
 ## Transport
 
 - Pipe `\\.\pipe\mistgate-client`, byte mode, created by the service. Remote clients are rejected.
-- DACL: SYSTEM and Administrators full; the interactive user (`IU`) read and write. The DACL is not the gate: the
-  caller check below is.
+- DACL: SYSTEM and Administrators full; the allowed accounts read and write (all interactive users, `IU`, only
+  while no account has been recorded yet). The caller check below is the second lock.
 - One JSON object per line (UTF-8, `\n`), at most 1 MiB a line. A longer line closes the connection.
 
 ```
@@ -29,13 +29,25 @@ process and reads its image path. The connection is **trusted** when:
 - the service binary is unsigned (a development build): the caller's image is `Mistgate.exe` or `mistgate.exe` in the
   service's own directory, or the path in `MISTGATE_DEV_CLIENT` (read only by an unsigned build).
 
-What this check is, and is not. It tells the app from any other program that opens the pipe. It does not tell the
-app from a program that drives the app: one running as the same user can inject into the window or start it with a
-debugging port, and then calls everything the window may call. Any interactive user of the machine can start the
-window, too. So every program of every interactive user is, in effect, a caller of the service: it can read the
-subscription link and the proxy password, switch the kill switch off, or connect the machine to a server of its
-choice. That is more than those programs could do without the service (system-wide routes, storage encrypted for
-SYSTEM). Narrowing the pipe to the user who installed the app is not done yet.
+Which Windows accounts (from 0.1.6). Besides the above, the installed service serves only the accounts an
+administrator allowed. The list (account SIDs) is the file `users` in the data directory, which only SYSTEM and
+Administrators can write. `mistgate-clientd allow <SID>` (elevated) adds an account; the setup window passes the
+account it runs as (`/USER=<SID>` to the installer inside, which calls `allow` before `install`), so an install
+confirmed with another account's administrator password still allows the person who will use the app. With a
+list, the pipe's DACL names those accounts instead of all interactive users, and a caller is trusted only if its
+process token's account is on the list. With no list (an install updated from a version before 0.1.6, or the
+installer run without the setup window) the first caller that passes the check above is written to the list, and
+the DACL narrows at the service's next start. To let another account of the same PC use the app, run the setup
+program under that account. A console (development) run has no list.
+
+What this check is, and is not. It tells the app, run by an allowed account, from everything else. It does not tell
+the app from another program of the same account that drives it: such a program can inject into the window, as it
+can into any program of its own account. The simplest way in is closed: a release window drops the engine's
+environment variables (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` and its kin: a debugging port, another browser
+program, another profile) unless a file `debug.allow` lies beside the program, where only an administrator can put
+it. So a program of an allowed account that goes to the length of injecting code can still call everything the
+window may call (read the subscription link and the proxy password, switch the kill switch off, connect the machine
+elsewhere): Windows gives no boundary between programs of one account.
 
 The window checks the other end too. The installed service runs as LocalSystem, and Windows does not let an ordinary
 program open such a process to read its path; so the service names LocalSystem the pipe's owner, and the window

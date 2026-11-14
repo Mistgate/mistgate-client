@@ -16,6 +16,9 @@ func prepareStoreDirectory(path string, secureDir func(string) error) error {
 // ClaimDirectory is a Windows matter.
 func ClaimDirectory(string) error { return nil }
 
+// ClaimDirectoryForAdministrators is a Windows matter.
+func ClaimDirectoryForAdministrators(string) error { return nil }
+
 func protect(data []byte) ([]byte, error) { return append([]byte(nil), data...), nil }
 
 func unprotect(data []byte) ([]byte, error) { return append([]byte(nil), data...), nil }
