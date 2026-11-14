@@ -13,7 +13,7 @@ type Status = { state: string; step: string; since_unix: number; server: string;
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
 export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string; version?: string;
-  label?: string; node_label?: string; via_country?: string; ipv6_egress?: boolean }; // the owner's names, where a relay enters, IPv6 out
+  label?: string; node_label?: string; via_country?: string; ipv6_egress?: boolean; insecure?: boolean }; // the owner's names, where a relay enters, IPv6 out
 export type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; managed?: boolean; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
@@ -641,7 +641,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const direct: string = (v.rows as any[] | undefined)?.find((r) => !r.via)?.tipD?.route ?? '';
       // A relay is another server's address: when a path enters at the address of a server in this list, it goes
       // "via" that server's country, in the design's own wording of the mark ("via RU").
-      const sample = (v.rows as any[] | undefined)?.find((r) => r.via && r.mark);
+      const sample = (v.rows as any[] | undefined)?.find((r) => r.via && r.mark && !r.bare);
       const viaWord: string = sample ? String(sample.mark).replace(sample.via, '').trim() : 'via';
       const entryAt = new Map<string, string>(); // a directly reached address -> its country code
       for (const x of servers) {
@@ -654,6 +654,9 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       for (const x of servers) { const t = through(x); if (t) VIA[x.id] = t; else delete VIA[x.id]; }
       // a node reached only through relays says so on its row
       const viaOf = (n: Node) => n.via || (n.entries.every((e) => e.s.via === 'relay') ? through(n.entries[0].s) : '');
+      // a server whose certificate the subscription asks not to check says so: the design's amber mark on the row
+      // (over the relay mark, which the card still words), and in full in the protocol menu; the card's route line has no room for it
+      const bareOf = (n: Node) => n.entries.some((e) => e.s.insecure);
       const LOAD: Record<string, number> = { low: 25, medium: 55, high: 85 };
       const tipOf = (n: Node, ms: string) => {
         const at = n.entries.map((e) => HOSTS[e.s.id]).find(Boolean);
@@ -684,7 +687,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
             const tall = (document.querySelector('.stip') as HTMLElement | null)?.offsetHeight || 250;
             this.setState({ tipId: n.key, tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - tall))) });
           },
-          key: n.key, id: n.name, country: n.name, suf: sufOf(n), mark: viaOf(n), mkc: viaOf(n) ? '' : 'hide', flag: n.flag, via: viaOf(n), hasVia: !!viaOf(n),
+          key: n.key, id: n.name, country: n.name, suf: sufOf(n), bare: bareOf(n), mark: bareOf(n) ? w.noCert : viaOf(n), mkc: bareOf(n) ? 'upd' : viaOf(n) ? '' : 'hide', flag: n.flag, via: viaOf(n), hasVia: !!viaOf(n),
           now: !!on && n.entries.some((e) => inUse(e)),
           h2: fams.has('h2'), vless: fams.has('vless'), awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
@@ -729,7 +732,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         if (!on || !this.traffic) v.msTxt.cur = v.cur.ms = '—';
         Object.assign(v, {
           profs: node.entries.map((e) => ({
-            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: through(e.s) ? e.full.replace('relay', through(e.s)) : e.full, isH2: e.fam === 'h2', isVless: e.fam === 'vless', isAwg: e.fam === 'awg',
+            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: (through(e.s) ? e.full.replace('relay', through(e.s)) : e.full) + (e.s.insecure ? ' · ' + w.noCertFull : ''), isH2: e.fam === 'h2', isVless: e.fam === 'vless', isAwg: e.fam === 'awg',
             cls: picked && e.s.id === sel ? 'on' : '', on: picked && e.s.id === sel ? 'true' : 'false', pick: () => this.choose(e.s.id, true),
           })),
           profAuto: !picked, poAutoCls: picked ? '' : 'on',

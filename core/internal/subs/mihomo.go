@@ -43,7 +43,7 @@ func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, i
 			kinds.add("other", 1)
 			continue
 		}
-		protocol, _, _, err := parseProxyProfile(proxy)
+		protocol, hy2, _, err := parseProxyProfile(proxy)
 		if err != nil {
 			unsupported++
 			kinds.add(proxyKind(proxy, err), 1)
@@ -71,6 +71,7 @@ func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, i
 			ID:       serverID(subscriptionID, string(identityBytes)),
 			Name:     stringValue(proxy["name"]),
 			Protocol: protocol,
+			Insecure: hy2 != nil && hy2.Insecure,
 		}
 		if seen[server.ID] {
 			continue

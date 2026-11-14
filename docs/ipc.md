@@ -515,6 +515,7 @@ on a panel that does not send them):
 | server | `node_label` | The owner's name of the node |
 | server | `via_country` | Country code where a `relay` path enters, when it is not the node's own |
 | server | `ipv6_egress` | `true` or `false`: whether IPv6 leaves through this path. Absent: the panel did not say. On `false` the engine treats the path as having no IPv6 at once (names get no IPv6 addresses, IPv6 destinations are turned away), without probing |
+| server | `insecure` | `true` when a Hysteria2 link or proxy asks not to check the server's certificate (`insecure=1`, `skip-cert-verify`) and gives no pin: the server is accepted and the window marks its row. Absent otherwise. Set when the subscription is read, from 0.1.7 |
 | subscription | `telegram` | Telegram proxies: `[{"node", "country", "city", "via", "via_country", "ipv6", "link"}]`. `link` opens in Telegram; it is a secret of the same kind as a server's credentials: for the trusted window only, never logged |
 | subscription | `devices_used`, `devices_limit` | Devices of this person on the panel and the allowed number; both absent when the panel does not count |
 | subscription | `debug` | `{"intake": bool, "unasked": bool, "request": {"id", "level", "note", "expires_unix"}}`: whether the panel takes debug logs, whether a send without a request is allowed, and the owner's open request. Absent: no intake (see "Debug logs") |

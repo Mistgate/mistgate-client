@@ -95,6 +95,10 @@ type Server struct {
 	NodeLabel  string `json:"node_label,omitempty"`
 	ViaCountry string `json:"via_country,omitempty"`
 	IPv6Egress *bool  `json:"ipv6_egress,omitempty"` // whether IPv6 leaves through this path; nil: the panel did not say
+	// The subscription asks not to check the server's certificate (Hysteria2 "insecure=1", "skip-cert-verify"): the
+	// window says so on the server's row. Set when the subscription is read, so one saved by a build before 0.1.7
+	// shows it after its next refresh.
+	Insecure bool `json:"insecure,omitempty"`
 }
 
 type Error struct {
@@ -666,10 +670,11 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, kindCounts, er
 		count++
 		protocol := strings.ToLower(scheme)
 		var err error
+		var hy2 *profile.Hy2
 		switch protocol {
 		case "hysteria2", "hy2":
 			protocol = "hysteria2"
-			_, err = profile.ParseHy2(line)
+			hy2, err = profile.ParseHy2(line)
 		case "vless":
 			_, err = profile.ParseVLESSLink(line)
 		default:
@@ -686,7 +691,7 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, kindCounts, er
 		}
 		name := linkFragment(line)
 		entry := strings.SplitN(line, "#", 2)[0]
-		server := Server{ID: serverID(id, entry), Name: name, Protocol: protocol}
+		server := Server{ID: serverID(id, entry), Name: name, Protocol: protocol, Insecure: hy2 != nil && hy2.Insecure}
 		if seen[server.ID] {
 			continue
 		}

@@ -285,6 +285,14 @@ func TestLinksOnOneLine(t *testing.T) {
 	if servers[0].Name != "One two" || servers[1].Name != "Three" {
 		t.Fatalf("names: %q, %q", servers[0].Name, servers[1].Name)
 	}
+	// the window marks a server whose certificate is not checked; a pinned one is checked against its pin
+	if !servers[0].Insecure {
+		t.Fatal("an insecure link is not marked")
+	}
+	pinned, _, _, _, err := parseEntries("hy2://a@203.0.113.5:443/?insecure=1&pinSHA256="+strings.Repeat("ab", 32)+" hy2://b@203.0.113.6:443", "sub")
+	if err != nil || len(pinned) != 2 || pinned[0].Insecure || pinned[1].Insecure {
+		t.Fatalf("pinned and plain links: %#v, %v", pinned, err)
+	}
 }
 
 func TestParseEntriesHysteriaPortHoppingLinks(t *testing.T) {
