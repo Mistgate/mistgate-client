@@ -61,9 +61,10 @@ type Subscription struct {
 	ReportLast *ReportLast `json:"report_last,omitempty"`
 
 	// UnsupportedKinds says what Unsupported was made of: kind -> count, the counts adding up to Unsupported. A kind is
-	// the scheme of a link or the type of a profile's proxy, lower case ("trojan", "ss"); a vless that failed has its
-	// reason in brackets ("vless (transport)"). Nothing of the server is in it (see kindCounts). Absent: nothing was
-	// unsupported, the subscription is managed, or it was saved by an older build and has not been refreshed since.
+	// the scheme of a link or the type of a profile's proxy, lower case ("trojan", "ss"); a VLESS or TrustTunnel link
+	// that failed can have its reason in brackets ("vless (transport)", "trusttunnel (subscription)"). Nothing of the
+	// server is in it (see kindCounts). Absent: nothing was unsupported, the subscription is managed, or it was saved by
+	// an older build and has not been refreshed since.
 	UnsupportedKinds map[string]int `json:"unsupported_kinds,omitempty"`
 }
 
@@ -95,9 +96,9 @@ type Server struct {
 	NodeLabel  string `json:"node_label,omitempty"`
 	ViaCountry string `json:"via_country,omitempty"`
 	IPv6Egress *bool  `json:"ipv6_egress,omitempty"` // whether IPv6 leaves through this path; nil: the panel did not say
-	// The subscription asks not to check the server's certificate (Hysteria2 "insecure=1", "skip-cert-verify"): the
-	// window says so on the server's row. Set when the subscription is read, so one saved by a build before 0.1.7
-	// shows it after its next refresh.
+	// The subscription asks not to check the server's certificate (Hysteria2 "insecure=1", TrustTunnel
+	// "skip_verification"): the window says so on the server's row. Set when the subscription is read, so one saved by a
+	// build before 0.1.7 shows it after its next refresh.
 	Insecure bool `json:"insecure,omitempty"`
 }
 
@@ -450,7 +451,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 			var err error
 			switch {
 			case strings.HasPrefix(entry.Raw, "{"):
-				p.Hy2, p.AWG, p.VLESS, err = pathProfile(entry.Raw)
+				p.Hy2, p.AWG, p.VLESS, p.TT, err = pathProfile(entry.Raw)
 			case entry.Server.Protocol == "hysteria2":
 				if strings.Contains(entry.Raw, "://") {
 					p.Hy2, err = profile.ParseHy2(entry.Raw)
@@ -463,6 +464,8 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 				} else { // a Mihomo profile's proxy
 					p.VLESS, err = parseVLESSEntry(entry.Raw)
 				}
+			case entry.Server.Protocol == "trusttunnel":
+				p.TT, err = profile.ParseTrustTunnel(entry.Raw)
 			case entry.Server.Protocol == "awg":
 				if strings.HasPrefix(strings.TrimSpace(entry.Raw), "[Interface]") {
 					p.AWG, err = profile.ParseAWG(entry.Raw)
@@ -671,12 +674,16 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, kindCounts, er
 		protocol := strings.ToLower(scheme)
 		var err error
 		var hy2 *profile.Hy2
+		var tt *profile.TrustTunnel
 		switch protocol {
 		case "hysteria2", "hy2":
 			protocol = "hysteria2"
 			hy2, err = profile.ParseHy2(line)
 		case "vless":
 			_, err = profile.ParseVLESSLink(line)
+		case "tt":
+			protocol = "trusttunnel"
+			tt, err = profile.ParseTrustTunnel(line)
 		default:
 			err = errors.New("unsupported link")
 		}
@@ -684,14 +691,22 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, kindCounts, er
 			unsupported++
 			if protocol == "vless" {
 				kinds.add(vlessKind(err), 1)
+			} else if protocol == "trusttunnel" {
+				kinds.add(profile.TrustTunnelKind(err), 1)
 			} else {
 				kinds.add(protocol, 1)
 			}
 			continue
 		}
 		name := linkFragment(line)
+		if tt != nil {
+			name = shortText(tt.Name)
+			if name == "" {
+				name = "TrustTunnel"
+			}
+		}
 		entry := strings.SplitN(line, "#", 2)[0]
-		server := Server{ID: serverID(id, entry), Name: name, Protocol: protocol, Insecure: hy2 != nil && hy2.Insecure}
+		server := Server{ID: serverID(id, entry), Name: name, Protocol: protocol, Insecure: hy2 != nil && hy2.Insecure || tt != nil && tt.Insecure}
 		if seen[server.ID] {
 			continue
 		}

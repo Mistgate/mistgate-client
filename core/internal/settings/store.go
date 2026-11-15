@@ -141,7 +141,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 		value.LAN = v
 	case "protocol":
 		var v string
-		if json.Unmarshal(raw, &v) != nil || v != "auto" && v != "hysteria2" && v != "awg" && v != "vless" {
+		if json.Unmarshal(raw, &v) != nil || v != "auto" && v != "hysteria2" && v != "awg" && v != "vless" && v != "trusttunnel" {
 			return false
 		}
 		value.Protocol = v

@@ -28,6 +28,9 @@ const rpc = <T = Status>(method: string, params: object = {}) => invoke<T>('rpc'
 const STEP: Record<string, number> = { resolve: 0, handshake: 2, tunnel: 3, verify: 3 };
 export const PROTO: Record<string, [fam: string, label: string, full: string]> = {
   hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'], vless: ['vless', 'VLESS', 'VLESS'],
+  // ponytail: TrustTunnel (HTTP/2 over TLS) wears the VLESS colour and icon, the design has none of its own; a node
+  // that offers both shows one chip in the hover card. Its own family when the design draws one.
+  trusttunnel: ['vless', 'TT', 'TrustTunnel'],
 };
 const mbps = (bps: number) => (bps / 1e6).toFixed(1);
 const DAY = 86400;
@@ -164,7 +167,7 @@ const PINGS: Record<string, number> = {};
 // would give the same. A path that reaches the node itself before one through a relay; VLESS first (one TCP connect),
 // then Hysteria2, AmneziaWG last: its handshake is a burst of junk packets under the device's key, and one per path
 // of every node on each start of the window looks like a flood from this address.
-const PROBE_ORDER = ['vless', 'hysteria2', 'awg'];
+const PROBE_ORDER = ['vless', 'trusttunnel', 'hysteria2', 'awg'];
 const probe = (n: { entries: { s: Server }[] }): string[] => {
   const rank = (s: Server) => (!s.via || s.via === 'direct' ? 0 : 10) + (PROBE_ORDER.indexOf(s.protocol) + 1 || 9);
   const first = [...n.entries].sort((a, b) => rank(a.s) - rank(b.s))[0];

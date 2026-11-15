@@ -26,10 +26,10 @@ panel branches, not released yet). The client implements enrol, sync, the block 
 
 ## Capabilities
 
-`X-Mistgate-Caps: v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1; probe=1`
+`X-Mistgate-Caps: v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1; trusttunnel=1; probe=1`
 
 A list of `name=version`. The panel does not hand out what is not listed (Gecko obfuscation only to clients that
-announce it, the AmneziaWG version by what is listed, VLESS paths only to `vless=1`), so a new protocol or feature appears without a new format
+announce it, the AmneziaWG version by what is listed, VLESS paths only to `vless=1`, TrustTunnel paths only to `trusttunnel=1`), so a new protocol or feature appears without a new format
 version. `v` is this API's version.
 
 ## Discovery
@@ -156,7 +156,7 @@ The body (stable key order; the client ignores fields it does not know):
   "servers": [
     { "id": "srv_…", "country": "DE", "city": "Frankfurt", "load": "low|medium|high",
       "paths": [
-        { "id": "pth_…", "protocol": "hysteria2|awg|vless", "via": "direct|relay|warp", "ipv6": false, "settings": { } }
+        { "id": "pth_…", "protocol": "hysteria2|awg|vless|trusttunnel", "via": "direct|relay|warp", "ipv6": false, "settings": { } }
       ] }
   ]
 }
@@ -213,6 +213,16 @@ The body (stable key order; the client ignores fields it does not know):
   8 bytes of hex, paths starting with `/` and free of spaces and control characters, names of DNS characters only. A
   transport, security, flow, mode or fingerprint it does not know makes the path unsupported (counted, not an error of
   the sync). The client gives Xray the server's address, never its name; `sni` and `host` are separate fields.
+- `trusttunnel` (TrustTunnel, HTTP/2 over TLS): `{ "server": "address or name to connect to", "port": 443, "sni": "name",
+  "username": "…", "password": "…", "transport": "h2|auto", "tls": "ca|pin", "pin_sha256": "64 hex" }`.
+  `sni` is required: it is the name sent and the name the certificate is checked against (`server` may be a relay's
+  address). `transport` `h2` and `auto` both mean HTTP/2 to this client. `tls` `ca` (or absent) is the ordinary
+  certificate check; `pin` checks only the SHA-256 of the leaf certificate's DER against `pin_sha256`, as for
+  Hysteria2; there is no mode without a check. `username` and `password` are opaque strings of the path (the panel
+  issues them per device). Sent only to a client that announces `trusttunnel=1`. The client reads these fields in one
+  place (`profile.ParseTrustTunnelPath`); an unknown `transport` or `tls`, a missing `sni` or a bad pin makes the path
+  unsupported. The endpoint may answer a refused request with any status: everything but 200 is a refusal, and the
+  client does not retry against an endpoint that refuses.
 
 **AmneziaWG keys.** The panel generates the device's key pairs and delivers them in `sync` (the owner's ruling). A
 key the client makes itself would be a later capability.

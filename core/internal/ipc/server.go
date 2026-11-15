@@ -229,7 +229,7 @@ func (s *Server) handle(ctx context.Context, request Request, trusted bool) (any
 				return nil, nil, badParams()
 			}
 			switch protocol {
-			case "auto", "hysteria2", "awg", "vless":
+			case "auto", "hysteria2", "awg", "vless", "trusttunnel":
 				target.Protocol = protocol
 			default:
 				return nil, nil, badParams()
@@ -628,6 +628,8 @@ func (s *Server) serverHosts(ctx context.Context, sub string) (map[string]Server
 			host = p.AWG.EndpointHost
 		case p.VLESS != nil:
 			host = p.VLESS.Host
+		case p.TT != nil:
+			host = p.TT.Host
 		}
 		if host == "" {
 			continue

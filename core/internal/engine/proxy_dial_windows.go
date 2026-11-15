@@ -92,6 +92,12 @@ func vlessDialer(o vlessOutbound) vpnDialer {
 	}
 }
 
+func ttDialer(o *ttOutbound) vpnDialer {
+	return func(ctx context.Context, host string, port uint16) (net.Conn, error) {
+		return o.DialAuthority(ctx, net.JoinHostPort(host, strconv.Itoa(int(port))))
+	}
+}
+
 func awgStackDialer(tnet *netstack.Net, allow func(netip.Addr) bool) vpnDialer {
 	return func(ctx context.Context, host string, port uint16) (net.Conn, error) {
 		if tnet == nil {

@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	capsHeader         = "v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1"
+	capsHeader         = "v=1; hysteria2=2; gecko=1; awg=2.0,3.1; vless=1; trusttunnel=1"
 	apiUserAgent       = "Mistgate/" + version.Service + " (Windows)"
 	minSyncSeconds     = 600
 	maxSyncSeconds     = 7 * 24 * 3600
@@ -522,7 +522,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 			}
 			path.Via = shortText(path.Via)
 			raw, err := json.Marshal(path)
-			if _, _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" || len(path.ID) > 128 {
+			if _, _, _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" || len(path.ID) > 128 {
 				st.Unsupported++
 				continue
 			}
@@ -668,16 +668,19 @@ func (s *Store) pendingKey(link string) (string, error) {
 	return key, s.remember(func(d *diskState) { d.Pending[link] = key })
 }
 
-// pathProfile turns a stored path (the panel's JSON) into a profile: Hysteria2 and AmneziaWG through the Mihomo proxy
-// parsers, so that one place knows the profiles and the UAPI; VLESS through its own settings parser.
-func pathProfile(raw string) (*profile.Hy2, *profile.AWG, *profile.VLESS, error) {
+// pathProfile turns stored panel JSON into a protocol profile using that protocol's settings parser.
+func pathProfile(raw string) (*profile.Hy2, *profile.AWG, *profile.VLESS, *profile.TrustTunnel, error) {
 	var path syncPath
 	if json.Unmarshal([]byte(raw), &path) != nil {
-		return nil, nil, nil, errors.New("invalid stored path")
+		return nil, nil, nil, nil, errors.New("invalid stored path")
 	}
 	if path.Protocol == "vless" {
 		vless, err := profile.ParseVLESS(path.Settings)
-		return nil, nil, vless, err
+		return nil, nil, vless, nil, err
+	}
+	if path.Protocol == "trusttunnel" {
+		trustTunnel, err := profile.ParseTrustTunnelPath(path.Settings)
+		return nil, nil, nil, trustTunnel, err
 	}
 	var proxy map[string]any
 	var err error
@@ -690,10 +693,10 @@ func pathProfile(raw string) (*profile.Hy2, *profile.AWG, *profile.VLESS, error)
 		err = errors.New("unsupported path protocol")
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	_, hy2, awg, err := parseProxyProfile(proxy)
-	return hy2, awg, nil, err
+	return hy2, awg, nil, nil, err
 }
 
 func hy2Proxy(settings json.RawMessage) (map[string]any, error) {

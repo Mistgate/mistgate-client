@@ -109,7 +109,7 @@ soonest (the first of the list when none answers). `server_id` is the id of the 
 repeat, ids do not.
 
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
-protocol that are actually in use (`hysteria2`, `awg` or `vless`; a window that only knows the first two must show an
+protocol that are actually in use (`hysteria2`, `awg`, `vless` or `trusttunnel`; a window that only knows the first two must show an
 unknown value as plain text, not guess).
 
 VLESS runs on an embedded Xray-core (REALITY or TLS; raw, xhttp or ws transport; Vision flow), only from a panel's
@@ -157,7 +157,7 @@ means the user's original choice, not the one the retries moved to).
 
 Settings are saved as plain JSON in `<data directory>\settings.json`; a missing or broken file starts with defaults.
 `kill_switch` is `off`, `while`, or `always` (default `while`); `lan` allows private and link-local addresses through
-the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, `awg`, or `vless` (default `auto`); `game` prefers AWG
+the kill switch (default `true`); `protocol` is `auto`, `hysteria2`, `awg`, `vless` or `trusttunnel` (default `auto`); `game` prefers AWG
 when protocol selection is automatic (default `false`); `route_mode` is `all`, `smart`, or `selected` (default `all`), and
 `route_region` is `auto`, `none`, or a two-letter lower-case country code (default `auto`). `settings.set` accepts only these keys, updates only the keys
 provided, and returns `bad_params` for an unknown key or invalid value. Changes apply immediately to the active
@@ -522,6 +522,11 @@ on a panel that does not send them):
 
 Subscriptions expose `notice` (empty when the panel sent no message), the panel's `Announce` response header decoded
 from plain text or `base64:<value>`.
+`tt://` links of TrustTunnel are read too (the binary form of its DEEP_LINK.md, versions up to 2, with or without the
+`?`; protocol `trusttunnel`): the client connects over HTTP/2 only, whatever the link asks; `anti_dpi` and
+`dns_upstreams` are not used; a link that needs a TLS client random (`client_random_prefix`,
+`client_random_auth_key`) or carries only a subscription address is counted in `unsupported` (kinds
+`trusttunnel (client random)`, `trusttunnel (subscription)`); `skip_verification` marks the server `insecure`.
 `vless://` share links are read too (the v2rayN form), and `vless` proxies of a Mihomo profile: REALITY, TLS or no
 outer encryption at all (`security=none`, as some providers give it: the network then sees that it is VLESS), over raw
 (`type=tcp`), `xhttp`, `ws`, `httpupgrade` or `grpc`, with `sni`, `fp`, `pbk`, `sid`, `spx`, `flow` (Vision, on raw with

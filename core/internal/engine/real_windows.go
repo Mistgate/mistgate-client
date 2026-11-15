@@ -35,6 +35,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 	"github.com/mistgate/mistgate-client/core/internal/stun"
+	ttclient "github.com/mistgate/mistgate-client/core/internal/trusttunnel"
 	"github.com/mistgate/mistgate-client/core/internal/xray"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
@@ -93,6 +94,7 @@ type realTunnel struct {
 	adapter *netcfg.Adapter
 	client  client.Client
 	vless   *xray.Instance
+	tt      *ttOutbound
 	bridge  *gvisorBridge
 	awg     *device.Device
 }
@@ -556,7 +558,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	split := selected.PanelSplit
 	r.panelSplit.Store(&split)
 	run.tunnel.mu.Lock()
-	run.tunnel.noIPv6 = selected.NoIPv6
+	run.tunnel.noIPv6 = selected.NoIPv6 || selected.TT != nil && !selected.TT.HasIPv6
 	run.tunnel.mu.Unlock()
 	host, port, err := profileEndpoint(selected)
 	if err != nil {
@@ -568,8 +570,22 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	var before time.Duration
 
 	step(report, StepResolve)
-	serverIP, err := r.resolveServer(runCtx, run, host, target.Hold)
-	if err != nil {
+	var serverIP netip.Addr
+	var endpoint netip.AddrPort
+	var ttEndpoints []netip.AddrPort
+	if selected.Protocol == "trusttunnel" {
+		ttEndpoints, err = resolveTTAddresses(runCtx, r, run, selected.TT, target.Hold)
+		if len(ttEndpoints) > 0 {
+			endpoint = ttEndpoints[0]
+			serverIP = endpoint.Addr()
+		}
+	} else {
+		serverIP, err = r.resolveServer(runCtx, run, host, target.Hold)
+		if err == nil {
+			endpoint = netip.AddrPortFrom(serverIP, port)
+		}
+	}
+	if err != nil || !serverIP.IsValid() {
 		if runCtx.Err() != nil {
 			return Info{}, runCtx.Err()
 		}
@@ -581,7 +597,6 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if err := runCtx.Err(); err != nil {
 		return Info{}, err
 	}
-	endpoint := netip.AddrPortFrom(serverIP, port)
 	r.setAutoRegion("")
 	route := "all"
 	useForwarder := configured.RouteMode == "smart" || configured.RouteMode == "selected"
@@ -656,6 +671,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	var awgStack bool // AmneziaWG runs its own stack behind the forwarder, not on the adapter itself
 	var hy2Client client.Client
 	var vlessOut vlessOutbound
+	var ttOut *ttOutbound
 	var awgDNS []netip.Addr
 	// The settings read here are the ones this attempt uses; a change makes the manager start a new attempt.
 	customDNS, customMTU := configured.DNSAddrs(), configured.MTU
@@ -705,6 +721,28 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			return Info{}, context.Canceled
 		}
 		vlessOut = vlessOutbound{x: x}
+	} else if selected.Protocol == "trusttunnel" {
+		ttOut, err = startTT(runCtx, selected.TT, ttEndpoints)
+		if err != nil {
+			if runCtx.Err() != nil {
+				return Info{}, runCtx.Err()
+			}
+			switch {
+			case isTTRefusal(err):
+				return Info{}, failure("auth_rejected", "TrustTunnel endpoint refused the handshake")
+			case errors.Is(err, ttclient.ErrCertificate):
+				return Info{}, failure("tunnel_failed", "TrustTunnel certificate verification")
+			case errors.Is(err, ttclient.ErrALPN):
+				return Info{}, failure("no_server_answers", "TrustTunnel endpoint does not support HTTP/2")
+			default:
+				return Info{}, failure("no_server_answers", "TrustTunnel handshake")
+			}
+		}
+		endpoint = ttOut.Endpoint()
+		serverIP = endpoint.Addr()
+		if !run.tunnel.setTT(ttOut) {
+			return Info{}, context.Canceled
+		}
 	} else {
 		adapter, err := netcfg.Create(awgMTU)
 		if err != nil {
@@ -745,11 +783,13 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		return Info{}, err
 	}
 	adapter := run.tunnel.adapterSnapshot()
-	if selected.Protocol == "hysteria2" || selected.Protocol == "vless" {
+	if selected.Protocol == "hysteria2" || selected.Protocol == "vless" || selected.Protocol == "trusttunnel" {
 		// both carry the traffic in this process: the adapter is only a door to the forwarder
 		name, via := "Hysteria2", outbound(hy2Outbound{client: hy2Client})
 		if selected.Protocol == "vless" {
 			name, via = "VLESS", vlessOut
+		} else if selected.Protocol == "trusttunnel" {
+			name, via = "TrustTunnel", ttOut
 		}
 		mtu := 1500
 		if customMTU != 0 {
@@ -864,6 +904,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		proxyDial = hy2Dialer(hy2Outbound{client: hy2Client})
 	case selected.Protocol == "vless":
 		proxyDial = vlessDialer(vlessOut)
+	case selected.Protocol == "trusttunnel":
+		proxyDial = ttDialer(ttOut)
 	case awgStack:
 		proxyDial = awgStackDialer(awgNet, r.AllowDest)
 	default:
@@ -1298,6 +1340,18 @@ func (t *realTunnel) setVLESS(x *xray.Instance) bool {
 	return false
 }
 
+func (t *realTunnel) setTT(out *ttOutbound) bool {
+	t.mu.Lock()
+	if !t.closed {
+		t.tt = out
+		t.mu.Unlock()
+		return true
+	}
+	t.mu.Unlock()
+	_ = out.Close()
+	return false
+}
+
 func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -1351,8 +1405,8 @@ func (t *realTunnel) Close() {
 		return
 	}
 	t.closed = true
-	bridge, awg, hclient, adapter, vless := t.bridge, t.awg, t.client, t.adapter, t.vless
-	t.bridge, t.awg, t.client, t.adapter, t.vless = nil, nil, nil, nil, nil
+	bridge, awg, hclient, adapter, vless, tt := t.bridge, t.awg, t.client, t.adapter, t.vless, t.tt
+	t.bridge, t.awg, t.client, t.adapter, t.vless, t.tt = nil, nil, nil, nil, nil, nil
 	t.mu.Unlock()
 	if bridge != nil {
 		bridge.Close()
@@ -1367,6 +1421,9 @@ func (t *realTunnel) Close() {
 	}
 	if vless != nil {
 		_ = vless.Close()
+	}
+	if tt != nil {
+		_ = tt.Close()
 	}
 	if adapter != nil {
 		_ = adapter.Close()
@@ -1390,6 +1447,16 @@ func profileEndpoint(p profile.Profile) (string, uint16, error) {
 			return "", 0, errors.New("missing VLESS endpoint")
 		}
 		return p.VLESS.Host, p.VLESS.Port, nil
+	case "trusttunnel":
+		if p.TT == nil || len(p.TT.Addresses) == 0 {
+			return "", 0, errors.New("missing TrustTunnel endpoint")
+		}
+		host, portText, err := net.SplitHostPort(p.TT.Addresses[0])
+		port, portErr := strconv.ParseUint(portText, 10, 16)
+		if err != nil || portErr != nil || port == 0 {
+			return "", 0, errors.New("invalid TrustTunnel endpoint")
+		}
+		return host, uint16(port), nil
 	default:
 		return "", 0, errors.New("unsupported profile protocol")
 	}

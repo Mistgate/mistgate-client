@@ -23,6 +23,7 @@ type Profile struct {
 	Hy2      *Hy2
 	AWG      *AWG
 	VLESS    *VLESS
+	TT       *TrustTunnel
 	Verify   string
 	// From a panel's client API: how the path reaches the server (direct, relay, warp); empty when not known.
 	Via string

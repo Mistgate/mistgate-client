@@ -46,6 +46,9 @@ func TestStoreRoundTripAndChanges(t *testing.T) {
 	if got, err := reopened.Set(map[string]json.RawMessage{"protocol": json.RawMessage(`"vless"`)}); err != nil || got.Protocol != "vless" {
 		t.Fatalf("vless protocol = %#v, %v", got, err)
 	}
+	if got, err := reopened.Set(map[string]json.RawMessage{"protocol": json.RawMessage(`"trusttunnel"`)}); err != nil || got.Protocol != "trusttunnel" {
+		t.Fatalf("trusttunnel protocol = %#v, %v", got, err)
+	}
 	if _, err := reopened.Set(map[string]json.RawMessage{"protocol": json.RawMessage(`"vmess"`)}); err != ErrBadParams {
 		t.Fatalf("unknown protocol error = %v, want ErrBadParams", err)
 	}

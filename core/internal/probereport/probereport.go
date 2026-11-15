@@ -50,7 +50,7 @@ type Server struct {
 //	ok                           -> ok
 //	blocked / udp_no_answer      -> handshake_failed (the host answers, the Hysteria2 or AmneziaWG handshake does not)
 //	down / no_answer             -> no_answer (nothing answers, neither the handshake nor TCP)
-//	blocked / no_answer (VLESS)  -> left out: the check cannot tell a cut TCP connect from a failed handshake
+//	blocked / no_answer (VLESS, TrustTunnel) -> left out: the check cannot tell a cut TCP connect from a failed handshake
 //	down / not_found, config, app -> left out: our name lookup, our settings or our engine, not the network
 //
 // freeze and tcp_blocked are never sent: the client's freeze check is not per server, and it has no TCP-only probe.

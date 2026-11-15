@@ -30,6 +30,7 @@ import (
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	ttclient "github.com/mistgate/mistgate-client/core/internal/trusttunnel"
 	"github.com/mistgate/mistgate-client/core/internal/xray"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
@@ -98,10 +99,7 @@ func dialBound(ctx context.Context, network, address string, physical interfaceI
 
 func resolveHost(ctx context.Context, host string, physical interfaceInfo, _ Config) (netip.Addr, error) {
 	if ip, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
-		if ip.Is4() {
-			return ip, nil
-		}
-		return netip.Addr{}, errors.New("IPv6 endpoint is unsupported")
+		return ip.Unmap(), nil
 	}
 	if len(physical.DNS) == 0 {
 		return netip.Addr{}, errors.New("no physical DNS resolver")
@@ -187,6 +185,8 @@ func attemptProfile(ctx context.Context, p profile.Profile, endpoint netip.AddrP
 		return attemptHy2(ctx, p.Hy2, endpoint, physical)
 	case "vless":
 		return attemptVLESS(ctx, p.VLESS, endpoint, physical)
+	case "trusttunnel":
+		return attemptTT(ctx, p.TT, endpoint, physical)
 	case "awg":
 		if LiveAWG != nil {
 			if id, rtt := LiveAWG(); id != "" && id == p.ID {
@@ -395,6 +395,50 @@ func attemptVLESS(ctx context.Context, p *profile.VLESS, endpoint netip.AddrPort
 		return 0, errAuthRejected
 	}
 	return 0, errNoAnswer
+}
+
+func attemptTT(ctx context.Context, p *profile.TrustTunnel, endpoint netip.AddrPort, physical interfaceInfo) (time.Duration, error) {
+	if p == nil || !endpoint.IsValid() || ctx.Err() != nil {
+		return 0, errNoAnswer
+	}
+	started := time.Now()
+	client, err := ttclient.Dial(ctx, ttclient.Config{
+		Host: p.Host, Addresses: []string{endpoint.String()}, SNI: p.SNI, Username: p.Username, Password: p.Password,
+		HasIPv6: p.HasIPv6, Insecure: p.Insecure, PinSHA256: p.PinSHA256, HasPin: p.HasPin, Certs: p.Certs, Name: p.Name,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return dialBound(ctx, network, address, physical)
+		},
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ttclient.ErrAuth):
+			return 0, errAuthRejected
+		case errors.Is(err, ttclient.ErrCertificate), errors.Is(err, ttclient.ErrConfig):
+			return 0, errBadConfig
+		default:
+			return 0, errNoAnswer
+		}
+	}
+	defer client.Close()
+	if err := client.Check(ctx); err != nil {
+		switch {
+		case isTrustTunnelRefusal(err):
+			return 0, errAuthRejected
+		case errors.Is(err, ttclient.ErrCertificate), errors.Is(err, ttclient.ErrConfig):
+			return 0, errBadConfig
+		default:
+			return 0, errNoAnswer
+		}
+	}
+	return max(time.Since(started), time.Microsecond), nil
+}
+
+func isTrustTunnelRefusal(err error) bool {
+	if errors.Is(err, ttclient.ErrAuth) {
+		return true
+	}
+	var status ttclient.StatusError
+	return errors.As(err, &status)
 }
 
 func attemptAWG(ctx context.Context, p *profile.AWG, endpoint netip.AddrPort, physical interfaceInfo, timeout time.Duration) (time.Duration, error) {

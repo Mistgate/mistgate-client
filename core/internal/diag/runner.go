@@ -500,7 +500,7 @@ func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo
 	// ponytail: a dead service on a live host can look blocked; upgrade = combine with panel node health.
 	if alive {
 		server.Verdict, server.Reason = "blocked", "udp_no_answer"
-		if p.Protocol == "vless" { // TCP all the way: UDP has nothing to do with it
+		if p.Protocol == "vless" || p.Protocol == "trusttunnel" { // TCP all the way: UDP has nothing to do with it
 			server.Reason = "no_answer"
 		}
 		return server, true
@@ -527,11 +527,10 @@ func Handshake(ctx context.Context, p profile.Profile, timeout time.Duration) (t
 	return attemptProfile(ctx, p, endpoint, physical, Config{AWGTimeout: timeout})
 }
 
-// Latency is the round trip to p's server, for a number on the screen. It is Handshake's, except that VLESS needs no
-// handshake for it: one TCP connect to the server's port is the same circle, without a session through the server
-// every time the number is asked for.
+// Latency is the round trip to p's server, for a number on the screen. For VLESS and TrustTunnel, one TCP connect to
+// the server's port is the same circle, without a session through the server every time the number is asked for.
 func Latency(ctx context.Context, p profile.Profile, timeout time.Duration) (time.Duration, error) {
-	if p.Protocol != "vless" {
+	if p.Protocol != "vless" && p.Protocol != "trusttunnel" {
 		return Handshake(ctx, p, timeout)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -541,7 +540,11 @@ func Latency(ctx context.Context, p profile.Profile, timeout time.Duration) (tim
 		return 0, err
 	}
 	started := time.Now()
-	conn, err := dialBound(ctx, "tcp4", endpoint.String(), physical)
+	network := "tcp6"
+	if endpoint.Addr().Is4() {
+		network = "tcp4"
+	}
+	conn, err := dialBound(ctx, network, endpoint.String(), physical)
 	if err != nil {
 		return 0, errNoAnswer
 	}
@@ -591,6 +594,16 @@ func profileEndpoint(p profile.Profile) (string, uint16, error) {
 			return "", 0, errors.New("invalid profile")
 		}
 		return p.VLESS.Host, p.VLESS.Port, nil
+	case "trusttunnel":
+		if p.TT == nil || len(p.TT.Addresses) == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		host, portText, err := net.SplitHostPort(p.TT.Addresses[0])
+		port, portErr := strconv.ParseUint(portText, 10, 16)
+		if err != nil || portErr != nil || port == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		return host, uint16(port), nil
 	default:
 		return "", 0, errors.New("invalid profile")
 	}

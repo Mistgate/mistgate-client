@@ -670,3 +670,83 @@ func TestClientAPIVLESSPaths(t *testing.T) {
 		}
 	}
 }
+
+func trustTunnelPathSettings(change map[string]any) map[string]any {
+	settings := map[string]any{
+		"server": "relay.example.test", "port": 443, "sni": "node.example.test", "username": "device", "password": "secret",
+		"transport": "h2", "tls": "ca",
+	}
+	for key, value := range change {
+		if value == nil {
+			delete(settings, key)
+		} else {
+			settings[key] = value
+		}
+	}
+	return settings
+}
+
+func trustTunnelPath(id, via string, ipv6Egress bool, settings map[string]any) map[string]any {
+	path := apiPath(id, "trusttunnel", via, false, settings)
+	path["label"] = "TrustTunnel"
+	path["ipv6_egress"] = ipv6Egress
+	return path
+}
+
+func TestClientAPITrustTunnelPaths(t *testing.T) {
+	if !strings.Contains(capsHeader, "trusttunnel=1") {
+		t.Fatalf("caps %q do not announce TrustTunnel", capsHeader)
+	}
+	panel, store, sub := managedStore(t)
+	panel.set(func() {
+		panel.syncBody = syncDoc("active",
+			apiServer("Berlin", "DE",
+				apiPath("pth_vless", "vless", "direct", false, vlessPathSettings(nil)),
+				trustTunnelPath("pth_tt_pin", "relay", false, trustTunnelPathSettings(map[string]any{"transport": "auto", "tls": "pin", "pin_sha256": strings.Repeat("aB", 32)})),
+				trustTunnelPath("pth_tt_ca", "direct", true, trustTunnelPathSettings(nil)),
+				trustTunnelPath("pth_tt_transport", "direct", true, trustTunnelPathSettings(map[string]any{"transport": "h3"})),
+				trustTunnelPath("pth_tt_tls", "direct", true, trustTunnelPathSettings(map[string]any{"tls": "skip"})),
+				trustTunnelPath("pth_tt_sni", "direct", true, trustTunnelPathSettings(map[string]any{"sni": nil})),
+				trustTunnelPath("pth_tt_port", "direct", true, trustTunnelPathSettings(map[string]any{"port": 70000})),
+				trustTunnelPath("pth_tt_username_control", "direct", true, trustTunnelPathSettings(map[string]any{"username": "bad\nuser"})),
+				trustTunnelPath("pth_tt_password_control", "direct", true, trustTunnelPathSettings(map[string]any{"password": "bad\x7fpass"})),
+				trustTunnelPath("pth_tt_username_colon", "direct", true, trustTunnelPathSettings(map[string]any{"username": "bad:user"})),
+				trustTunnelPath("pth_tt_pin_missing", "direct", true, trustTunnelPathSettings(map[string]any{"tls": "pin"})),
+				trustTunnelPath("pth_tt_pin_bad", "direct", true, trustTunnelPathSettings(map[string]any{"tls": "pin", "pin_sha256": strings.Repeat("g", 64)})),
+			))
+	})
+	got, err := store.Refresh(context.Background(), sub.ID)
+	if err != nil || got.Error != "" || len(got.Servers) != 3 || got.Unsupported != 9 {
+		t.Fatalf("refresh = %#v, %v (invalid TrustTunnel paths should be counted unsupported)", got, err)
+	}
+	if got.UnsupportedKinds != nil {
+		t.Fatalf("managed sync unexpectedly recorded unsupported kinds: %v", got.UnsupportedKinds)
+	}
+	if got.Servers[1].ID != "pth_tt_pin" || got.Servers[1].Protocol != "trusttunnel" || got.Servers[2].Protocol != "trusttunnel" {
+		t.Fatalf("servers = %#v", got.Servers)
+	}
+	profiles, err := store.Profiles()
+	if err != nil || len(profiles) != 3 {
+		t.Fatalf("profiles = %d, %v", len(profiles), err)
+	}
+	pin, ca := profiles[1], profiles[2]
+	if pin.Protocol != "trusttunnel" || pin.TT == nil || pin.Hy2 != nil || pin.AWG != nil || pin.VLESS != nil ||
+		pin.TT.Host != "node.example.test" || pin.TT.SNI != "node.example.test" || pin.TT.Addresses[0] != "relay.example.test:443" ||
+		pin.TT.Username != "device" || pin.TT.Password != "secret" || !pin.TT.HasPin || pin.TT.PinSHA256[0] != 0xab ||
+		!pin.TT.HasIPv6 || !pin.NoIPv6 || pin.Via != "relay" {
+		t.Fatal("pinned TrustTunnel path profile has incorrect fields")
+	}
+	if ca.TT == nil || ca.TT.HasPin || ca.TT.Insecure || ca.NoIPv6 {
+		t.Fatal("CA TrustTunnel path profile has incorrect fields")
+	}
+	for _, entry := range store.state.Subscriptions[0].Entries {
+		if entry.Server.ID == "pth_tt_pin" {
+			var path syncPath
+			if !strings.HasPrefix(entry.Raw, "{") || json.Unmarshal([]byte(entry.Raw), &path) != nil || path.Protocol != "trusttunnel" {
+				t.Fatal("stored TrustTunnel path is not raw path JSON")
+			}
+			return
+		}
+	}
+	t.Fatal("stored TrustTunnel path not found")
+}
