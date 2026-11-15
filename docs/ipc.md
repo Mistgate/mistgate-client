@@ -233,7 +233,9 @@ is, and the `routes` event fires when they end, as after any list refresh. `rout
 last `routes` state (`entries` is its number of IPv4 prefixes) and the collection ids as in the rules (`geosite:<name>`,
 `list:<url>`; `entries` is the number of domains). `updated_unix` is the time of the last good download (the cached file's
 time; `0` when there is none). `error` is the code of the last failed download, empty when the last one worked:
-`fetch_failed` (no answer, or not `200`, or too large), `bad_list` (an answer that is not a valid list) or
+`fetch_failed` (no answer, or not `200`, or too large), `bad_list` (an answer that is not a valid list; also a region list with a prefix shorter than /8, and a daily
+refresh whose list is under half or over three times the size of the copy in use: that copy stays, and `routes.update`,
+which the person asks for, takes the list as it is) or
 `write_failed`; it never holds a URL or server text. `unique` is the number of distinct domains over all the collections
 together (the region list is not counted) and `duplicates` is the sum of their `entries` minus `unique`.
 

@@ -210,15 +210,23 @@ func (s *Store) refreshSites(collection, path string) {
 		s.siteRefreshing[collection] = false
 		s.mu.Unlock()
 	}()
-	if s.pullSites(context.Background(), collection, path) {
+	if s.pullSites(context.Background(), collection, path, false) {
 		s.rebuildSiteRules()
 		s.signalChange()
 	}
 }
 
 // pullSites downloads one site collection now and swaps it in; a failure keeps the old copy and is remembered.
-func (s *Store) pullSites(ctx context.Context, collection, path string) bool {
+func (s *Store) pullSites(ctx context.Context, collection, path string, manual bool) bool {
 	data, set, err := s.fetchSites(ctx, collection)
+	if err == nil && !manual {
+		s.mu.Lock()
+		old := s.siteSets[collection]
+		s.mu.Unlock()
+		if jumped(old.Len(), set.Len(), 20) { // as for a region list
+			err = errBadList
+		}
+	}
 	if err == nil && s.save(path, data) != nil {
 		err = errWriteFailed
 	}

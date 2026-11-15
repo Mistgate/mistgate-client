@@ -55,7 +55,7 @@ func (s *Store) Update(ctx context.Context, region string) {
 	var group sync.WaitGroup
 	var sitesChanged atomic.Bool
 	if ValidRegion(region) {
-		group.Go(func() { s.pullRegion(ctx, region) })
+		group.Go(func() { s.pullRegion(ctx, region, true) })
 	}
 	for _, collection := range ruleCollections(s.GetRules()) {
 		path, _, ok := siteCachePath(s.dir, collection)
@@ -63,7 +63,7 @@ func (s *Store) Update(ctx context.Context, region string) {
 			continue
 		}
 		group.Go(func() {
-			if s.pullSites(ctx, collection, path) {
+			if s.pullSites(ctx, collection, path, true) {
 				sitesChanged.Store(true)
 			}
 		})

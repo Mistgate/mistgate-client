@@ -96,6 +96,11 @@ func parse(data []byte) (*Set, error) {
 		if !prefix.Addr().Is4() {
 			continue
 		}
+		// No country and no service owns more than a /8: a shorter prefix (0.0.0.0/0 above all) in a list that sends
+		// addresses past the VPN is a broken or a hostile list, and the whole list is refused.
+		if prefix.Bits() < minPrefixBits {
+			return nil, fmt.Errorf("prefix too short on line %d", lineNo)
+		}
 		valid++
 		prefix = prefix.Masked()
 		raw := prefix.Addr().As4()
@@ -356,14 +361,24 @@ func (s *Store) refresh(cc string) {
 		s.refreshing[cc] = false
 		s.mu.Unlock()
 	}()
-	if s.pullRegion(context.Background(), cc) {
+	if s.pullRegion(context.Background(), cc, false) {
 		s.signalChange()
 	}
 }
 
 // pullRegion downloads one region list now and swaps it in; a failure keeps the old copy and is remembered.
-func (s *Store) pullRegion(ctx context.Context, cc string) bool {
+// A list that came back less than half or more than three times the size of the copy in use is not taken by the
+// daily refresh (see jumped); asked for by the person (manual), it is taken as it is.
+func (s *Store) pullRegion(ctx context.Context, cc string, manual bool) bool {
 	data, set, err := s.fetch(ctx, cc)
+	if err == nil && !manual {
+		s.mu.Lock()
+		old := s.sets[cc]
+		s.mu.Unlock()
+		if old != nil && jumped(old.prefixes, set.prefixes, 200) {
+			err = errBadList
+		}
+	}
 	if err == nil && s.save(filepath.Join(s.dir, cc+".list"), data) != nil {
 		err = errWriteFailed
 	}
@@ -455,4 +470,15 @@ func writeAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(temp.Name(), path)
+}
+
+// minPrefixBits is the shortest prefix a region list may carry.
+const minPrefixBits = 8
+
+// jumped says that a downloaded list differs from the copy in use more than a day of the Internet changes it: fewer
+// than half the entries, or more than three times as many. Such a download is a cut-off file, a source that broke,
+// or a file put in its place; the copy in use stays. Lists under floor entries are too small to judge.
+// ponytail: a real change of that size waits for the person to press Update, which takes the list as it is.
+func jumped(old, fresh, floor int) bool {
+	return old >= floor && (fresh*2 < old || fresh > old*3)
 }

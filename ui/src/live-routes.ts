@@ -61,8 +61,13 @@ const ADS = geosite('category-ads-all');
 const BACK = Object.fromEntries(Object.entries(COL).map(([k, v]) => [v, k]));
 // Public lists worth offering where they apply, shown on the Lists sheet, off: in "Only selected" what a region
 // blocks (that is what goes through the VPN there), in Smart the region's own services (they go direct).
-// ponytail: Russia only, the lists the tiles already use.
-const OFFER: Record<string, Record<string, string[]>> = { only: { ru: [COL.rkn, COL.geo] }, except: { ru: [COL.rusvc] } };
+// In Smart the narrow lists come too (one service, one kind of service): names of those services that live
+// outside the region's addresses still go direct.
+// ponytail: Russia only; names only, a narrow list has no addresses of its own.
+const OFFER: Record<string, Record<string, string[]>> = {
+  only: { ru: [COL.rkn, COL.geo] },
+  except: { ru: [COL.rusvc, geosite('yandex'), geosite('vk'), geosite('category-bank-ru'), geosite('category-gov-ru')] },
+};
 const TONES = ['lav', 'sky', 'mint', 'sand', 'rose'];
 // a list as its row names it: the public collection's id, or the host and path of a link
 const listName = (id: string) => id.replace(/^geosite:/, '').replace(/^list:https:\/\/(www\.)?/, '').replace(/^raw\.githubusercontent\.com\//, '');

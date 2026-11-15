@@ -206,3 +206,32 @@ func listBody(first string) string {
 	}
 	return body.String()
 }
+
+func TestParseRefusesPrefixesShorterThanSlash8(t *testing.T) {
+	var list strings.Builder
+	for i := 0; i < minPrefixes; i++ {
+		fmt.Fprintf(&list, "198.%d.%d.0/24\n", 18+i/256, i%256)
+	}
+	if _, err := parse([]byte(list.String())); err != nil {
+		t.Fatalf("a sane list: %v", err)
+	}
+	for _, bad := range []string{"0.0.0.0/0", "128.0.0.0/1", "10.0.0.0/7"} {
+		if _, err := parse([]byte(list.String() + bad + "\n")); err == nil {
+			t.Fatalf("a list with %s was accepted", bad)
+		}
+	}
+	if _, err := parse([]byte(list.String() + "11.0.0.0/8\n")); err != nil {
+		t.Fatalf("a /8: %v", err)
+	}
+}
+
+func TestJumped(t *testing.T) {
+	for _, c := range []struct {
+		old, fresh int
+		want       bool
+	}{{1000, 1000, false}, {1000, 500, false}, {1000, 499, true}, {1000, 3000, false}, {1000, 3001, true}, {150, 10, false}, {0, 5000, false}} {
+		if got := jumped(c.old, c.fresh, 200); got != c.want {
+			t.Fatalf("jumped(%d, %d) = %v", c.old, c.fresh, got)
+		}
+	}
+}
