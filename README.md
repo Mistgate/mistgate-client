@@ -5,7 +5,7 @@
 <h1>Mistgate for Windows</h1>
 
 <p>A VPN app that finds a working way on its own and says honestly when something is blocked.<br>
-Hysteria2, AmneziaWG and VLESS in one window. For <a href="https://github.com/Mistgate/mistgate">Mistgate</a> panels and for plain subscription links.</p>
+Hysteria2, AmneziaWG, VLESS and TrustTunnel in one window. For <a href="https://github.com/Mistgate/mistgate">Mistgate</a> panels and for plain subscription links.</p>
 
 <p>
 <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-f2c46b">
@@ -32,9 +32,9 @@ Hysteria2, AmneziaWG and VLESS in one window. For <a href="https://github.com/Mi
 You add a subscription once. The app keeps the server list up to date, connects with the protocol that works on the
 network you are on, and sends through the VPN only what you want there.
 
-- **One switch, three protocols.** Hysteria2, AmneziaWG and VLESS. *Auto* takes the server that answers quickest right
+- **One switch, four protocols.** Hysteria2, AmneziaWG, VLESS and TrustTunnel. *Auto* takes the server that answers quickest right
   now; you can also pick the server and the protocol yourself.
-- **With a Mistgate panel, and without one.** Paste a subscription link, `hysteria2://` or `vless://` links, a Mihomo
+- **With a Mistgate panel, and without one.** Paste a subscription link, `hysteria2://`, `vless://` or `tt://` links, a Mihomo
   profile or an AmneziaWG config. On a Mistgate panel the app enrols this PC with its own key, follows the panel's
   servers, and shows the plan, the data used and the devices.
 - **Routes.** *Smart* leaves local sites and the home network outside the VPN, *Only selected* sends through it just
@@ -65,8 +65,9 @@ network you are on, and sends through the VPN only what you want there.
 | Hysteria2 | The official Hysteria2 core, linked in | UDP (QUIC). Salamander obfuscation, port hopping. |
 | AmneziaWG | amneziawg-go, linked in | Versions 2.0 and 3.1, a key per device from a Mistgate panel or a `.conf` file. |
 | VLESS | Xray-core, linked in | REALITY or TLS; RAW with Vision, XHTTP and WebSocket. |
+| TrustTunnel | The app's own client | HTTP/2 over TLS, TCP and UDP. The certificate is checked against the system's roots or the pin a panel sends. |
 
-All three run inside one Windows service and one wintun adapter. Not supported: VMess, Trojan, Shadowsocks, TUIC and
+All four run inside one Windows service and one wintun adapter. Not supported: VMess, Trojan, Shadowsocks, TUIC and
 plain WireGuard.
 
 ## Install

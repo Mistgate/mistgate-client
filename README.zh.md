@@ -5,7 +5,7 @@
 <h1>Mistgate Windows 客户端</h1>
 
 <p>一款会自己找到可用线路、并在被封锁时如实告诉你的 VPN 应用。<br>
-Hysteria2、AmneziaWG 和 VLESS 集于一个窗口。适用于 <a href="https://github.com/Mistgate/mistgate">Mistgate</a> 面板，也适用于普通订阅链接。</p>
+Hysteria2、AmneziaWG、VLESS 和 TrustTunnel 集于一个窗口。适用于 <a href="https://github.com/Mistgate/mistgate">Mistgate</a> 面板，也适用于普通订阅链接。</p>
 
 <p>
 <img alt="beta" src="https://img.shields.io/badge/status-beta-f2c46b">
@@ -33,8 +33,8 @@ Hysteria2、AmneziaWG 和 VLESS 集于一个窗口。适用于 <a href="https://
 
 订阅只需添加一次。应用会自动更新服务器列表，用当前网络下可用的协议连接，并且只让你指定的流量走 VPN。
 
-- **一个开关，三种协议。** Hysteria2、AmneziaWG 和 VLESS。*自动* 会选择此刻响应最快的服务器；也可以自己选择服务器和协议。
-- **有无 Mistgate 面板都能用。** 粘贴订阅链接、`hysteria2://` 或 `vless://` 链接、Mihomo 配置或 AmneziaWG 配置即可。使用 Mistgate 面板时，应用用自己的密钥登记这台电脑，跟随面板的服务器，并显示套餐、已用流量和设备。
+- **一个开关，四种协议。** Hysteria2、AmneziaWG、VLESS 和 TrustTunnel。*自动* 会选择此刻响应最快的服务器；也可以自己选择服务器和协议。
+- **有无 Mistgate 面板都能用。** 粘贴订阅链接、`hysteria2://`、`vless://` 或 `tt://` 链接、Mihomo 配置或 AmneziaWG 配置即可。使用 Mistgate 面板时，应用用自己的密钥登记这台电脑，跟随面板的服务器，并显示套餐、已用流量和设备。
 - **路由。** *智能* 让本地网站和家庭网络不走 VPN，*仅所选* 只让你选中的内容走 VPN，*全部* 让所有流量都走。可按现成合集、自己的列表、网站和程序设置规则。
 - **Kill switch。** 隧道断开时，电脑不会有任何流量外泄：仅在连接期间，或始终生效。
 - **网络检测。** 一个按钮即可看出从这里哪些服务器、哪些线路可用。
@@ -65,8 +65,9 @@ Hysteria2、AmneziaWG 和 VLESS 集于一个窗口。适用于 <a href="https://
 | Hysteria2 | 官方 Hysteria2 内核，内置 | UDP (QUIC)。Salamander 混淆，端口跳跃。 |
 | AmneziaWG | amneziawg-go，内置 | 2.0 和 3.1 版，每台设备一把密钥，来自 Mistgate 面板或 `.conf` 文件。 |
 | VLESS | Xray-core，内置 | REALITY 或 TLS；RAW + Vision、XHTTP 和 WebSocket。 |
+| TrustTunnel | 应用自带的客户端 | 基于 TLS 的 HTTP/2，支持 TCP 和 UDP。证书按系统根证书或面板下发的指纹校验。 |
 
-三种协议都运行在同一个 Windows 服务和同一个 wintun 网卡中。不支持：VMess、Trojan、Shadowsocks、TUIC 和原版 WireGuard。
+四种协议都运行在同一个 Windows 服务和同一个 wintun 网卡中。不支持：VMess、Trojan、Shadowsocks、TUIC 和原版 WireGuard。
 
 ## 安装
 

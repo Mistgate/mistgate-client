@@ -5,7 +5,7 @@
 <h1>Windows için Mistgate</h1>
 
 <p>Çalışan yolu kendi bulan ve bir şey engellendiğinde bunu dürüstçe söyleyen bir VPN uygulaması.<br>
-Hysteria2, AmneziaWG ve VLESS tek pencerede. <a href="https://github.com/Mistgate/mistgate">Mistgate</a> panelleri ve sıradan abonelik bağlantıları için.</p>
+Hysteria2, AmneziaWG, VLESS ve TrustTunnel tek pencerede. <a href="https://github.com/Mistgate/mistgate">Mistgate</a> panelleri ve sıradan abonelik bağlantıları için.</p>
 
 <p>
 <img alt="beta" src="https://img.shields.io/badge/status-beta-f2c46b">
@@ -33,8 +33,8 @@ Hysteria2, AmneziaWG ve VLESS tek pencerede. <a href="https://github.com/Mistgat
 
 Aboneliği bir kez eklersiniz. Uygulama sunucu listesini güncel tutar, bulunduğunuz ağda çalışan protokolle bağlanır ve VPN üzerinden yalnızca istediğinizi geçirir.
 
-- **Tek düğme, üç protokol.** Hysteria2, AmneziaWG ve VLESS. *Otomatik*, o anda en hızlı yanıt veren sunucuyu seçer; sunucuyu ve protokolü kendiniz de seçebilirsiniz.
-- **Mistgate paneliyle de, panelsiz de.** Abonelik bağlantısını, `hysteria2://` veya `vless://` bağlantılarını, bir Mihomo profilini ya da AmneziaWG yapılandırmasını yapıştırın. Mistgate panelinde uygulama bu bilgisayarı kendi anahtarıyla kaydeder, panelin sunucularını izler ve planı, kullanılan veriyi ve cihazları gösterir.
+- **Tek düğme, dört protokol.** Hysteria2, AmneziaWG, VLESS ve TrustTunnel. *Otomatik*, o anda en hızlı yanıt veren sunucuyu seçer; sunucuyu ve protokolü kendiniz de seçebilirsiniz.
+- **Mistgate paneliyle de, panelsiz de.** Abonelik bağlantısını, `hysteria2://`, `vless://` veya `tt://` bağlantılarını, bir Mihomo profilini ya da AmneziaWG yapılandırmasını yapıştırın. Mistgate panelinde uygulama bu bilgisayarı kendi anahtarıyla kaydeder, panelin sunucularını izler ve planı, kullanılan veriyi ve cihazları gösterir.
 - **Rotalar.** *Akıllı*, yerel siteleri ve ev ağını VPN dışında bırakır; *Yalnızca seçilenler* sadece seçtiklerinizi VPN'den geçirir; *Her şey* tüm trafiği geçirir. Hazır koleksiyonlara, kendi listelerinize, sitelere ve programlara göre kurallar.
 - **Kill switch.** Tünel kapalıyken bilgisayardan hiçbir şey çıkmaz: bağlıyken veya her zaman.
 - **Ağ denetimi.** Tek düğme, buradan hangi sunucuların ve hangi yolların çalıştığını gösterir.
@@ -65,8 +65,9 @@ Aboneliği bir kez eklersiniz. Uygulama sunucu listesini güncel tutar, bulundu�
 | Hysteria2 | Resmî Hysteria2 çekirdeği, gömülü | UDP (QUIC). Salamander gizleme, port atlama. |
 | AmneziaWG | amneziawg-go, gömülü | 2.0 ve 3.1 sürümleri; cihaz başına bir anahtar, Mistgate panelinden veya `.conf` dosyasından. |
 | VLESS | Xray-core, gömülü | REALITY veya TLS; Vision ile RAW, XHTTP ve WebSocket. |
+| TrustTunnel | Uygulamanın kendi istemcisi | TLS üzerinde HTTP/2, TCP ve UDP. Sertifika, sistemin kök sertifikalarıyla veya panelin gönderdiği parmak iziyle doğrulanır. |
 
-Üçü de tek bir Windows hizmeti ve tek bir wintun bağdaştırıcısı içinde çalışır. Desteklenmeyenler: VMess, Trojan, Shadowsocks, TUIC ve düz WireGuard.
+Dördü de tek bir Windows hizmeti ve tek bir wintun bağdaştırıcısı içinde çalışır. Desteklenmeyenler: VMess, Trojan, Shadowsocks, TUIC ve düz WireGuard.
 
 ## Kurulum
 
