@@ -28,6 +28,9 @@ type Settings struct {
 	// Bring the VPN back at service start if the user left it on (LastOn).
 	Restore bool `json:"restore"`
 	LastOn  bool `json:"last_on"`
+	// The tunnel was up after the last connect and nobody disconnected: what a kill switch must not leave open after a
+	// crash or a restart. LastOn alone would also be true after a connect that never succeeded.
+	LastUp bool `json:"last_up"`
 	// "auto" or one or two IP addresses joined with a comma, normalised.
 	DNS string `json:"dns"`
 	// 0 is automatic.
@@ -165,7 +168,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.RouteRegion = v
-	case "autoconnect", "restore", "last_on", "proxy", "proxy_lan", "whitelist_auto":
+	case "autoconnect", "restore", "last_on", "last_up", "proxy", "proxy_lan", "whitelist_auto":
 		var v bool
 		if !strictBool(raw, &v) {
 			return false
@@ -181,6 +184,8 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			value.ProxyLAN = v
 		case "whitelist_auto":
 			value.WhitelistAuto = v
+		case "last_up":
+			value.LastUp = v
 		default:
 			value.LastOn = v
 		}
@@ -224,7 +229,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 
 func knownKey(key string) bool {
 	switch key {
-	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "proxy", "proxy_lan", "whitelist_auto", "on_server_down", "dns", "mtu", "last_server", "last_sub":
+	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "last_up", "proxy", "proxy_lan", "whitelist_auto", "on_server_down", "dns", "mtu", "last_server", "last_sub":
 		return true
 	default:
 		return false

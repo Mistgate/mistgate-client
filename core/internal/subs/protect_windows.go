@@ -3,6 +3,8 @@
 package subs
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,11 +14,48 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 const directorySDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
 var errDataDirectory = errors.New("cannot safely use subscription data directory")
+
+// errNameTaken: something the service does not own sits at the directory's name and cannot be moved aside (a handle
+// held open without delete sharing). Only ClaimDirectory sees it; it never leaves this package.
+var errNameTaken = errors.New("data directory name is taken")
+
+// The directory that was taken in place of a name that was held is remembered here, under the name that was asked for.
+// The machine's registry is writable only by administrators and SYSTEM, so a program cannot point the service at a
+// directory of its own. Tests swap these two.
+var (
+	readTaken  = readTakenFromRegistry
+	writeTaken = writeTakenToRegistry
+)
+
+const takenKey = `SOFTWARE\Mistgate`
+
+func readTakenFromRegistry(asked string) string {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, takenKey, registry.QUERY_VALUE)
+	if err != nil {
+		return ""
+	}
+	defer key.Close()
+	taken, _, err := key.GetStringValue(asked)
+	if err != nil {
+		return ""
+	}
+	return taken
+}
+
+func writeTakenToRegistry(asked, taken string) error {
+	key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, takenKey, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer key.Close()
+	return key.SetStringValue(asked, taken)
+}
 
 // foreignMark names what was moved out of the way: a planted directory, or a planted object inside the real one.
 const foreignMark = ".foreign-"
@@ -59,23 +98,63 @@ func prepareStoreDirectory(path string, secureDir func(string) error) error {
 	return secureDir(path)
 }
 
-// ClaimDirectory closes the directory before the service writes crash.log or opens its stores. A directory planted in
-// ProgramData is moved aside before the service creates a new one. Existing nested objects are checked without
-// following reparse points, so a user cannot redirect a service write through a junction or symlink.
-func ClaimDirectory(path string) error {
+// ClaimDirectory closes the directory before the service writes crash.log or opens its stores, and returns the
+// directory it closed. A directory planted in ProgramData is moved aside before the service creates a new one.
+// Existing nested objects are checked without following reparse points, so a user cannot redirect a service write
+// through a junction or symlink.
+//
+// A program without rights can plant something at the name and hold it open without delete sharing, so that it cannot
+// be moved aside; the service would then never start. In that case the service takes a sibling, "<name>.<random>", closed
+// the same way, and remembers it (see readTaken). Every later start, and the allow command, find that one again: the
+// subscriptions and settings live there. It stays the directory in use when the usual name is free again; going back
+// would hide what was saved there, and moving it over is more than this is worth.
+func ClaimDirectory(path string) (string, error) {
 	identity, err := currentDirectoryIdentity()
 	if err != nil {
-		return errDataDirectory
+		return "", errDataDirectory
 	}
-	return prepareDirectory(path, identity, identity.isSystem)
+	return claimDirectory(path, identity, identity.isSystem)
 }
 
-// ClaimDirectoryForAdministrators prepares the same protected tree for the allow command before service install.
-func ClaimDirectoryForAdministrators(path string) error {
-	if err := ClaimDirectory(path); err != nil {
-		return err
+func claimDirectory(path string, identity directoryIdentity, quarantineForeignRoot bool) (string, error) {
+	target := path
+	if taken := readTaken(path); sameParentSibling(path, taken) {
+		target = taken
 	}
-	return setDirectoryOwnerAdministrators(path)
+	err := prepareDirectory(target, identity, quarantineForeignRoot)
+	if !errors.Is(err, errNameTaken) {
+		return target, err
+	}
+	for range 3 { // a name chosen at random can itself be planted, but not by a program that cannot guess it
+		suffix := make([]byte, 8)
+		if _, err := rand.Read(suffix); err != nil {
+			return "", errDataDirectory
+		}
+		target = path + "." + hex.EncodeToString(suffix)
+		if err := writeTaken(path, target); err != nil {
+			return "", errDataDirectory
+		}
+		if err = prepareDirectory(target, identity, quarantineForeignRoot); !errors.Is(err, errNameTaken) {
+			return target, err
+		}
+	}
+	return "", errDataDirectory
+}
+
+// sameParentSibling: what the registry holds is believed only if it is "<name>.<something>" beside the asked name.
+// Only administrators can write there, but the service closes whatever tree it is pointed at.
+func sameParentSibling(path, taken string) bool {
+	return len(taken) > len(path)+1 && strings.EqualFold(taken[:len(path)+1], path+".") && strings.EqualFold(filepath.Dir(taken), filepath.Dir(path))
+}
+
+// ClaimDirectoryForAdministrators prepares the same protected tree for the allow command before service install, and
+// returns the directory the service uses.
+func ClaimDirectoryForAdministrators(path string) (string, error) {
+	claimed, err := ClaimDirectory(path)
+	if err != nil {
+		return "", err
+	}
+	return claimed, setDirectoryOwnerAdministrators(claimed)
 }
 
 func setDirectoryOwnerAdministrators(path string) error {
@@ -168,14 +247,17 @@ func prepareDirectory(path string, identity directoryIdentity, quarantineForeign
 	}()
 
 	info, err := directoryInfo(handle)
-	if err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
+	if err != nil {
 		return errDataDirectory
 	}
 	owner, err := directoryOwner(handle)
 	if err != nil {
 		return errDataDirectory
 	}
-	if !allowedDirectoryOwner(owner, identity) {
+	// A link or a plain file at the name is as foreign as a directory of someone else's, and keeps the service down just
+	// the same; only the service itself moves such a thing aside.
+	notADirectory := info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0
+	if notADirectory || !allowedDirectoryOwner(owner, identity) {
 		if !quarantineForeignRoot {
 			return errDataDirectory
 		}
@@ -185,7 +267,7 @@ func prepareDirectory(path string, identity directoryIdentity, quarantineForeign
 		handle = windows.InvalidHandle
 		moved := path + foreignMark + strconv.FormatInt(time.Now().UnixNano(), 10)
 		if err := os.Rename(path, moved); err != nil {
-			return errDataDirectory
+			return errNameTaken
 		}
 		if err := createClosedDirectory(path, sd); err != nil {
 			return errDataDirectory

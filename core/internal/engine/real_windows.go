@@ -1271,7 +1271,8 @@ func (r *Real) resolveServer(ctx context.Context, run *realRun, host string, hol
 		return address.Unmap(), nil
 	}
 	if hold {
-		// ponytail: a moved server needs manual disconnect/connect while held; upgrade = bootstrap through an authenticated tunnel-side resolver.
+		// ponytail: a name seen before is answered from memory; a new one is asked in the clear from this process, outside
+		// the tunnel, as before the first connect. Upgrade = ask through an authenticated tunnel-side resolver.
 		r.mu.Lock()
 		address, ok := r.resolved[key]
 		r.mu.Unlock()

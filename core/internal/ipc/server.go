@@ -265,7 +265,7 @@ func (s *Server) handle(ctx context.Context, request Request, trusted bool) (any
 			return nil, nil, &RPCError{Code: "service_error", Message: "connection could not be stopped"}
 		}
 		if s.Settings != nil {
-			_, _ = s.Settings.Set(map[string]json.RawMessage{"last_on": json.RawMessage(`false`)})
+			_, _ = s.Settings.Set(map[string]json.RawMessage{"last_on": json.RawMessage(`false`), "last_up": json.RawMessage(`false`)})
 		}
 		return status, nil, nil
 	case "settings.get":

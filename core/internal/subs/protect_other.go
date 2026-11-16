@@ -13,11 +13,11 @@ func prepareStoreDirectory(path string, secureDir func(string) error) error {
 	return secureDir(path)
 }
 
-// ClaimDirectory is a Windows matter.
-func ClaimDirectory(string) error { return nil }
+// ClaimDirectory is a Windows matter: the directory is used as it is.
+func ClaimDirectory(path string) (string, error) { return path, nil }
 
 // ClaimDirectoryForAdministrators is a Windows matter.
-func ClaimDirectoryForAdministrators(string) error { return nil }
+func ClaimDirectoryForAdministrators(path string) (string, error) { return path, nil }
 
 func protect(data []byte) ([]byte, error) { return append([]byte(nil), data...), nil }
 

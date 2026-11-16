@@ -830,3 +830,14 @@ starts" is its own: it puts itself into the user's Run key.
 stopped, that is, the last call to `connect` was not followed by `disconnect` (`last_on`). A service stop, a crash
 or a shutdown does not clear `last_on`. At start the service connects when `autoconnect`, or `restore` with `last_on`,
 and there is a `last_server`.
+With the kill switch `while` or `always` that is not the whole rule: when `last_up` is set (and there is a
+`last_server`) the service holds the network at once and reconnects, whatever `autoconnect` and `restore` say, so a
+crash, an update or a reboot with the VPN on does not leave an open network with no VPN; the "service start" column of
+the kill switch table is for the case where `last_up` is not set. The reconnect is the one of a tunnel that died: the
+status is `reconnecting` (never `connecting`), the retries and `on_server_down` are the usual ones, and `disconnect`
+ends it and opens the network (`always` keeps it held and reports `blocked` with `kill_switch`). A failed attempt ends
+as for any session that was up: in `while`, `reconnecting` with the retries going on; in `always`, `blocked` with the
+attempt's code and no retry by itself. With the kill switch `off` nothing is held and `autoconnect` and `restore`
+decide as above. `last_up` is the service's own: set when a session becomes `connected`, cleared by `disconnect` and
+when a session ends in `error` (the network is open then), kept through `blocked`, a service stop and a crash. So a
+restart after a first `connect` that never came up holds nothing.

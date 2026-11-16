@@ -99,5 +99,16 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
   ${AndIf} $UpdateMode <> 1
     ReadEnvStr $0 PROGRAMDATA
     RMDir /r "$0\Mistgate"
+    ; the service's other directory, taken when that name was held by a program (the service remembers it here)
+    SetRegView 64
+    ReadRegStr $1 HKLM "SOFTWARE\Mistgate" "$0\Mistgate"
+    StrLen $2 "$0\Mistgate."
+    StrCpy $3 $1 $2
+    ${If} $1 != ""
+    ${AndIf} $3 == "$0\Mistgate."
+      RMDir /r "$1"
+    ${EndIf}
+    DeleteRegKey HKLM "SOFTWARE\Mistgate"
+    SetRegView lastused
   ${EndIf}
 !macroend

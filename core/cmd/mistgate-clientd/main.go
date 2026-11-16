@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"hash/crc32"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -93,6 +95,30 @@ func shouldConnectAtStart(configured settings.Settings) bool {
 	return configured.LastServer != "" && (configured.Autoconnect || configured.Restore && configured.LastOn)
 }
 
+// shouldResumeAtStart: the tunnel was up when the service stopped without being told to disconnect (last_up stays set
+// through a crash, a reboot and a service stop), and the kill switch promises the network is not open without it. The
+// service then holds the network and reconnects whatever restore and autoconnect say; with the kill switch off there is
+// nothing to hold and the two settings decide as before. A connect that never came up leaves the network open, before
+// a restart and after it.
+func shouldResumeAtStart(configured settings.Settings) bool {
+	return configured.LastServer != "" && configured.LastUp && configured.KillSwitch != "off"
+}
+
+// keepLastUp writes last_up from the session's own states: connected sets it, a session that ended in an error (the
+// network is open then) clears it. "off" is left alone: the service says it when it stops too, and a disconnect the
+// person asked for clears the flag where it is handled. "blocked" keeps it: the network is held, as it will be again.
+func keepLastUp(statuses <-chan session.Event, store *settings.Store) {
+	for event := range statuses {
+		status, ok := event.Data.(session.Status)
+		if !ok || status.State != "connected" && status.State != "error" {
+			continue
+		}
+		if up := status.State == "connected"; store.Get().LastUp != up {
+			_, _ = store.Set(map[string]json.RawMessage{"last_up": json.RawMessage(strconv.FormatBool(up))})
+		}
+	}
+}
+
 // keepCrashOutput: a service has no console, so what the runtime says when it dies (the panic and the goroutines'
 // stacks) goes to crash.log in the data directory. The file is started again once it is over 256 KiB.
 func keepCrashOutput(dataDir string) {
@@ -120,8 +146,10 @@ func defaultDataDir() string {
 
 // run owns the lifecycle; the context ends it (Ctrl+C in a console, a stop request as a Windows service).
 func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents <-chan time.Duration) error {
-	// before anything is written there: a folder planted by another user is not used
-	if err := subs.ClaimDirectory(dataDir); err != nil {
+	// before anything is written there: a folder planted by another user is not used. When the name is held by a
+	// program that cannot be moved aside, the service takes a directory beside it; everything below uses that one.
+	dataDir, err := subs.ClaimDirectory(dataDir)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "the data directory could not be secured")
 		return err
 	}
@@ -237,8 +265,16 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	eventMu.Lock()
 	eventHub = manager.Events()
 	eventMu.Unlock()
-	if configured := settingsStore.Get(); shouldConnectAtStart(configured) {
-		_, _ = manager.Connect(ctx, engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub})
+	if statuses, err := manager.Events().Subscribe([]string{"status"}); err == nil {
+		go keepLastUp(statuses.C, settingsStore) // ends when the manager closes its hub
+	}
+	if configured := settingsStore.Get(); shouldResumeAtStart(configured) || shouldConnectAtStart(configured) {
+		target := engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub}
+		if shouldResumeAtStart(configured) {
+			_, _ = manager.Resume(ctx, target)
+		} else {
+			_, _ = manager.Connect(ctx, target)
+		}
 	}
 	reporter := &probereport.Reporter{Subs: store, Log: logger.With("src", "report")}
 	diagnostics := diag.NewRunner(diag.Config{Profiles: store.Profiles, Tunnel: func() bool {

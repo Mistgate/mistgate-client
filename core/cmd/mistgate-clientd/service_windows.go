@@ -46,8 +46,9 @@ func allowAccount(sid string) error {
 		return errors.New("administrator rights required")
 	}
 
-	dataDir := defaultDataDir()
-	if err := subs.ClaimDirectoryForAdministrators(dataDir); err != nil {
+	// the directory the service really uses: a held name is replaced by one beside it (see subs.ClaimDirectory)
+	dataDir, err := subs.ClaimDirectoryForAdministrators(defaultDataDir())
+	if err != nil {
 		return errors.New("the data directory could not be secured")
 	}
 	allowedSIDs, err := users.Read(dataDir)

@@ -69,6 +69,10 @@ type connectReply struct {
 	err    error
 }
 type disconnectRequest struct{ reply chan Status }
+type resumeRequest struct {
+	target engine.Target
+	reply  chan Status
+}
 type settingsChangedRequest struct{}
 type subscriptionsChangedRequest struct{}
 type networkChangedRequest struct {
@@ -260,6 +264,25 @@ func (m *Manager) Connect(ctx context.Context, target engine.Target) (Status, er
 	}
 }
 
+// Resume is for the first moments of a service that started with the VPN left on (last_on): a crash, an update, a
+// reboot. The network was open while no service ran. The session takes the road of a tunnel that died: the network is
+// held at once and the status is reconnecting, with the usual retries. It does nothing when the kill switch is off
+// (nothing to hold, and a plain connect is the way back), or when a session is already there.
+func (m *Manager) Resume(ctx context.Context, target engine.Target) (Status, error) {
+	reply := make(chan Status, 1)
+	if err := m.send(ctx, resumeRequest{target: target, reply: reply}); err != nil {
+		return Status{}, err
+	}
+	select {
+	case status := <-reply:
+		return status, nil
+	case <-ctx.Done():
+		return Status{}, ctx.Err()
+	case <-m.done:
+		return Status{}, errors.New("session manager stopped")
+	}
+}
+
 func (m *Manager) Disconnect(ctx context.Context) (Status, error) {
 	reply := make(chan Status, 1)
 	if err := m.send(ctx, disconnectRequest{reply: reply}); err != nil {
@@ -360,6 +383,9 @@ func (m *Manager) run() {
 				clearTimer(&retryTimer, &retryC)
 				status, err := m.connect(&state, request.target)
 				request.reply <- connectReply{status: status, err: err}
+			case resumeRequest:
+				m.resume(&state, request.target)
+				request.reply <- state.status
 			case disconnectRequest:
 				clearTimer(&healthTimer, &healthC)
 				clearTimer(&retryTimer, &retryC)
@@ -625,6 +651,38 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 	m.hub.Publish("status", state.status)
 	m.startAttempt(state, target)
 	return state.status, nil
+}
+
+func (m *Manager) resume(state *actorState, target engine.Target) {
+	// idle: nothing yet, or the held network of "always" at start
+	idle := state.status.State == "off" || state.status.State == "blocked" && state.status.Error == "kill_switch"
+	if m.engine == nil || !idle || !holdFor(m.currentSettings(), true) {
+		return
+	}
+	if target.Server == "" {
+		target.Server = "auto"
+	}
+	if target.Protocol == "" {
+		target.Protocol = "auto"
+	}
+	m.setChoice(state, target)
+	target.Hold = true
+	m.engine.Hold()
+	state.userServer = target.Server
+	state.holdReconnect = false
+	resetProbeStreak(state)
+	state.probePending = false
+	state.retryIndex = 0
+	state.noFailures()
+	state.status = Status{
+		State:     "reconnecting",
+		SinceUnix: time.Now().Unix(),
+		Server:    target.Server,
+		Protocol:  target.Protocol,
+		Purpose:   state.selection.Home.Purpose,
+	}
+	m.hub.Publish("status", state.status)
+	m.startAttempt(state, target)
 }
 
 func (m *Manager) setChoice(state *actorState, target engine.Target) {
