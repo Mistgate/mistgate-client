@@ -525,6 +525,15 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if !ok {
 		return Info{}, failure("no_subscription", "select profile")
 	}
+	defer func() {
+		if retErr != nil && info.ServerID == "" {
+			name := selected.Name
+			if name == "" {
+				name = selected.ID
+			}
+			info = Info{Server: name, ServerID: selected.ID, Protocol: selected.Protocol, Purpose: selected.Purpose}
+		}
+	}()
 	// Auto is the server that answers quickest now, not the first of the list. No answer from any: the first, as before.
 	if target.Server == "" || target.Server == "auto" {
 		_, ring, _ := profile.Ring(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game)
@@ -897,7 +906,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	if serverName == "" {
 		serverName = selected.ID
 	}
-	info = Info{Server: serverName, ServerID: selected.ID, Protocol: selected.Protocol, Route: route}
+	info = Info{Server: serverName, ServerID: selected.ID, Protocol: selected.Protocol, Route: route, Purpose: selected.Purpose}
 	var proxyDial vpnDialer
 	switch {
 	case selected.Protocol == "hysteria2":
@@ -965,6 +974,39 @@ func (r *Real) Next(target Target, after string) (string, bool) {
 	}
 	configured := r.settings()
 	return profile.Next(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, after)
+}
+
+func (r *Real) Select(target Target) (Selection, bool) {
+	if r.load == nil {
+		return Selection{}, false
+	}
+	profiles, err := r.load()
+	if err != nil {
+		return Selection{}, false
+	}
+	configured := r.settings()
+	home, ring, ok := profile.Ring(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game)
+	if !ok {
+		return Selection{}, false
+	}
+	name := home.Name
+	if name == "" {
+		name = home.ID
+	}
+	selection := Selection{
+		Home:  Info{Server: name, ServerID: home.ID, Protocol: home.Protocol, Purpose: home.Purpose},
+		Order: make([]string, 0, len(ring)),
+	}
+	for _, p := range ring {
+		selection.Order = append(selection.Order, p.ID)
+	}
+	for _, p := range profiles {
+		if p.Sub == home.Sub && p.Purpose == profile.PurposeWhitelist {
+			selection.Whitelist = p.ID
+			break
+		}
+	}
+	return selection, true
 }
 
 // fastestTimeout bounds each server's handshake in Fastest.

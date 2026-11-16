@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
 
 // fakePanel plays a Mistgate panel: the plain subscription, enrol, sync and leave.
@@ -222,15 +224,19 @@ func awgSettings(host string, port int, params map[string]any) map[string]any {
 
 func mappingDoc() string {
 	pin := strings.Repeat("ab", 32)
+	whitelist := apiPath("pth_gecko", "hysteria2", "direct", false, map[string]any{
+		"server": "gecko.example.test", "port": 443, "ports": "20000-30000", "hop_interval_s": 30, "auth": "api-auth-gecko",
+		"tls": "ca", "sni": "sni.example.test", "alpn": []string{"h3"}, "obfs": map[string]any{"type": "gecko", "password": "api-obfs-pass"},
+	})
+	whitelist["purpose"] = "whitelist"
+	unknownPurpose := apiPath("pth_pin", "hysteria2", "relay", false, map[string]any{
+		"server": "pin.example.test", "port": 8443, "auth": "api-auth-pin", "tls": "pin", "pin_sha256": pin,
+	})
+	unknownPurpose["purpose"] = "future-purpose"
 	return syncDoc("active",
 		apiServer("Frankfurt", "DE",
-			apiPath("pth_gecko", "hysteria2", "direct", false, map[string]any{
-				"server": "gecko.example", "port": 443, "ports": "20000-30000", "hop_interval_s": 30, "auth": "api-auth-gecko",
-				"tls": "ca", "sni": "sni.example", "alpn": []string{"h3"}, "obfs": map[string]any{"type": "gecko", "password": "api-obfs-pass"},
-			}),
-			apiPath("pth_pin", "hysteria2", "relay", false, map[string]any{
-				"server": "pin.example", "port": 8443, "auth": "api-auth-pin", "tls": "pin", "pin_sha256": pin,
-			}),
+			whitelist,
+			unknownPurpose,
 			apiPath("pth_ca6", "hysteria2", "direct", true, map[string]any{
 				"server": "2001:db8::9", "port": 443, "auth": "api-auth-ca6", "tls": "ca",
 			}),
@@ -300,19 +306,36 @@ func TestClientAPIEnrolSyncAndMapping(t *testing.T) {
 			t.Errorf("server %d = %#v, want %q %q", i, server, wantIDs[i], wantNames[i])
 		}
 	}
+	if refreshed.Servers[0].Purpose != profile.PurposeWhitelist || refreshed.Servers[1].Purpose != "" {
+		t.Fatalf("server purposes = %q, %q; want whitelist and ordinary", refreshed.Servers[0].Purpose, refreshed.Servers[1].Purpose)
+	}
+	windowList := store.List()
+	if len(windowList) != 1 || windowList[0].Servers[0].Purpose != profile.PurposeWhitelist {
+		t.Fatalf("subs.list servers = %#v", windowList)
+	}
+	listed, err := json.Marshal(windowList[0].Servers)
+	if err != nil || !strings.Contains(string(listed), `"purpose":"whitelist"`) || strings.Contains(string(listed), "future-purpose") {
+		t.Fatalf("subs.list server JSON = %s, %v", listed, err)
+	}
 
 	profiles, err := store.Profiles()
 	if err != nil || len(profiles) != 5 {
 		t.Fatalf("profiles = %d, %v", len(profiles), err)
 	}
 	gecko := profiles[0].Hy2
-	if gecko == nil || gecko.Host != "gecko.example" || gecko.Port != 443 || gecko.Auth != "api-auth-gecko" || gecko.Ports != "20000-30000" ||
-		gecko.HopInterval != 30*time.Second || gecko.ServerName != "sni.example" || gecko.Obfs != "gecko" || gecko.ObfsPassword != "api-obfs-pass" ||
+	if profiles[0].Purpose != profile.PurposeWhitelist || profiles[1].Purpose != "" {
+		t.Fatalf("profile purposes = %q, %q; want whitelist and ordinary", profiles[0].Purpose, profiles[1].Purpose)
+	}
+	if got, ok := profile.PickForSettings(profiles, "auto", "hysteria2", added.ID, "auto", false); !ok || got.ID != "pth_pin" {
+		t.Fatalf("automatic profile after unknown purpose = %#v, %v; want ordinary pth_pin", got, ok)
+	}
+	if gecko == nil || gecko.Host != "gecko.example.test" || gecko.Port != 443 || gecko.Auth != "api-auth-gecko" || gecko.Ports != "20000-30000" ||
+		gecko.HopInterval != 30*time.Second || gecko.ServerName != "sni.example.test" || gecko.Obfs != "gecko" || gecko.ObfsPassword != "api-obfs-pass" ||
 		gecko.HasPin || gecko.Insecure || len(gecko.ALPN) != 1 {
 		t.Fatalf("gecko profile = %#v", gecko)
 	}
 	pin := profiles[1].Hy2
-	if pin == nil || !pin.HasPin || pin.Insecure || pin.PinSHA256[0] != 0xab || pin.Port != 8443 || pin.Obfs != "none" || pin.ServerName != "pin.example" {
+	if pin == nil || !pin.HasPin || pin.Insecure || pin.PinSHA256[0] != 0xab || pin.Port != 8443 || pin.Obfs != "none" || pin.ServerName != "pin.example.test" {
 		t.Fatalf("pinned profile = %#v", pin)
 	}
 	ca := profiles[2].Hy2

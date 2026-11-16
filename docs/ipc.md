@@ -138,6 +138,13 @@ held and reports `blocked` with `kill_switch`, otherwise it opens the network. A
 user-initiated `connect` failure ends in `error` with the network open, except in `always`, where it ends in `blocked`
 with the attempt's error code.
 
+While the server in use (connecting or connected) is one marked `purpose: whitelist`, the status carries
+`purpose: "whitelist"`, and `whitelist_by_rule: true` when `whitelist_auto` chose it. `whitelist_hint: true` says "the
+ordinary servers do not answer and this subscription has a server for allowlists": it rises when an ordinary server
+failed for a reason of the network (a connect that failed outright; two failed retries in `reconnect`; a whole failed
+round in `next`) and `whitelist_auto` did not act, and falls when an ordinary server connects, the person picks a
+server, or the subscriptions change. The three keys are absent when they do not apply.
+
 With `on_server_down: "reconnect"` (default) every retry targets the same server. With `"next"`, a `reconnecting`
 session that fails two attempts in a row on one server sends its next attempt to the next server of the same
 subscription (the order of the subscription's list, wrapping around), and again after every two failures; `status.server`
@@ -170,6 +177,7 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 | Key | Values | Default | Meaning |
 |---|---|---|---|
 | `on_server_down` | `reconnect`, `next`, `fastest` | `reconnect` | What the retries do when the server stays down: keep trying the same server, move to the next server of the subscription, or move to the one that answers soonest (see the reconnect text above) |
+| `whitelist_auto` | `true`, `false` | `false` | When the ordinary servers of the subscription have all failed in a row (each twice) in a session that was up, move to the subscription's server marked `purpose: whitelist`. With `on_server_down: "reconnect"` the retries then walk the ordinary servers first, when the subscription has such a server. The session stays on that server until the person reconnects or picks another |
 | `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
 | `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` takes the first that exists of: the profile's own (AmneziaWG), the panel's (managed subscriptions, see "The panel's DNS"), `1.1.1.1` and `1.0.0.1` |
 | `mtu` | `0`, or `1280` to `1500` | `0` | The tunnel adapter's MTU. `0` is automatic |
@@ -518,6 +526,7 @@ on a panel that does not send them):
 | server | `via_country` | Country code where a `relay` path enters, when it is not the node's own |
 | server | `ipv6_egress` | `true` or `false`: whether IPv6 leaves through this path. Absent: the panel did not say. On `false` the engine treats the path as having no IPv6 at once (names get no IPv6 addresses, IPv6 destinations are turned away), without probing |
 | server | `insecure` | `true` when a Hysteria2 link or proxy asks not to check the server's certificate (`insecure=1`, `skip-cert-verify`) and gives no pin: the server is accepted and the window marks its row. Absent otherwise. Set when the subscription is read, from 0.1.7 |
+| server | `purpose` | `whitelist`: a slow last-resort path for networks that pass only an allowlist of sites (the panel marks it). The service never chooses such a server by itself (not in `auto`, not as "the next server") and does not measure it for `rtt`; it is used when named in `connect`, or by `whitelist_auto`. Absent for every other server |
 | subscription | `telegram` | Telegram proxies: `[{"node", "country", "city", "via", "via_country", "ipv6", "link"}]`. `link` opens in Telegram; it is a secret of the same kind as a server's credentials: for the trusted window only, never logged |
 | subscription | `devices_used`, `devices_limit` | Devices of this person on the panel and the allowed number; both absent when the panel does not count |
 | subscription | `debug` | `{"intake": bool, "unasked": bool, "request": {"id", "level", "note", "expires_unix"}}`: whether the panel takes debug logs, whether a send without a request is allowed, and the owner's open request. Absent: no intake (see "Debug logs") |

@@ -695,7 +695,7 @@ func (s *Server) pingServers(ctx context.Context, sub string, ids []string) (map
 	slots := make(chan struct{}, pingParallel)
 launch:
 	for _, p := range profiles {
-		if p.Sub != sub || len(want) > 0 && !want[p.ID] {
+		if p.Sub != sub || p.Purpose == profile.PurposeWhitelist || len(want) > 0 && !want[p.ID] {
 			continue
 		}
 		select {
@@ -909,6 +909,7 @@ func Run(ctx context.Context, manager *session.Manager, logger *slog.Logger, sto
 				case <-runCtx.Done():
 					return
 				case <-store.Changes():
+					manager.SubscriptionsChanged()
 					manager.Events().Publish("subs", map[string]any{"subs": store.List()})
 				}
 			}

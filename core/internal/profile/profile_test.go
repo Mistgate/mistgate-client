@@ -273,6 +273,45 @@ func TestOthers(t *testing.T) {
 	}
 }
 
+func TestWhitelistPurposeSelectionAndFailover(t *testing.T) {
+	profiles := []Profile{
+		{ID: "marked-vless", Sub: "one", Protocol: "vless", Purpose: PurposeWhitelist},
+		{ID: "hy2", Sub: "one", Protocol: "hysteria2"},
+		{ID: "marked-awg", Sub: "one", Protocol: "awg", Purpose: PurposeWhitelist},
+		{ID: "vless", Sub: "one", Protocol: "vless"},
+		{ID: "only-marked", Sub: "two", Protocol: "hysteria2", Purpose: PurposeWhitelist},
+	}
+	for _, test := range []struct {
+		name, requested, configured, want string
+		game                              bool
+	}{
+		{"protocol preference skips marked paths", "vless", "auto", "vless", false},
+		{"configured protocol skips marked paths", "auto", "hysteria2", "hy2", false},
+		{"game mode skips marked AWG before choosing", "auto", "auto", "hy2", true},
+	} {
+		got, ok := PickForSettings(profiles, "auto", test.requested, "one", test.configured, test.game)
+		if !ok || got.ID != test.want {
+			t.Errorf("%s: picked %#v, %v; want %q", test.name, got, ok, test.want)
+		}
+	}
+	if _, ok := PickForSettings(profiles, "auto", "auto", "two", "auto", false); ok {
+		t.Fatal("automatic choice picked the only marked profile")
+	}
+	if got, ok := PickForSettings(profiles, "marked-vless", "hysteria2", "one", "hysteria2", false); !ok || got.ID != "marked-vless" {
+		t.Fatalf("named marked path = %#v, %v; want marked-vless", got, ok)
+	}
+	_, ring, ok := Ring(profiles, "hy2", "auto", "one", "auto", false)
+	if !ok || len(ring) != 2 || ring[0].ID != "hy2" || ring[1].ID != "vless" {
+		t.Fatalf("ordinary failover ring = %#v, %v", ring, ok)
+	}
+	if got, ok := Next(profiles, "hy2", "auto", "one", "auto", false, "hy2"); !ok || got != "vless" {
+		t.Fatalf("Next skipped marked path = %q, %v", got, ok)
+	}
+	if got := Others(profiles, "hy2", "auto", "one", "auto", false, "hy2"); len(got) != 1 || got[0].ID != "vless" {
+		t.Fatalf("ordinary alternates = %#v", got)
+	}
+}
+
 func TestParseUintRange(t *testing.T) {
 	for input, expected := range map[string]string{"5": "5", "20-63": "20-63", "0003-0004": "3-4"} {
 		got, err := parseUintRange(input, 16)

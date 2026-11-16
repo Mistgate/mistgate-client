@@ -3,7 +3,9 @@ package ipc
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +67,40 @@ func TestServersPing(t *testing.T) {
 	}
 	if _, rpcErr := call("servers.ping", `{"servers":"x"}`); rpcErr == nil || rpcErr.Code != "bad_params" {
 		t.Fatalf("bad params = %#v", rpcErr)
+	}
+}
+
+func TestWhitelistAutoSettingsRPC(t *testing.T) {
+	store, err := settings.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Get().WhitelistAuto {
+		t.Fatal("whitelist_auto defaulted to true")
+	}
+	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}), store.Get)
+	t.Cleanup(manager.Close)
+	server := &Server{Manager: manager, Settings: store}
+	call := func(method, params string) (any, *RPCError) {
+		t.Helper()
+		request, err := ParseRequest([]byte(fmt.Sprintf(`{"id":1,"method":%q,"params":%s}`, method, params)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, _, rpcErr := server.dispatch(context.Background(), request, true)
+		return result, rpcErr
+	}
+	set, rpcErr := call("settings.set", `{"whitelist_auto":true}`)
+	if got, ok := set.(settings.Settings); rpcErr != nil || !ok || !got.WhitelistAuto {
+		t.Fatalf("settings.set = %#v, %#v", set, rpcErr)
+	}
+	get, rpcErr := call("settings.get", `{}`)
+	if got, ok := get.(settings.Settings); rpcErr != nil || !ok || !got.WhitelistAuto {
+		t.Fatalf("settings.get = %#v, %#v", get, rpcErr)
+	}
+	encoded, err := json.Marshal(get)
+	if err != nil || !strings.Contains(string(encoded), `"whitelist_auto":true`) {
+		t.Fatalf("settings.get JSON = %s, %v", encoded, err)
 	}
 }
 

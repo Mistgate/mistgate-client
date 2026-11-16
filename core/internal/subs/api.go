@@ -248,9 +248,11 @@ func panelDNS(dns *syncDNS) ([]netip.Addr, []profile.DNSSplit) {
 }
 
 type syncPath struct {
-	ID       string          `json:"id"`
-	Protocol string          `json:"protocol"`
-	Via      string          `json:"via"`
+	ID       string `json:"id"`
+	Protocol string `json:"protocol"`
+	Via      string `json:"via"`
+	// Only the whitelist marker is retained; other purpose values are ordinary paths.
+	Purpose  string          `json:"purpose,omitempty"`
 	IPv6     bool            `json:"ipv6"`
 	Settings json.RawMessage `json:"settings"`
 	// What the owner called the profile, where a relay path enters, and whether IPv6 leaves through the path.
@@ -521,6 +523,9 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 				continue
 			}
 			path.Via = shortText(path.Via)
+			if path.Purpose != profile.PurposeWhitelist {
+				path.Purpose = ""
+			}
 			raw, err := json.Marshal(path)
 			if _, _, _, _, perr := pathProfile(string(raw)); err != nil || perr != nil || path.ID == "" || len(path.ID) > 128 {
 				st.Unsupported++
@@ -547,7 +552,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 			if node == "" {
 				node = "n" + strconv.Itoa(number+1)
 			}
-			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Version: pathVersion(path), Node: node, Country: server.Country, City: server.City, Via: path.Via, IPv6: path.IPv6, Load: server.Load,
+			entry := Server{ID: path.ID, Name: name, Protocol: path.Protocol, Version: pathVersion(path), Node: node, Country: server.Country, City: server.City, Via: path.Via, Purpose: path.Purpose, IPv6: path.IPv6, Load: server.Load,
 				Label: shortText(path.Label), NodeLabel: shortText(server.Label), ViaCountry: countryCode(path.ViaCountry), IPv6Egress: path.IPv6Egress}
 			st.Servers = append(st.Servers, entry)
 			st.Entries = append(st.Entries, storedEntry{Server: entry, Raw: string(raw)})

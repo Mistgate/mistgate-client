@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
 
 type FakeConfig struct {
@@ -30,6 +32,7 @@ type Fake struct {
 	changed       chan struct{}
 	targets       []Target
 	servers       []string
+	profiles      []profile.Profile
 	fastest       string
 	starts        atomic.Uint64
 	probes        atomic.Uint64
@@ -58,17 +61,22 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 	f.mu.Lock()
 	f.targets = append(f.targets, target)
 	config, failStartCode := f.config, f.failStartCode
+	hasProfiles := len(f.profiles) != 0
 	f.mu.Unlock()
+	info, ok := f.Select(target)
+	if !ok || !hasProfiles {
+		info.Home = Info{Server: target.Server, Protocol: target.Protocol}
+	}
 	steps := [...]Step{StepResolve, StepHandshake, StepTunnel, StepVerify}
 	for _, step := range steps {
 		if err := ctx.Err(); err != nil {
-			return Info{}, err
+			return info.Home, err
 		}
 		if report != nil {
 			report(step)
 		}
 		if step == StepResolve && failStartCode != "" {
-			return Info{}, &Failure{Code: failStartCode, Err: errors.New("fake engine failure")}
+			return info.Home, &Failure{Code: failStartCode, Err: errors.New("fake engine failure")}
 		}
 		delay := config.StepDelays[step]
 		if delay == 0 {
@@ -80,7 +88,7 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 			case <-timer.C:
 			case <-ctx.Done():
 				timer.Stop()
-				return Info{}, ctx.Err()
+				return info.Home, ctx.Err()
 			}
 		}
 		if config.FailAt == step {
@@ -88,10 +96,10 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 			if code == "" {
 				code = "no_server_answers"
 			}
-			return Info{}, &Failure{Code: code, Err: errors.New("fake engine failure")}
+			return info.Home, &Failure{Code: code, Err: errors.New("fake engine failure")}
 		}
 	}
-	return Info{Server: target.Server, Protocol: target.Protocol}, ctx.Err()
+	return info.Home, ctx.Err()
 }
 
 func (*Fake) Stop() {}
@@ -129,18 +137,23 @@ func (f *Fake) Probe(ctx context.Context) error {
 
 func (f *Fake) Changed() <-chan struct{} { return f.changed }
 
-func (f *Fake) Next(_ Target, after string) (string, bool) {
+func (f *Fake) Next(target Target, after string) (string, bool) {
 	f.mu.RLock()
+	profiles := append([]profile.Profile(nil), f.profiles...)
+	servers := append([]string(nil), f.servers...)
 	defer f.mu.RUnlock()
-	if len(f.servers) < 2 {
+	if len(profiles) != 0 {
+		return profile.Next(profiles, target.Server, target.Protocol, target.Sub, "auto", false, after)
+	}
+	if len(servers) < 2 {
 		return "", false
 	}
-	for i, server := range f.servers {
+	for i, server := range servers {
 		if server == after {
-			return f.servers[(i+1)%len(f.servers)], true
+			return servers[(i+1)%len(servers)], true
 		}
 	}
-	return f.servers[1], true // "auto" or unknown: the first server is the pick
+	return servers[1], true // "auto" or unknown: the first server is the pick
 }
 
 // SetFastest is the server Fastest answers with; "" means none answers. It is skipped when it is `except`.
@@ -150,16 +163,74 @@ func (f *Fake) SetFastest(server string) {
 	f.mu.Unlock()
 }
 
-func (f *Fake) Fastest(_ context.Context, _ Target, except string) (string, bool) {
+func (f *Fake) Fastest(_ context.Context, target Target, except string) (string, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.fastest, f.fastest != "" && f.fastest != except
+	if f.fastest == "" || f.fastest == except {
+		return "", false
+	}
+	if len(f.profiles) != 0 {
+		for _, candidate := range profile.Others(f.profiles, target.Server, target.Protocol, target.Sub, "auto", false, except) {
+			if candidate.ID == f.fastest {
+				return f.fastest, true
+			}
+		}
+		return "", false
+	}
+	return f.fastest, true
+}
+
+func (f *Fake) Select(target Target) (Selection, bool) {
+	f.mu.RLock()
+	profiles := append([]profile.Profile(nil), f.profiles...)
+	servers := append([]string(nil), f.servers...)
+	f.mu.RUnlock()
+	if len(profiles) != 0 {
+		home, ring, ok := profile.Ring(profiles, target.Server, target.Protocol, target.Sub, "auto", false)
+		if !ok {
+			return Selection{}, false
+		}
+		name := home.Name
+		if name == "" {
+			name = home.ID
+		}
+		selection := Selection{Home: Info{Server: name, ServerID: home.ID, Protocol: home.Protocol, Purpose: home.Purpose}, Order: make([]string, 0, len(ring))}
+		for _, p := range ring {
+			selection.Order = append(selection.Order, p.ID)
+		}
+		for _, p := range profiles {
+			if p.Sub == home.Sub && p.Purpose == profile.PurposeWhitelist {
+				selection.Whitelist = p.ID
+				break
+			}
+		}
+		return selection, true
+	}
+	if len(servers) == 0 {
+		return Selection{}, false
+	}
+	server := target.Server
+	if server == "" || server == "auto" {
+		server = servers[0]
+	}
+	for _, id := range servers {
+		if id == server {
+			return Selection{Home: Info{Server: id, ServerID: id, Protocol: target.Protocol}, Order: servers}, true
+		}
+	}
+	return Selection{}, false
 }
 
 // SetServers is the server list of the one fake subscription, in order.
 func (f *Fake) SetServers(servers ...string) {
 	f.mu.Lock()
 	f.servers = append([]string(nil), servers...)
+	f.mu.Unlock()
+}
+
+func (f *Fake) SetProfiles(profiles ...profile.Profile) {
+	f.mu.Lock()
+	f.profiles = append([]profile.Profile(nil), profiles...)
 	f.mu.Unlock()
 }
 

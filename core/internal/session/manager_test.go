@@ -10,6 +10,7 @@ import (
 
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
@@ -40,6 +41,10 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "route rules and list refresh do not reconnect", run: testRouteChangesDoNotReconnect},
 		{name: "only AmneziaWG path transition reconnects", run: testOnlyAWGPathTransitionReconnects},
 		{name: "next server after two failures, wrapping around", run: testNextServerAfterTwoFailures},
+		{name: "whitelist auto switches after the ordinary round", run: testWhitelistAutoSwitchesAfterRound},
+		{name: "whitelist hint rises and clears", run: testWhitelistHintRisesAndClears},
+		{name: "subscription changes clear the whitelist hint", run: testWhitelistHintClearsOnSubscriptionChange},
+		{name: "a failed first connect offers the whitelist path", run: testWhitelistHintAfterFailedFirstConnect},
 		{name: "fastest: the third attempt goes to the quickest server", run: testFastestServerAfterTwoFailures},
 		{name: "fastest with no answer falls back to the ring order", run: testFastestWithoutAnswerUsesRing},
 		{name: "reconnect keeps the same server", run: testReconnectKeepsTheServer},
@@ -910,6 +915,152 @@ func testNextServerAfterTwoFailures(t *testing.T) {
 	// connect, then two attempts on each server of the ring, wrapping back to the chosen one
 	if got := attemptedServers(fake); len(got) < 10 || got[:10] != "aaabbccaab" {
 		t.Fatalf("attempted servers = %q, want prefix aaabbccaab", got)
+	}
+}
+
+func whitelistManager(t *testing.T, enabled bool) (*Manager, *engine.Fake, *Subscription) {
+	t.Helper()
+	store := testSettings(t, "off")
+	patch := map[string]json.RawMessage{}
+	if enabled {
+		patch["whitelist_auto"] = json.RawMessage(`true`)
+	} else {
+		patch["on_server_down"] = json.RawMessage(`"next"`)
+	}
+	if _, err := store.Set(patch); err != nil {
+		t.Fatal(err)
+	}
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetProfiles(
+		profile.Profile{ID: "ordinary-a", Sub: "sub", Protocol: "hysteria2"},
+		profile.Profile{ID: "ordinary-b", Sub: "sub", Protocol: "vless"},
+		profile.Profile{ID: "marked", Sub: "sub", Protocol: "hysteria2", Purpose: profile.PurposeWhitelist},
+	)
+	timing := defaultManagerTiming()
+	timing.probeInterval = 5 * time.Millisecond
+	timing.probeRetryInterval = 2 * time.Millisecond
+	timing.probeFailureWindow = time.Millisecond
+	manager := newManagerWithTimings(fake, store.Get, timing, []time.Duration{2 * time.Millisecond})
+	t.Cleanup(manager.Close)
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(subscription.Close)
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "auto", Protocol: "auto", Sub: "sub"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	fake.SetFailStartCode("offline")
+	fake.SetProbeErr(errors.New("tunnel is dead"))
+	return manager, fake, subscription
+}
+
+// The commonest meeting with an allowlist network: the very first connect fails. The hint rises for a failure of the
+// network and not for a refused account, and never when the subscription has no marked path.
+func testWhitelistHintAfterFailedFirstConnect(t *testing.T) {
+	for _, c := range []struct {
+		code   string
+		marked bool
+		want   bool
+	}{{"offline", true, true}, {"auth_rejected", true, false}, {"offline", false, false}} {
+		store := testSettings(t, "off")
+		fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+		profiles := []profile.Profile{{ID: "ordinary-a", Sub: "sub", Protocol: "hysteria2"}}
+		if c.marked {
+			profiles = append(profiles, profile.Profile{ID: "marked", Sub: "sub", Protocol: "hysteria2", Purpose: profile.PurposeWhitelist})
+		}
+		fake.SetProfiles(profiles...)
+		fake.SetFailStartCode(c.code)
+		manager := newManagerWithTimings(fake, store.Get, defaultManagerTiming(), []time.Duration{2 * time.Millisecond})
+		subscription, err := manager.Events().Subscribe([]string{"status"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = manager.Connect(context.Background(), engine.Target{Server: "auto", Protocol: "auto", Sub: "sub"})
+		failed := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "error" })
+		if failed.WhitelistHint != c.want || failed.Purpose != "" {
+			t.Fatalf("%s, marked path %v: hint %v, purpose %q", c.code, c.marked, failed.WhitelistHint, failed.Purpose)
+		}
+		subscription.Close()
+		manager.Close()
+	}
+}
+
+func testWhitelistAutoSwitchesAfterRound(t *testing.T) {
+	manager, fake, subscription := whitelistManager(t, true)
+	status := waitForStatus(t, subscription.C, func(status Status) bool {
+		return status.State == "reconnecting" && status.WhitelistByRule && status.Purpose == profile.PurposeWhitelist
+	})
+	if status.WhitelistHint {
+		t.Fatalf("rule-selected status also has a hint: %#v", status)
+	}
+	waitForStarts(t, fake, 7)
+	found := false
+	for _, target := range fake.Targets() {
+		if target.Server == "marked" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no attempt reached the marked path: %#v", fake.Targets())
+	}
+	current, err := manager.Status(context.Background())
+	if err != nil || current.Purpose != profile.PurposeWhitelist || !current.WhitelistByRule {
+		t.Fatalf("status RPC = %#v, %v; want the rule-selected marked path", current, err)
+	}
+	wire, err := json.Marshal(current)
+	var fields map[string]json.RawMessage
+	if err != nil || json.Unmarshal(wire, &fields) != nil || string(fields["purpose"]) != `"whitelist"` ||
+		string(fields["whitelist_by_rule"]) != "true" || len(fields["whitelist_hint"]) != 0 {
+		t.Fatalf("rule-selected status wire fields = %s, %v", wire, err)
+	}
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testWhitelistHintRisesAndClears(t *testing.T) {
+	manager, fake, subscription := whitelistManager(t, false)
+	hint := waitForStatus(t, subscription.C, func(status Status) bool {
+		return status.State == "reconnecting" && status.WhitelistHint
+	})
+	if hint.Purpose != "" || hint.WhitelistByRule {
+		t.Fatalf("ordinary path hint status = %#v", hint)
+	}
+	wire, err := json.Marshal(hint)
+	var fields map[string]json.RawMessage
+	if err != nil || json.Unmarshal(wire, &fields) != nil || string(fields["whitelist_hint"]) != "true" ||
+		len(fields["purpose"]) != 0 || len(fields["whitelist_by_rule"]) != 0 {
+		t.Fatalf("hint status wire fields = %s, %v", wire, err)
+	}
+	fake.SetFailStartCode("")
+	connected := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if connected.WhitelistHint || connected.Purpose != "" {
+		t.Fatalf("ordinary success did not clear the hint: %#v", connected)
+	}
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "marked", Sub: "sub"}); err != nil {
+		t.Fatal(err)
+	}
+	selected := waitForStatus(t, subscription.C, func(status Status) bool {
+		return status.State == "connected" && status.ServerID == "marked"
+	})
+	if selected.Purpose != profile.PurposeWhitelist || selected.WhitelistByRule || selected.WhitelistHint {
+		t.Fatalf("manually selected marked path status = %#v", selected)
+	}
+	targets := fake.Targets()
+	if len(targets) == 0 || targets[len(targets)-1].Server != "marked" {
+		t.Fatalf("named connect did not reach the marked path: %#v", targets)
+	}
+}
+
+func testWhitelistHintClearsOnSubscriptionChange(t *testing.T) {
+	manager, _, subscription := whitelistManager(t, false)
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.WhitelistHint })
+	manager.SubscriptionsChanged()
+	status, err := manager.Status(context.Background())
+	if err != nil || status.WhitelistHint {
+		t.Fatalf("status after subscription change = %#v, %v; want no hint", status, err)
 	}
 }
 

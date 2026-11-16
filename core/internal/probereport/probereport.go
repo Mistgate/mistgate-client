@@ -86,7 +86,7 @@ func Build(res *diag.Result, profiles []profile.Profile, asn uint32) Body {
 		v := verdict(s)
 		// The live tunnel's own AmneziaWG path was not tried outside it; a relay path dials the relay, not the node, and the
 		// panel would match its address to the wrong server.
-		if !ok || v == "" || s.ID == res.Live || p.Via == "relay" {
+		if !ok || v == "" || s.ID == res.Live || p.Via == "relay" || p.Purpose == profile.PurposeWhitelist {
 			continue
 		}
 		host, port, err := diag.Endpoint(p)

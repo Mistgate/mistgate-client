@@ -26,6 +26,14 @@ type Info struct {
 	ServerID string // the profile in use: names repeat (two servers of one country), ids do not
 	Protocol string
 	Route    string
+	Purpose  string
+}
+
+// Selection is the selected path and Next's round; non-home whitelist paths are excluded.
+type Selection struct {
+	Home      Info
+	Order     []string
+	Whitelist string
 }
 
 type Traffic struct {
@@ -50,6 +58,8 @@ type Engine interface {
 	// Fastest names the server of Next's round, except `except`, that answers a handshake soonest right now. ok is
 	// false when none answers in time (or there is no other server): the caller then falls back to Next.
 	Fastest(ctx context.Context, target Target, except string) (server string, ok bool)
+	// Select returns the path that an automatic target names and the paths it can fail over through.
+	Select(target Target) (Selection, bool)
 }
 
 // ErrNoTunnel: DialVPN has no tunnel that is up. ErrBlockedDest: the destination is one the proxy may not reach.

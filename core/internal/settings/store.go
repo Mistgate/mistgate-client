@@ -35,6 +35,8 @@ type Settings struct {
 	// The local SOCKS5/HTTP proxy through the tunnel; ProxyLAN (the home network may use it too) does nothing without Proxy.
 	Proxy    bool `json:"proxy"`
 	ProxyLAN bool `json:"proxy_lan"`
+	// Try the panel's marked whitelist path after every ordinary path in the failover round has failed.
+	WhitelistAuto bool `json:"whitelist_auto"`
 }
 
 type Store struct {
@@ -163,7 +165,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.RouteRegion = v
-	case "autoconnect", "restore", "last_on", "proxy", "proxy_lan":
+	case "autoconnect", "restore", "last_on", "proxy", "proxy_lan", "whitelist_auto":
 		var v bool
 		if !strictBool(raw, &v) {
 			return false
@@ -177,6 +179,8 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			value.Proxy = v
 		case "proxy_lan":
 			value.ProxyLAN = v
+		case "whitelist_auto":
+			value.WhitelistAuto = v
 		default:
 			value.LastOn = v
 		}
@@ -220,7 +224,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 
 func knownKey(key string) bool {
 	switch key {
-	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "proxy", "proxy_lan", "on_server_down", "dns", "mtu", "last_server", "last_sub":
+	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "proxy", "proxy_lan", "whitelist_auto", "on_server_down", "dns", "mtu", "last_server", "last_sub":
 		return true
 	default:
 		return false

@@ -88,6 +88,8 @@ type Server struct {
 	Country string `json:"country,omitempty"`
 	City    string `json:"city,omitempty"`
 	Via     string `json:"via,omitempty"`
+	// The panel's path purpose, when it is the whitelist marker.
+	Purpose string `json:"purpose,omitempty"`
 	IPv6    bool   `json:"ipv6,omitempty"`
 	Version string `json:"version,omitempty"` // the AmneziaWG generation of the path ("2.0", "3.1"), when the panel says
 	Load    string `json:"load,omitempty"`    // low, medium or high; empty when the panel does not know
@@ -446,7 +448,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 	profiles := make([]profile.Profile, 0)
 	for _, sub := range s.state.Subscriptions {
 		for _, entry := range sub.Entries {
-			p := profile.Profile{ID: entry.Server.ID, Name: entry.Server.Name, Protocol: entry.Server.Protocol, Sub: sub.ID, Via: entry.Server.Via, PanelDNS: sub.DNS, PanelSplit: sub.DNSSplit,
+			p := profile.Profile{ID: entry.Server.ID, Name: entry.Server.Name, Protocol: entry.Server.Protocol, Sub: sub.ID, Via: entry.Server.Via, Purpose: entry.Server.Purpose, PanelDNS: sub.DNS, PanelSplit: sub.DNSSplit,
 				NoIPv6: entry.Server.IPv6Egress != nil && !*entry.Server.IPv6Egress}
 			var err error
 			switch {

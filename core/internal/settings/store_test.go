@@ -83,6 +83,29 @@ func TestStoreKeepsKnownValuesWithUnknownKeys(t *testing.T) {
 	}
 }
 
+func TestWhitelistAutoDefaultAndRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Get().WhitelistAuto {
+		t.Fatal("whitelist_auto defaulted to true")
+	}
+	got, err := store.Set(map[string]json.RawMessage{"whitelist_auto": json.RawMessage(`true`)})
+	if err != nil || !got.WhitelistAuto {
+		t.Fatalf("Set(whitelist_auto) = %#v, %v", got, err)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil || !strings.Contains(string(encoded), `"whitelist_auto":true`) {
+		t.Fatalf("settings JSON = %s, %v", encoded, err)
+	}
+	reopened, err := Open(dir)
+	if err != nil || !reopened.Get().WhitelistAuto {
+		t.Fatalf("reopened whitelist_auto = %v, %v", reopened.Get().WhitelistAuto, err)
+	}
+}
+
 func TestStoreConnectionSettings(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

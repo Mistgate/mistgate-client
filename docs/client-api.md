@@ -213,6 +213,9 @@ The body (stable key order; the client ignores fields it does not know):
   8 bytes of hex, paths starting with `/` and free of spaces and control characters, names of DNS characters only. A
   transport, security, flow, mode or fingerprint it does not know makes the path unsupported (counted, not an error of
   the sync). The client gives Xray the server's address, never its name; `sni` and `host` are separate fields.
+- A path may carry `"purpose": "whitelist"` beside `via` (proposed by the client, not yet settled with the panel): a slow
+  last-resort path for networks that pass only an allowlist. The client keeps it out of every automatic choice and
+  shows it apart; any other value, or none, is an ordinary path.
 - `trusttunnel` (TrustTunnel, HTTP/2 over TLS): `{ "server": "address or name to connect to", "port": 443, "sni": "name",
   "username": "…", "password": "…", "transport": "h2|auto", "tls": "ca|pin", "pin_sha256": "64 hex" }`.
   `sni` is required: it is the name sent and the name the certificate is checked against (`server` may be a relay's

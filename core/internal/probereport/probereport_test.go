@@ -26,6 +26,7 @@ func hy2Path(id, host string, port uint16, via string) profile.Profile {
 func TestBuild(t *testing.T) {
 	profiles := []profile.Profile{
 		hy2Path("ok", "Oslo.Example", 443, "direct"),
+		{ID: "whitelist", Sub: "s", Protocol: "hysteria2", Purpose: profile.PurposeWhitelist, Hy2: &profile.Hy2{Host: "allowlist.example.test", Port: 443}},
 		hy2Path("blocked", "blocked.example", 8443, "direct"),
 		{ID: "dead", Sub: "s", Protocol: "awg", AWG: &profile.AWG{EndpointHost: "2001:DB8::7", EndpointPort: 51820}},
 		{ID: "vless", Sub: "s", Protocol: "vless", VLESS: &profile.VLESS{Host: "vless.example", Port: 443}},
@@ -38,6 +39,7 @@ func TestBuild(t *testing.T) {
 	}
 	res := &diag.Result{Sub: "s", VPN: true, Live: "live", Servers: []diag.Server{
 		{ID: "ok", Protocol: "hysteria2", Verdict: "ok", RTTMS: 42},
+		{ID: "whitelist", Protocol: "hysteria2", Verdict: "ok", RTTMS: 12},
 		{ID: "blocked", Protocol: "hysteria2", Verdict: "blocked", Reason: "udp_no_answer"},
 		{ID: "dead", Protocol: "awg", Verdict: "down", Reason: "no_answer"},
 		{ID: "vless", Protocol: "vless", Verdict: "blocked", Reason: "no_answer"}, // cut connect or failed handshake: unknown

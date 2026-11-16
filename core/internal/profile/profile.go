@@ -20,11 +20,13 @@ type Profile struct {
 	Name     string
 	Protocol string
 	Sub      string
-	Hy2      *Hy2
-	AWG      *AWG
-	VLESS    *VLESS
-	TT       *TrustTunnel
-	Verify   string
+	// The panel's last-resort path marker; other values are discarded when the path is read.
+	Purpose string
+	Hy2     *Hy2
+	AWG     *AWG
+	VLESS   *VLESS
+	TT      *TrustTunnel
+	Verify  string
 	// From a panel's client API: how the path reaches the server (direct, relay, warp); empty when not known.
 	Via string
 	// What the panel's sync said about DNS (plain resolvers only); empty for a subscription that is not managed.
@@ -33,6 +35,8 @@ type Profile struct {
 	// The panel said no IPv6 leaves through this path (ipv6_egress false): the engine takes its word and does not probe.
 	NoIPv6 bool
 }
+
+const PurposeWhitelist = "whitelist"
 
 // DNSSplit is a panel's resolver list for the regions in Geo (lower-case country codes).
 type DNSSplit struct {
@@ -518,7 +522,7 @@ func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 	if server == "" || server == "auto" {
 		// ponytail: auto picks the first match until connection measurements can choose one.
 		for _, p := range profiles {
-			if (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol) {
+			if p.Purpose != PurposeWhitelist && (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol) {
 				return p, true
 			}
 		}
@@ -533,8 +537,8 @@ func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 }
 
 // Next is the server after `after` in the subscription that PickForSettings(server, ...) belongs to, wrapping
-// around. `after` "" or "auto" stands for the picked server itself. Servers the protocol rules out are skipped,
-// except the picked one, so a full round always comes back to it. It is false when no other server exists.
+// around. `after` "" or "auto" stands for the picked server itself. Other whitelist paths are skipped, as are servers
+// the protocol rules out; the picked one stays in the round so it can wrap back. It is false when no other server exists.
 func Next(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool, after string) (string, bool) {
 	home, ring, ok := Ring(profiles, server, requestedProtocol, sub, configuredProtocol, game)
 	if !ok {
@@ -554,7 +558,7 @@ func Next(profiles []Profile, server, requestedProtocol, sub, configuredProtocol
 	return home.ID, true // `after` left the subscription
 }
 
-// Ring is the round Next walks: the picked server (home) and the servers of its subscription that the protocol allows.
+// Ring is the round Next walks: the picked server (home) and the ordinary servers of its subscription that the protocol allows.
 func Ring(profiles []Profile, server, requestedProtocol, sub, configuredProtocol string, game bool) (home Profile, ring []Profile, ok bool) {
 	home, ok = PickForSettings(profiles, server, requestedProtocol, sub, configuredProtocol, game)
 	if !ok {
@@ -565,7 +569,8 @@ func Ring(profiles []Profile, server, requestedProtocol, sub, configuredProtocol
 		protocol = configuredProtocol
 	}
 	for _, p := range profiles {
-		if p.Sub == home.Sub && (p.ID == home.ID || protocol == "" || protocol == "auto" || p.Protocol == protocol) {
+		if p.Sub == home.Sub && (p.ID == home.ID || p.Purpose != PurposeWhitelist) &&
+			(p.ID == home.ID || protocol == "" || protocol == "auto" || p.Protocol == protocol) {
 			ring = append(ring, p)
 		}
 	}
