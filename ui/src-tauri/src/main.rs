@@ -64,6 +64,22 @@ fn tray_state(app: AppHandle, rgba: Vec<u8>, size: u32, tooltip: String) {
     let _ = tray.set_tooltip(Some(tooltip));
 }
 
+/// The two items of the tray icon's menu, kept so that the window can word them in its language.
+struct TrayMenu {
+    open: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+#[tauri::command]
+fn tray_menu(items: State<'_, TrayMenu>, open: String, quit: String) {
+    // a label is a few words: anything else is not from the window's own table
+    let fits = |text: &str| !text.is_empty() && text.chars().count() <= 48 && !text.chars().any(|c| c.is_control());
+    if fits(&open) && fits(&quit) {
+        let _ = items.open.set_text(open);
+        let _ = items.quit.set_text(quit);
+    }
+}
+
 /// The quick panel reports its height (CSS pixels) after every change: the window is exactly the panel.
 #[tauri::command]
 fn tray_fit(app: AppHandle, shell: State<'_, Shell>, height: f64) {
@@ -375,10 +391,12 @@ fn main() {
         .setup(|app| {
             app.manage(bridge::spawn(app.handle().clone()));
 
-            // ponytail: English labels and the system's menu; the design's own menu is a panel like the quick one
+            // ponytail: the system's menu with two items (worded by the window, English until it starts); the design's
+            // own menu is a panel like the quick one
             let open = MenuItem::with_id(app, "open", "Open Mistgate", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
+            app.manage(TrayMenu { open: open.clone(), quit: quit.clone() });
             let mut tray = TrayIconBuilder::with_id("main")
                 .tooltip("Mistgate")
                 .menu(&menu)
@@ -437,7 +455,7 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text, open_url, pick_exe, app_icon, notify, take_link])
+        .invoke_handler(tauri::generate_handler![bridge::rpc, tray_state, tray_menu, tray_fit, shell_prefs, show_main, autostart, quit_now, clipboard_text, open_url, pick_exe, app_icon, notify, take_link])
         .run(tauri::generate_context!())
         .expect("the window could not start");
 }

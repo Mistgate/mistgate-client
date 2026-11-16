@@ -54,6 +54,8 @@ function tooltip(Tray: typeof DCLogic, state: string, server: string) {
 }
 
 export function startTrayIcon(Tray: typeof DCLogic) {
+  const [open, quit] = words().trayMenu;
+  void invoke('tray_menu', { open, quit }).catch(() => {});
   let last = '', seq = 0;
   const show = (s: Status | null) => {
     const state = view(s);
