@@ -10,6 +10,7 @@ type Words = {
   noEnd: string;
   noCert: string; // a server whose certificate the subscription asks not to check: the mark on its row, and in full
   noCertFull: string;
+  wl: [title: string, answers: string, silent: string]; // the channel for allowlists in the diagnostics table
   trayMenu: [open: string, quit: string]; // the tray icon's menu, in the design's words
   noEndCap: string;
   expired: string;
@@ -53,7 +54,7 @@ const enForm = (n: number, one: string, other: string) => (n === 1 ? one : other
 
 const WORDS: Record<string, Words> = {
   en: {
-    locale: 'en-US', trayMenu: ["Open Mistgate", "Quit"], noCert: 'no cert check', noCertFull: 'certificate not checked', days: (n) => `${n} ${enForm(n, 'day', 'days')}`, left: (d) => `${d} left`, until: (d) => `until ${d}`,
+    locale: 'en-US', wl: ["For allowlists","answers","no answer"], trayMenu: ["Open Mistgate", "Quit"], noCert: 'no cert check', noCertFull: 'certificate not checked', days: (n) => `${n} ${enForm(n, 'day', 'days')}`, left: (d) => `${d} left`, until: (d) => `until ${d}`,
     lifetime: 'Lifetime', noEnd: 'no end date', noEndCap: 'No end date', expired: 'Expired', expiredOn: (d) => `on ${d}`,
     expiredMeta: (d) => `expired ${d}`, servers: (n) => `${n} ${enForm(n, 'server', 'servers')}`, gb: 'GB',
     leftOf: (t) => `left of ${t}`, used: 'used · no cap', renew: 'renew to use', link: 'Link', file: 'File',
@@ -73,7 +74,7 @@ const WORDS: Record<string, Words> = {
     lists: { region: (cc) => `Addresses of ${cc}`, entries: (n) => `${n} entries`, updated: (t) => `updated ${t}`, failed: 'Couldn’t update', checking: 'Checking the link…' },
   },
   ru: {
-    locale: 'ru-RU', trayMenu: ["Открыть Mistgate", "Выход"], noCert: 'без проверки', noCertFull: 'без проверки сертификата', days: (n) => `${n} ${ruForm(n, 'день', 'дня', 'дней')}`, left: (d) => `осталось ${d}`, until: (d) => `до ${d}`,
+    locale: 'ru-RU', wl: ["Для белых списков","отвечает","не отвечает"], trayMenu: ["Открыть Mistgate", "Выход"], noCert: 'без проверки', noCertFull: 'без проверки сертификата', days: (n) => `${n} ${ruForm(n, 'день', 'дня', 'дней')}`, left: (d) => `осталось ${d}`, until: (d) => `до ${d}`,
     lifetime: 'Бессрочно', noEnd: 'бессрочно', noEndCap: 'Бессрочно', expired: 'Истекла', expiredOn: (d) => d,
     expiredMeta: (d) => `истекла ${d}`, servers: (n) => `${n} ${ruForm(n, 'сервер', 'сервера', 'серверов')}`, gb: 'ГБ',
     leftOf: (t) => `осталось из ${t}`, used: 'израсходовано · без лимита', renew: 'продлите, чтобы пользоваться', link: 'Ссылка', file: 'Файл',
@@ -93,7 +94,7 @@ const WORDS: Record<string, Words> = {
     lists: { region: (cc) => `Адреса ${cc}`, entries: (n) => `записей: ${n}`, updated: (t) => `обновлён ${t}`, failed: 'Не удалось обновить', checking: 'Проверяем ссылку…' },
   },
   tr: {
-    locale: 'tr-TR', trayMenu: ["Mistgate’i aç", "Çıkış"], noCert: 'doğrulamasız', noCertFull: 'sertifika doğrulanmıyor', days: (n) => `${n} gün`, left: (d) => `${d} kaldı`, until: (d) => `bitiş: ${d}`,
+    locale: 'tr-TR', wl: ["Beyaz listeler için","yanıt veriyor","yanıt yok"], trayMenu: ["Mistgate’i aç", "Çıkış"], noCert: 'doğrulamasız', noCertFull: 'sertifika doğrulanmıyor', days: (n) => `${n} gün`, left: (d) => `${d} kaldı`, until: (d) => `bitiş: ${d}`,
     lifetime: 'Süresiz', noEnd: 'süresiz', noEndCap: 'Süresiz', expired: 'Süresi doldu', expiredOn: (d) => d,
     expiredMeta: (d) => `${d} tarihinde bitti`, servers: (n) => `${n} sunucu`, gb: 'GB',
     leftOf: (t) => `kalan / ${t}`, used: 'kullanıldı · sınırsız', renew: 'kullanmak için yenileyin', link: 'Bağlantı', file: 'Dosya',
@@ -113,7 +114,7 @@ const WORDS: Record<string, Words> = {
     lists: { region: (cc) => `${cc} adresleri`, entries: (n) => `${n} kayıt`, updated: (t) => `güncellendi: ${t}`, failed: 'Güncellenemedi', checking: 'Bağlantı kontrol ediliyor…' },
   },
   zh: {
-    locale: 'zh-CN', trayMenu: ["打开 Mistgate", "退出"], noCert: '未验证', noCertFull: '不验证证书', days: (n) => `${n} 天`, left: (d) => `剩余 ${d}`, until: (d) => `至 ${d}`,
+    locale: 'zh-CN', wl: ["白名单专用","有响应","无响应"], trayMenu: ["打开 Mistgate", "退出"], noCert: '未验证', noCertFull: '不验证证书', days: (n) => `${n} 天`, left: (d) => `剩余 ${d}`, until: (d) => `至 ${d}`,
     lifetime: '永久', noEnd: '无到期日', noEndCap: '无到期日', expired: '已到期', expiredOn: (d) => d,
     expiredMeta: (d) => `已于 ${d}到期`, servers: (n) => `${n} 个服务器`, gb: 'GB',
     leftOf: (t) => `剩余 / 共 ${t}`, used: '已用 · 无上限', renew: '续订后可用', link: '链接', file: '文件',
@@ -133,7 +134,7 @@ const WORDS: Record<string, Words> = {
     lists: { region: (cc) => `${cc} 地址`, entries: (n) => `${n} 条`, updated: (t) => `更新于 ${t}`, failed: '更新失败', checking: '正在检查链接…' },
   },
   fa: {
-    locale: 'fa-IR-u-ca-gregory-nu-latn', trayMenu: ["بازکردن Mistgate", "خروج"], noCert: 'بدون بررسی', noCertFull: 'بدون بررسی گواهی', days: (n) => `${n} روز`, left: (d) => `${d} مانده`, until: (d) => `تا ${d}`,
+    locale: 'fa-IR-u-ca-gregory-nu-latn', wl: ["برای لیست‌های سفید","پاسخ می‌دهد","پاسخ نمی‌دهد"], trayMenu: ["بازکردن Mistgate", "خروج"], noCert: 'بدون بررسی', noCertFull: 'بدون بررسی گواهی', days: (n) => `${n} روز`, left: (d) => `${d} مانده`, until: (d) => `تا ${d}`,
     lifetime: 'مادام‌العمر', noEnd: 'بدون تاریخ پایان', noEndCap: 'بدون تاریخ پایان', expired: 'منقضی‌شده', expiredOn: (d) => d,
     expiredMeta: (d) => `انقضا در ${d}`, servers: (n) => `${n} سرور`, gb: 'گیگابایت',
     leftOf: (t) => `مانده از ${t}`, used: 'مصرف‌شده · بدون سقف', renew: 'برای استفاده تمدید کنید', link: 'لینک', file: 'فایل',

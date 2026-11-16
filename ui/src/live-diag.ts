@@ -7,7 +7,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import { FLAG } from './flags';
-import { nodesOf, PROTO, sufOf, VIA, type Server } from './live';
+import { nodesOf, PROTO, sufOf, VIA, wlFlag, wlName, wlOf, type Server } from './live';
 import { words } from './live-i18n';
 import { liveChip, pref } from './live-settings';
 
@@ -231,7 +231,14 @@ export function liveDiag(Base: typeof DCLogic): typeof DCLogic {
         const tail = e.label.slice((PROTO[e.s.protocol]?.[1] ?? '').length).replace('relay', VIA[e.s.id] ?? 'relay');
         named.set(e.s.id, { flag: node.flag, text: node.name + sufOf(node) + tail });
       }
+      // the channel for allowlists is not a row of Home's list: named as its card is, and it has one answer, not a latency
+      const channels = new Map(wlOf(this.bySub.get(r.sub) ?? this.servers).map((x) => [x.id, x]));
       const servers = r.servers.map((n) => {
+        const channel = channels.get(n.id);
+        if (channel) {
+          const m = n.verdict === 'ok' ? w.wl[1] : w.wl[2];
+          return { kind: 'srv', flag: wlFlag(channel), name: `${w.wl[0]} · ${wlName(channel)}`, v: n.verdict, alt: '', meta: m, paths: [{ n: w.wl[0], v: n.verdict, m }], lines: [] as string[], hops: [] as any[], g: '', tone: '', term: '', act: [] as string[], hasFlag: true };
+        }
         const { flag, text } = named.get(n.id) ?? flagOf(n.name);
         // (by id; the result names the server, and a name is shared by the servers of one country)
         const fast = sp && (sp.server === n.id || (this.serverId ? this.serverId === n.id : sp.server === n.name)) ? ` · ${sp.down_mbps.toFixed(1)} ${unit}` : ''; // the server the VPN is on
