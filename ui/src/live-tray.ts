@@ -6,10 +6,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DCLogic } from './dc';
 import GLYPHS from './design/tray-icons.json';
 import { words } from './live-i18n';
-import { nodesOf, routeWords, sufOf, type Server } from './live';
+import { nodesOf, routeWords, sufOf, wlName, wlOf, type Server } from './live';
 import { pref } from './live-settings';
 
-type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
+type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string; purpose?: string };
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 type Sub = { id: string; name: string; servers: Server[] };
 
@@ -103,7 +103,13 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       window.removeEventListener('focus', this.sync);
       clearInterval(this.clock);
     }
-    componentDidUpdate() { this.paintSpeed(); this.paintRoute(); this.fit(); }
+    componentDidUpdate() { this.paintSpeed(); this.paintRoute(); this.paintWl(); this.fit(); }
+    // the channel's row names the design's sample country as plain text
+    wlNow = '';
+    paintWl() {
+      const n = document.querySelector('.fy-r.wl .n');
+      if (n && this.wlNow && n.textContent !== this.wlNow) n.textContent = this.wlNow;
+    }
 
     onClick = (e: MouseEvent) => {
       const t = e.target as Element;
@@ -160,11 +166,19 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
     }
 
     renderVals() {
-      const v = super.renderVals();
       const s = this.live;
       const state = view(s);
       const sub = this.sub();
       const servers = sub?.servers ?? [];
+      // the channel for allowlists: the design words its row and the strip when shown its own switches (as on Home)
+      const wls = wlOf(servers), picked: string = this.state?.liveSel || 'auto';
+      const wlUsed = !!s && s.purpose === 'whitelist' && state !== 'off' && state !== 'error';
+      const wlSel = wls.length > 0 && (wlUsed || wls.some((x) => x.id === picked));
+      const wlC = (wlUsed && wls.find((x) => x.id === s!.server_id)) || wls.find((x) => x.id === picked) || wls.find((x) => x.id === pref.get('wl')) || wls[0];
+      const real = this.state;
+      let v: any;
+      this.state = { ...real, wl: wls.length ? 'yes' : 'none', ...(wlSel ? { sel: 'wl' } : {}) };
+      try { v = super.renderVals(); } finally { this.state = real; }
       const nodes = nodesOf(servers); // one row per node, as in the main window's list
       const sel: string = this.state?.liveSel || 'auto';
       const sample: string = v.rows?.[1]?.n ?? ''; // the design's sample server inside its own texts
@@ -178,7 +192,7 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       if (state === 'on' && s) {
         const secs = Math.max(0, Math.floor(Date.now() / 1000) - s.since_unix);
         v.H.t = Math.floor(secs / 3600) + ':' + String(Math.floor(secs / 60) % 60).padStart(2, '0') + ':' + String(secs % 60).padStart(2, '0');
-        v.H.s = name + ' · ' + (LABEL[s.protocol] ?? s.protocol);
+        if (!(wlSel && v.wl)) v.H.s = name + ' · ' + (LABEL[s.protocol] ?? s.protocol); // the channel keeps the design's line
       } else if (state === 'ing') v.H.s = sample && name ? String(v.H.s).replace(sample, name) : '';
       else if (state === 'error') v.H.s = ''; // the design counts tried servers; the service does not report that yet
       v.toggle = () => (state === 'on' || state === 'ing' ? void rpc('disconnect').catch(() => {}) : this.connect());
@@ -186,9 +200,9 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
       v.unblock = () => void (s?.error === 'kill_switch' ? rpc('settings.set', { kill_switch: 'while' }) : rpc('disconnect')).catch(() => {});
       const auto = v.rows?.[0];
       v.rows = [
-        ...(auto ? [{ ...auto, ms: '—', c: sel === 'auto' ? 'on' : '', on: sel === 'auto' ? 'true' : 'false', nowC: 'hide', go: () => this.pick('auto') }] : []),
+        ...(auto ? [{ ...auto, ms: '—', c: sel === 'auto' && !wlSel ? 'on' : '', on: sel === 'auto' && !wlSel ? 'true' : 'false', nowC: 'hide', go: () => this.pick('auto') }] : []),
         // ponytail: the first five nodes, as the design's panel has room for; the full list is one press away
-        ...nodes.slice(0, 5).map((n) => {
+        ...nodes.slice(0, v.wl && wls.length ? 4 : 5).map((n) => { // the channel's row takes one place, as in the design
           const mine = n.entries.some((e) => e.s.id === sel);
           const best = Math.min(...n.entries.map((e) => this.pings[e.s.id] || Infinity));
           return {
@@ -197,6 +211,9 @@ export function liveTray(Base: typeof DCLogic): typeof DCLogic {
           };
         }),
       ];
+      this.wlNow = wlC ? wlName(wlC) : '';
+      if (v.wl) Object.assign(v.wl, { has: wls.length > 0, c: wlSel ? 'on' : '', on: wlSel ? 'true' : 'false', root: wlSel ? 'wl-on' : '',
+        go: () => { if (wlC && !wlSel) { pref.set('wl', wlC.id); this.pick(wlC.id); } } });
       return v;
     }
   } as unknown as typeof DCLogic;

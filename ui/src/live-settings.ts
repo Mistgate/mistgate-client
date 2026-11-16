@@ -14,7 +14,7 @@ import { notifyOn, setNotify, startNotify, type NotifyKey } from './live-notify'
 type Status = { state: string; server: string; server_id?: string; protocol?: string };
 // the local proxy as `proxy.get` reports it; the password goes to this window only and is never kept or logged here
 type Proxy = { on: boolean; lan: boolean; host: string; socks_port: number; http_port: number; user: string; password: string; error: string };
-type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg' | 'vless'; game: boolean; autoconnect: boolean };
+type Settings = { kill_switch: 'off' | 'while' | 'always'; lan: boolean; protocol: 'auto' | 'hysteria2' | 'awg' | 'vless' | 'trusttunnel'; game: boolean; autoconnect: boolean; whitelist_auto?: boolean };
 
 const rpc = <T>(method: string, params: object = {}) => invoke<T>('rpc', { method, params });
 
@@ -103,8 +103,8 @@ export function liveChip(Base: typeof DCLogic): typeof DCLogic {
   } as unknown as typeof DCLogic;
 }
 
-const PR: Record<string, Settings['protocol']> = { auto: 'auto', h2: 'hysteria2', awg: 'awg', vless: 'vless' };
-const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'awg', vless: 'vless' };
+const PR: Record<string, Settings['protocol']> = { auto: 'auto', h2: 'hysteria2', awg: 'awg', vless: 'vless', tt: 'trusttunnel' };
+const PR_BACK: Record<string, string> = { auto: 'auto', hysteria2: 'h2', awg: 'awg', vless: 'vless', trusttunnel: 'tt' };
 
 // the design's own words for a switch it shows switched off, in the window's language
 const repTexts = new Map<string, string>();
@@ -241,7 +241,7 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
     apply(s: Settings) {
       this.setState((old: any) => ({
         ks: s.kill_switch, ksAsk: false, pr: PR_BACK[s.protocol] ?? 'auto',
-        on: Object.assign({}, old?.on, { lan: s.lan, game: s.game, auto: s.autoconnect, min: shellPrefs().min, tray: shellPrefs().tray,
+        on: Object.assign({}, old?.on, { lan: s.lan, game: s.game, auto: s.autoconnect, wl: !!s.whitelist_auto, min: shellPrefs().min, tray: shellPrefs().tray,
           nt: notifyOn('nt'), n0: notifyOn('n0'), n1: notifyOn('n1'), n2: notifyOn('n2'), n3: notifyOn('n3'), n4: notifyOn('n4') }),
       }));
     }
@@ -250,12 +250,13 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
     }
     renderVals() {
       const v = super.renderVals();
-      const on = Object.assign({ lan: true, game: false }, this.state?.on);
+      const on = Object.assign({ lan: true, game: false, wl: false }, this.state?.on);
       v.ksSet.off = () => this.save({ kill_switch: 'off' });
       v.ksSet.while = () => this.save({ kill_switch: 'while' });
       v.ksYes = () => this.save({ kill_switch: 'always' }); // "always" goes through the design's confirmation first
       v.tg.lan = () => this.save({ lan: !on.lan });
       v.tg.game = () => this.save({ game: !on.game });
+      v.tg.wl = () => this.save({ whitelist_auto: !on.wl }); // move to the channel for allowlists by itself
       // the window's own switches live with the window; "auto" is also the service's auto-connect
       const shell = shellPrefs();
       const flip = (key: 'auto' | 'min' | 'tray') => {

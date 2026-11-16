@@ -36,7 +36,7 @@ class Component extends DCLogic {
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Connected' : (vp === 'ing' ? 'Connecting…' : 'VPN is off'), m: vp === 'on' ? 'Germany' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'Connect VPN' : 'Disconnect VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
-    const ON = Object.assign({ auto: true, game: false, lan: true, nt: true, n0: true, n1: true, n2: true, n3: true, n4: false, min: true, tray: true, au: true, rep: false }, s0.on || {});
+    const ON = Object.assign({ wl: false, auto: true, game: false, lan: true, nt: true, n0: true, n1: true, n2: true, n3: true, n4: false, min: true, tray: true, au: true, rep: false }, s0.on || {});
     const T = {}, A = {}, tg = {};
     Object.keys(ON).forEach((k) => { T[k] = ON[k] ? 'on' : ''; A[k] = ON[k] ? 'true' : 'false'; tg[k] = () => this.setState({ on: Object.assign({}, ON, { [k]: !ON[k] }) }); });
     const mkPick = (name, val, opts, set) => {
@@ -48,10 +48,10 @@ class Component extends DCLogic {
     // «Always» включается только после подтверждения: без VPN интернета не будет даже после перезагрузки
     const ksAsk = s0.ksAsk !== undefined ? s0.ksAsk : pr.confirm === 'ks';
     const [ks, ksA, ksSet] = mkPick('ks', ksV, ['off', 'while', 'always'], (o) => (o === 'always' && ksV !== 'always' ? this.setState({ ksAsk: true }) : this.setState({ ks: o, ksAsk: false })));
-    const [prk, prA, prSet] = mkPick('pr', prV, ['auto', 'h2', 'awg', 'vless'], (o) => this.setState({ pr: o }));
+    const [prk, prA, prSet] = mkPick('pr', prV, ['auto', 'h2', 'awg', 'vless', 'tt'], (o) => this.setState({ pr: o }));
     const [ch, chA, chSet] = mkPick('ch', chV, ['stable', 'beta'], (o) => this.setState({ ch: o }));
     const KSN = { off: 'Off — if VPN drops, apps go online without it', while: 'If VPN drops, nothing leaves this PC until it’s back', always: 'No internet at all unless VPN is on, even after a restart' };
-    const PRN = { auto: 'Mistgate tries every way and keeps the one that works on your network', h2: 'Only Hysteria2. If it’s blocked, Mistgate won’t switch on its own', awg: 'Only AmneziaWG. If it’s blocked, Mistgate won’t switch on its own', vless: 'Only VLESS. If it’s blocked, Mistgate won’t switch on its own' };
+    const PRN = { auto: 'Mistgate tries every way and keeps the one that works on your network', h2: 'Only Hysteria2. If it’s blocked, Mistgate won’t switch on its own', awg: 'Only AmneziaWG. If it’s blocked, Mistgate won’t switch on its own', vless: 'Only VLESS. If it’s blocked, Mistgate won’t switch on its own', tt: 'Only TrustTunnel. If it’s blocked, Mistgate won’t switch on its own' };
     const EX0 = [['192.168.1.50', 'Home NAS'], ['10.0.0.0/8', 'Work network'], ['office.example.com', 'Office portal']];
     const gone = s0.exGone || [];
     const excList = EX0.filter((e) => gone.indexOf(e[0]) < 0).map((e) => ({ a: e[0], n: e[1], rm: () => this.setState({ exGone: gone.concat([e[0]]) }) }));

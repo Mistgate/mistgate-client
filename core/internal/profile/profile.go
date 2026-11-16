@@ -529,7 +529,7 @@ func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 		return Profile{}, false
 	}
 	for _, p := range profiles {
-		if p.ID == server && (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol) {
+		if p.ID == server && (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol || p.Purpose == PurposeWhitelist) { // the protocol preference is about ordinary servers
 			return p, true
 		}
 	}

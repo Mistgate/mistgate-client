@@ -36,7 +36,7 @@ class Component extends DCLogic {
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Подключено' : (vp === 'ing' ? 'Подключаемся…' : 'VPN выключен'), m: vp === 'on' ? 'Германия' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'Подключить VPN' : 'Отключить VPN',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
-    const ON = Object.assign({ auto: true, game: false, lan: true, nt: true, n0: true, n1: true, n2: true, n3: true, n4: false, min: true, tray: true, au: true, rep: false }, s0.on || {});
+    const ON = Object.assign({ wl: false, auto: true, game: false, lan: true, nt: true, n0: true, n1: true, n2: true, n3: true, n4: false, min: true, tray: true, au: true, rep: false }, s0.on || {});
     const T = {}, A = {}, tg = {};
     Object.keys(ON).forEach((k) => { T[k] = ON[k] ? 'on' : ''; A[k] = ON[k] ? 'true' : 'false'; tg[k] = () => this.setState({ on: Object.assign({}, ON, { [k]: !ON[k] }) }); });
     const mkPick = (name, val, opts, set) => {
@@ -48,10 +48,10 @@ class Component extends DCLogic {
     // «Always» включается только после подтверждения: без VPN интернета не будет даже после перезагрузки
     const ksAsk = s0.ksAsk !== undefined ? s0.ksAsk : pr.confirm === 'ks';
     const [ks, ksA, ksSet] = mkPick('ks', ksV, ['off', 'while', 'always'], (o) => (o === 'always' && ksV !== 'always' ? this.setState({ ksAsk: true }) : this.setState({ ks: o, ksAsk: false })));
-    const [prk, prA, prSet] = mkPick('pr', prV, ['авто', 'h2', 'awg', 'vless'], (o) => this.setState({ pr: o }));
+    const [prk, prA, prSet] = mkPick('pr', prV, ['авто', 'h2', 'awg', 'vless', 'tt'], (o) => this.setState({ pr: o }));
     const [ch, chA, chSet] = mkPick('ch', chV, ['stable', 'beta'], (o) => this.setState({ ch: o }));
     const KSN = { off: 'Выкл — если VPN оборвётся, приложения выйдут в сеть без него', while: 'Если VPN оборвётся, с этого ПК ничего не уйдёт, пока он не вернётся', always: 'Интернета нет совсем, пока VPN выключен, — даже после перезагрузки' };
-    const PRN = { auto: 'Mistgate пробует все пути и оставляет тот, что работает в вашей сети', h2: 'Только Hysteria2. Если его заблокируют, Mistgate сам не переключится', awg: 'Только AmneziaWG. Если его заблокируют, Mistgate сам не переключится', vless: 'Только VLESS. Если его заблокируют, Mistgate сам не переключится' };
+    const PRN = { auto: 'Mistgate пробует все пути и оставляет тот, что работает в вашей сети', h2: 'Только Hysteria2. Если его заблокируют, Mistgate сам не переключится', awg: 'Только AmneziaWG. Если его заблокируют, Mistgate сам не переключится', vless: 'Только VLESS. Если его заблокируют, Mistgate сам не переключится', tt: 'Только TrustTunnel. Если его заблокируют, Mistgate сам не переключится' };
     const EX0 = [['192.168.1.50', 'Домашний NAS'], ['10.0.0.0/8', 'Рабочая сеть'], ['office.example.com', 'Рабочий портал']];
     const gone = s0.exGone || [];
     const excList = EX0.filter((e) => gone.indexOf(e[0]) < 0).map((e) => ({ a: e[0], n: e[1], rm: () => this.setState({ exGone: gone.concat([e[0]]) }) }));

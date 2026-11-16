@@ -9,11 +9,12 @@ import { FLAG } from './flags';
 import { words } from './live-i18n';
 import { pref } from './live-settings';
 
-type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string };
+type Status = { state: string; step: string; since_unix: number; server: string; server_id?: string; protocol: string; error: string;
+  purpose?: string; whitelist_by_rule?: boolean; whitelist_hint?: boolean }; // the channel for allowlists: in use, chosen by the rule, worth offering
 type Traffic = { rx_bps: number; tx_bps: number; rtt_ms: number };
 // node, country, city, via (direct | relay | warp) and ipv6 come from a panel's client API only
 export type Server = { id: string; name: string; protocol: string; node?: string; country?: string; city?: string; via?: string; ipv6?: boolean; load?: string; version?: string;
-  label?: string; node_label?: string; via_country?: string; ipv6_egress?: boolean; insecure?: boolean }; // the owner's names, where a relay enters, IPv6 out
+  label?: string; node_label?: string; via_country?: string; ipv6_egress?: boolean; insecure?: boolean; purpose?: string }; // the owner's names, where a relay enters, IPv6 out
 export type Sub = {
   id: string; kind: 'url' | 'links' | 'awg'; managed?: boolean; name: string; host: string; updated_unix: number; expire_unix: number;
   used_bytes: number; total_bytes: number; error: string; notice?: string; unsupported: number; servers: Server[];
@@ -28,10 +29,14 @@ const rpc = <T = Status>(method: string, params: object = {}) => invoke<T>('rpc'
 const STEP: Record<string, number> = { resolve: 0, handshake: 2, tunnel: 3, verify: 3 };
 export const PROTO: Record<string, [fam: string, label: string, full: string]> = {
   hysteria2: ['h2', 'HY2', 'Hysteria2'], awg: ['awg', 'AWG 3.1', 'AmneziaWG'], vless: ['vless', 'VLESS', 'VLESS'],
-  // ponytail: TrustTunnel (HTTP/2 over TLS) wears the VLESS colour and icon, the design has none of its own; a node
-  // that offers both shows one chip in the hover card. Its own family when the design draws one.
+  // TrustTunnel has a family of its own where the design draws one (ttFamily, set by Home); in a language whose
+  // screens are older it wears the VLESS colour and icon.
   trusttunnel: ['vless', 'TT', 'TrustTunnel'],
 };
+// The servers a panel marks as its channel for allowlists: a slow last resort, never a row of the list.
+export const wlOf = (servers: Server[]) => servers.filter((x) => x.purpose === 'whitelist');
+export const wlName = (x: Server) => countryName((x.country ?? '').toLowerCase()) || x.node_label || x.city || flagOf(x.name).text;
+export const wlFlag = (x: Server) => FLAG[(x.country ?? '').toLowerCase()] ?? flagOf(x.name).flag;
 const mbps = (bps: number) => (bps / 1e6).toFixed(1);
 const DAY = 86400;
 
@@ -54,17 +59,18 @@ const PROTO_WORD = /^(hy2|hysteria ?2?|awg( ?[\d.]+)?|amneziawg( ?[\d.]+)?)$/i;
 const VIA_WORD = /^(через|via)\s+\S/i;
 // The rows of one list of servers are built once: a screen asks several times a render, and the list is the same
 // array until the service sends another. The result is only read.
-const builtNodes = new WeakMap<Server[], { lang: string; nodes: Node[] }>();
+const builtNodes = new WeakMap<Server[], { lang: string; tt: string; nodes: Node[] }>();
 export function nodesOf(servers: Server[]): Node[] {
-  const lang = document.documentElement.lang, had = builtNodes.get(servers);
-  if (had?.lang === lang) return had.nodes;
+  const lang = document.documentElement.lang, tt = PROTO.trusttunnel[0], had = builtNodes.get(servers);
+  if (had?.lang === lang && had.tt === tt) return had.nodes;
   const nodes = buildNodes(servers);
-  builtNodes.set(servers, { lang, nodes });
+  builtNodes.set(servers, { lang, tt, nodes });
   return nodes;
 }
 function buildNodes(servers: Server[]): Node[] {
   const out = new Map<string, Node>();
   for (const s of servers) {
+    if (s.purpose === 'whitelist') continue; // the channel for allowlists has a card of its own
     if (s.node) {
       // the panel's own structure: one node, its paths as the protocol menu
       let [fam, label, full] = PROTO[s.protocol] ?? ['', s.protocol, s.protocol];
@@ -368,6 +374,8 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       this.live = s;
       if (s.state !== 'connected') this.traffic = null;
       const next: Record<string, unknown> = { sw: false, cs: '', wave: false };
+      if (s.state !== 'connecting') next.wlTry = false; // "Try" on the hint shows busy until the connect ends either way
+      if (!s.whitelist_hint) next.wlHintOff = false; // "Not now" lasts as long as this hint does
       if (s.state === 'connected') {
         Object.assign(next, { phase: 'on', secs: Math.max(0, Math.floor(Date.now() / 1000) - s.since_unix), wave: was === 'connecting' });
         if (next.wave) { clearTimeout(this.t2); this.t2 = setTimeout(() => this.setState({ wave: false }), 1900); }
@@ -544,8 +552,18 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       this.connect();
     }
 
+    // The channel for allowlists in the design's logic is its sample: `wl` (none, yes), `wlN` (how many) and the
+    // choice 'wl'. Shown those switches for one render, it words the card, the bar and the hover card in the window's
+    // language; the data is put in after.
+    wls(): Server[] { return this.subsList ? wlOf(this.sub()?.servers ?? []) : []; }
+    wlUsed(): boolean { const s: Status | null = this.live; return !!s && s.purpose === 'whitelist' && ['connected', 'connecting', 'reconnecting'].includes(s.state); }
+    wlPicked(): boolean { const wls = this.wls(); return wls.length > 0 && (this.wlUsed() || wls.some((x) => x.id === this.st().sel)); }
     renderVals() {
-      const v = super.renderVals();
+      const wls = this.wls(), wlSel = this.wlPicked(), real = this.state;
+      let v: any;
+      this.state = { ...real, wl: wls.length ? 'yes' : 'none', wlN: wls.length > 1 ? 3 : 1, ...(wlSel ? { sel: 'wl' } : {}) };
+      try { v = super.renderVals(); } finally { this.state = real; }
+      PROTO.trusttunnel[0] = 'isTt' in (v.cur ?? {}) ? 'tt' : 'vless';
       const s: Status | null = this.live;
       const on = !!s && s.state === 'connected';
       if (on && this.traffic) {
@@ -559,7 +577,35 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       v.det = { on: false }; // the detector's chip is the design's sample until the detectors exist
       if (v.isErr) v.csS = ''; // the design's line counts tried servers; the service does not report that yet
       if (this.subsList) this.subsVals(v, on ? s : null);
+      if (wlSel) v.msTxt.cur = v.cur.ms = '—'; // the channel has no latency number
       return v;
+    }
+
+    // the channel a press on the card connects to: the one in use, the one chosen, the one chosen last time, the first
+    wlCur(wls: Server[]): Server {
+      const s: Status | null = this.live;
+      return (this.wlUsed() && wls.find((x) => x.id === s!.server_id)) || wls.find((x) => x.id === this.st().sel) || wls.find((x) => x.id === pref.get('wl')) || wls[0];
+    }
+    // The card under the list, the bar under the button and the hint, on the subscription's own channels. The words
+    // are the design's (see renderVals); its sample country gives way to the channel's.
+    wlVals(v: any, wls: Server[], wlSel: boolean, on: Status | null) {
+      const has = wls.length > 0 && !!v.wl.has;
+      if (!has) { Object.assign(v.wl, { has: false, hint: false, onNow: false }); return; }
+      const c = this.wlCur(wls), sample: string = v.wl.country ?? '';
+      const go = (id: string) => { pref.set('wl', id); this.choose(id); };
+      const trying = !!this.st().wlTry && this.st().phase === 'ing';
+      Object.assign(v.wl, {
+        has, flag: wlFlag(c), country: wlName(c), multi: wls.length > 1,
+        list: wls.map((x) => ({ n: wlName(x), flag: wlFlag(x), c: x.id === c.id ? 'on' : '', on: x.id === c.id ? 'true' : 'false', pick: () => go(x.id) })),
+        rcls: wlSel ? 'on' : '', on: wlSel ? 'true' : 'false', now: !!on && on.purpose === 'whitelist', onNow: !!on && on.purpose === 'whitelist',
+        sub: sample ? String(v.wl.sub).replace(' · ' + sample, ' · ' + wlName(c)) : v.wl.sub,
+        pick: () => { if (!wlSel) go(c.id); },
+        // the service says when the ordinary servers have failed for a reason of the network
+        hint: !this.st().wlHintOff && (!!this.live?.whitelist_hint || trying),
+        // a failed session is not running: choosing alone would not connect
+        tryGo: () => { if (trying) return; pref.set('wl', c.id); pref.set('server', c.id); this.setState({ sel: c.id, pop: false, wlTry: true, phase: 'ing', cs: '', cstep: 0, wave: false }, () => this.connect()); },
+      });
+      if (wlSel && v.cur?.isWl) Object.assign(v.cur, { flag: wlFlag(c), country: wlName(c), title: wlName(c), flagLabel: wlName(c) });
     }
 
     subsVals(v: any, on: Status | null) {
@@ -636,6 +682,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       // ---- servers: one row per node
       const servers = sub?.servers ?? [];
       const nodes = nodesOf(servers);
+      const wls = wlOf(servers), wlSel = this.wlPicked();
       const has = (n: Node, id: string) => n.entries.some((e) => e.s.id === id);
       // the numbers of the whole session, not this visit's copy: a ping that ends after the screen was left still shows
       const pings: Record<string, number> = PINGS, checking: Record<string, boolean> = this.st().checking ?? {}, flash: Record<string, boolean> = this.st().flash ?? {};
@@ -671,7 +718,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           host: at?.host ?? '—', ip: at ? (at.ips[0] ?? (/^[\d.:a-f]+$/i.test(at.host) ? at.host : '—')) + (at.ips.length > 1 ? ` +${at.ips.length - 1}` : '') : '—',
           route: viaOf(n) || (plain || !kinds.length ? direct : kinds.map((k) => (k === 'warp' ? 'WARP' : k)).join(' · ')),
           pl: [...new Map(n.entries.map((e) => [e.fam, { c: e.fam, t: PROTO[e.s.protocol]?.[2] ?? e.s.protocol }])).values()],
-          load, loadC: load > 70 ? 'hi' : '', ms, msC: ms === '—' ? 'nov' : '',
+          load, loadC: load > 70 ? 'hi' : '', ms, msC: ms === '—' ? 'nov' : '', isWl: false, notWl: true, kc: '',
         };
       };
       // the server in use, by its id: names repeat (two servers of one country)
@@ -692,7 +739,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
           },
           key: n.key, id: n.name, country: n.name, suf: sufOf(n), bare: bareOf(n), mark: bareOf(n) ? w.noCert : viaOf(n), mkc: bareOf(n) ? 'upd' : viaOf(n) ? '' : 'hide', flag: n.flag, via: viaOf(n), hasVia: !!viaOf(n),
           now: !!on && n.entries.some((e) => inUse(e)),
-          h2: fams.has('h2'), vless: fams.has('vless'), awg: fams.has('awg'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
+          h2: fams.has('h2'), vless: fams.has('vless'), awg: fams.has('awg'), tt: fams.has('tt'), label: [...new Set(n.entries.map((e) => e.full))].join(', '),
           rcls: has(n, sel) ? 'on' : '', on: has(n, sel) ? 'true' : 'false', pick: () => { if (!has(n, sel)) this.choose(ids[0]); },
           vd: '', vt: '', vi: 'check', vc: 'hide', vo: 0, vrow: '', pisC: '',
           sigX: best === Infinity ? 'nov' : '', sig: (best === Infinity ? '' : quality(best)) + (busy ? ' busy' : '') + (ids.some((id) => flash[id]) ? ' flash' : ''), ping: () => this.ping(probe(n)), ms: best === Infinity ? '—' : String(best),
@@ -705,14 +752,19 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const bestAll = Math.min(Infinity, ...allIds.map((id) => pings[id] || Infinity));
       Object.assign(v, {
         rows: nodes.filter(found).map(row), rowsBad: [], badLbl: 'hide', srvN: nodes.length, hasSrv: nodes.length > 0, noSrvList: nodes.length === 0,
-        isAuto: sel === 'auto', autoCls: sel === 'auto' ? 'on' : '', pickAuto: () => this.choose('auto'),
+        isAuto: sel === 'auto' && !wlSel, autoCls: sel === 'auto' && !wlSel ? 'on' : '', pickAuto: () => this.choose('auto'),
         pingAll: () => this.pingNodes(servers), allBusy: allIds.some((id) => checking[id]) ? 'busy' : '',
       });
       const tipRow = (v.rows as any[]).find((x) => x.key === this.st().tipId);
-      if (tipRow) this.tipLast = tipRow.tipD;
+      const wlTip = this.st().tipId === 'wl' && wls.length > 0 && !!v.tip?.isWl; // the design's own card for the channel
+      if (wlTip) {
+        const c = this.wlCur(wls), at = HOSTS[c.id];
+        // no UDP through the channel, on any panel so far: the card says what that means
+        this.tipLast = { ...v.tip, flag: wlFlag(c), title: wlName(c), host: at?.host ?? '—', ip: at?.ips[0] ?? '—', noUdp: true };
+      } else if (tipRow) this.tipLast = tipRow.tipD;
       // a row that went away under the pointer (its subscription removed, the list redrawn) never says "pointer left":
       // without this its card stayed on screen, empty
-      else v.tipC = '';
+      else if (!wlTip) v.tipC = '';
       v.tip = this.tipLast ?? v.rows[0]?.tipD ?? { pl: [] };
       // the Auto row carries the best number of the list (the design keys it to its sample node "de")
       v.sigCls.de = bestAll === Infinity ? 'nov' : quality(bestAll);
@@ -722,26 +774,28 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const quick = (n: Node) => Math.min(...n.entries.map((e) => pings[e.s.id] || Infinity));
       const quickest = nodes.reduce<Node | undefined>((a, n) => (quick(n) < (a ? quick(a) : Infinity) ? n : a), undefined);
       const node = (on && nodes.find((n) => n.entries.some((e) => inUse(e)))) || nodes.find((n) => has(n, sel)) || quickest || nodes[0];
-      if (node) {
+      if (node && !wlSel) {
         // (the plain path first in the list: Auto does not choose a relay or a WARP exit when a plain path exists)
         const entry = (on && node.entries.find((e) => inUse(e))) || node.entries.find((e) => e.s.id === sel) || node.entries[0];
         const picked = this.st().prof === 'h2' && sel !== 'auto';
         Object.assign(v.cur, {
           country: node.name, suf: sufOf(node), title: node.name, flag: node.flag, fam: entry.fam, label: entry.label,
-          isH2: entry.fam === 'h2', isAwg: entry.fam === 'awg', isVless: entry.fam === 'vless',
+          isH2: entry.fam === 'h2', isAwg: entry.fam === 'awg', isVless: entry.fam === 'vless', isTt: entry.fam === 'tt',
           // the design says "direct" after the dot; a node reached through another says so in the subscription's words
           srvSub: viaOf(node) ? String(v.cur.srvSub).split(' · ')[0] + ' · ' + viaOf(node) : v.cur.srvSub,
         });
         if (!on || !this.traffic) v.msTxt.cur = v.cur.ms = '—';
         Object.assign(v, {
           profs: node.entries.map((e) => ({
-            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: (through(e.s) ? e.full.replace('relay', through(e.s)) : e.full) + (e.s.insecure ? ' · ' + w.noCertFull : ''), isH2: e.fam === 'h2', isVless: e.fam === 'vless', isAwg: e.fam === 'awg',
+            fam: e.fam, label: through(e.s) ? e.label.replace('relay', through(e.s)) : e.label, full: (through(e.s) ? e.full.replace('relay', through(e.s)) : e.full) + (e.s.insecure ? ' · ' + w.noCertFull : ''), isH2: e.fam === 'h2', isVless: e.fam === 'vless', isAwg: e.fam === 'awg', isTt: e.fam === 'tt',
             cls: picked && e.s.id === sel ? 'on' : '', on: picked && e.s.id === sel ? 'true' : 'false', pick: () => this.choose(e.s.id, true),
           })),
           profAuto: !picked, poAutoCls: picked ? '' : 'on',
           pickProfAuto: () => this.choose(sel === 'auto' ? 'auto' : node.entries[0].s.id),
         });
       }
+
+      if (v.wl) this.wlVals(v, wls, wlSel, on);
 
       // ---- the add sheet: the design's "from a file" variant is the basic mode's confirm
       const p = this.pending;
