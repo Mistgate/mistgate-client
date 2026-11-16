@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"github.com/mistgate/mistgate-client/core/internal/version"
 	"io"
 	"net/http"
@@ -203,7 +204,7 @@ func Open(dataDir string, options ...Options) (*Store, error) {
 	}
 	store := &Store{
 		dir:             dir,
-		client:          http.DefaultClient,
+		client:          safe.FetchClient(0), // the requests carry their own deadlines
 		primaryURL:      "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/%s.list",
 		fallbackURL:     "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/%s.list",
 		sitePrimaryURL:  "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/%s.list",

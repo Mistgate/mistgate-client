@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"io"
 	"log/slog"
 	"maps"
@@ -158,7 +159,7 @@ func openStore(dir string, protectData, unprotectData func([]byte) ([]byte, erro
 		dir:     dir,
 		path:    filepath.Join(dir, fileName),
 		changes: make(chan struct{}, 1),
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  safe.FetchClient(15 * time.Second),
 		protect: protectData,
 	}
 	data, err := os.ReadFile(s.path)

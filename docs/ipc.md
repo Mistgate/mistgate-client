@@ -62,6 +62,16 @@ An untrusted connection may call `status` and nothing else: every other method (
 and it gets no events. `subscribe` sends future events only: ask `status` once after it. The 1 MiB cap counts the line
 without its `\n`. Signatures are checked offline (no revocation lookups); a catalog-only signature does not count. The result of the check is logged once per connection (pid, image path, verdict), never a token or a key.
 
+What this boundary does not cover, on purpose. A program that already runs as an allowed account can do what the
+window can: it could press its buttons. So two things are left as they are: the window passes any method to the
+service (a list of methods in the window would not take anything away from such a program), and the setup program's
+own temporary folder is the user's (the step from that user to an administrator is the UAC prompt, not that folder).
+
+Addresses the service fetches for a caller (a subscription link, a route list by its link): the service runs as
+SYSTEM and such a link can name anything the machine reaches. Link-local addresses (`169.254.0.0/16`, `fe80::/10`)
+are refused when the connection is made, after the name is resolved; private and loopback addresses are not, a panel
+at home or on the same PC is a real case.
+
 ## Methods (v0)
 
 | Method | Params | Result |

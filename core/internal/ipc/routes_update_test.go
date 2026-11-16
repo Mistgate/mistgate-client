@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -30,7 +31,13 @@ func TestRoutesUpdateAndLists(t *testing.T) {
 		}
 	}))
 	defer remote.Close()
-	dataDir := t.TempDir()
+	// not t.TempDir: routes.update downloads in the background and may still be writing when the test ends, and a
+	// directory that cannot be removed at once would fail the test for nothing
+	dataDir, err := os.MkdirTemp("", "routes-update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dataDir) })
 	geoStore, err := geo.Open(dataDir, geo.Options{
 		HTTPClient:              remote.Client(),
 		PrimaryURLTemplate:      remote.URL + "/geoip/%s",
