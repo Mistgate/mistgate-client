@@ -50,7 +50,7 @@
             <div class="onb-logo rise" aria-hidden="true"><i></i><i></i><img src="{{logo}}" alt="" width="54" height="54"></div>
             <h2 class="onb-t rise d1">اشتراک خود را اضافه کنید</h2>
             <p class="onb-s rise d1">لینک ارائه‌دهنده VPN را جای‌گذاری کنید — سرورها فوراً ظاهر می‌شوند</p>
-            <label class="onb-in rise d2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><input type="text" placeholder="https://… or vless://…" aria-label="Subscription link" spellcheck="false"><button class="onb-go" onClick="{{addSub}}" aria-label="افزودن اشتراک"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></label>
+            <label class="onb-in rise d2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><input type="text" placeholder="https://…, vless://… or tt://…" aria-label="Subscription link" spellcheck="false"><button class="onb-go" onClick="{{addSub}}" aria-label="افزودن اشتراک"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></label>
             <button class="clip rise d2" onClick="{{addSub}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4.5" width="12" height="16" rx="2.5"/><path d="M9.5 4.5V3.5h5v1"/><path d="M9.5 11h5M9.5 14.5h3"/></svg><span>لینکی در کلیپ‌بورد پیدا شد</span><b>استفاده</b></button>
             <p class="onb-alt rise d3"><button onClick="{{addFile}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4"/><path d="M12 11.5v5M9.5 14l2.5 2.5 2.5-2.5"/></svg>درون‌ریزی از فایل</button><i aria-hidden="true"></i><a href="https://vpn.example.com" target="_blank" rel="noopener">لینک را از کجا بگیرم؟</a></p>
           </div>
@@ -131,7 +131,7 @@
               </button>
               <span class="cb-div" aria-hidden="true"></span>
               <button class="cb-pr {{cur.fam}}" onClick="{{togglePop}}" aria-expanded="{{popOpen}}" aria-haspopup="listbox" aria-label="Protocol {{cur.label}}. Change">
-                <span class="pic"><sc-if value="{{cur.isH2}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{cur.isVless}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{cur.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if></span>
+                <span class="pic"><sc-if value="{{cur.isWl}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg></sc-if><sc-if value="{{cur.isH2}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{cur.isVless}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{cur.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if><sc-if value="{{cur.isTt}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></sc-if></span>
                 <span class="tx"><b>{{cur.label}}</b><span>{{cur.prSub}}</span></span>
                 <svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
@@ -141,7 +141,7 @@
                 <p class="pop-h">پروتکل روی {{cur.title}}</p>
                 <button class="po {{poAutoCls}}" role="option" aria-selected="{{profAuto}}" onClick="{{pickProfAuto}}"><span class="poi a"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 13.9 9 19.5 11 13.9 13 12 18.5 10.1 13 4.5 11 10.1 9z"/><path d="M18.5 15.5v4M16.5 17.5h4"/></svg></span><span class="pot"><b>خودکار</b><span>آنچه در شبکه شما کار می‌کند را انتخاب می‌کند</span></span></button>
                 <sc-for list="{{profs}}" as="o" hint-placeholder-count="5">
-                  <button class="po {{o.cls}}" role="option" aria-selected="{{o.on}}" onClick="{{o.pick}}"><span class="poi {{o.fam}}"><sc-if value="{{o.isH2}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{o.isVless}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{o.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if></span><span class="pot"><b>{{o.label}}</b><span>{{o.full}}</span></span></button>
+                  <button class="po {{o.cls}}" role="option" aria-selected="{{o.on}}" onClick="{{o.pick}}"><span class="poi {{o.fam}}"><sc-if value="{{o.isH2}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{o.isVless}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{o.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if><sc-if value="{{o.isTt}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></sc-if></span><span class="pot"><b>{{o.label}}</b><span>{{o.full}}</span></span></button>
                 </sc-for>
               </div>
             </sc-if>
@@ -153,6 +153,7 @@
               <span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>{{up}} <small>مگابیت/ثانیه</small></span>
               <span>{{msTxt.cur}} <small>میلی‌ثانیه</small></span>
             </div>
+            <sc-if value="{{wl.onNow}}" hint-placeholder-val="{{false}}"><p class="det wl rise d3" role="status"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg>برای لیست‌های سفید · کانال پشتیبان</p></sc-if>
             <sc-if value="{{det.on}}" hint-placeholder-val="{{true}}"><a class="det rise d3 {{det.c}}" href="FaDiag.dc.html"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.01"/></svg>{{det.t}}<b>{{det.a}}<svg class="i s14" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></b></a></sc-if>
           </sc-if>
           <sc-if value="{{csNote}}" hint-placeholder-val="{{false}}">
@@ -182,15 +183,16 @@
       </sc-if>
       </div>
 
-    <div class="stip {{tipC}}" style="left:{{tipX}}px;top:{{tipY}}px" role="tooltip">
-      <div class="stip-h"><span class="fl"><img src="{{tip.flag}}" alt=""></span><span class="tx"><b>{{tip.title}}</b><span>{{tip.city}}</span></span><span class="stip-ms {{tip.msC}}">{{tip.ms}}<small>میلی‌ثانیه</small></span></div>
+    <div class="stip {{tipC}} {{tip.kc}}" style="left:{{tipX}}px;top:{{tipY}}px" role="tooltip">
+      <div class="stip-h"><sc-if value="{{tip.isWl}}" hint-placeholder-val="{{false}}"><span class="wli"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg><span class="fl"><img src="{{tip.flag}}" alt=""></span></span></sc-if><sc-if value="{{tip.notWl}}" hint-placeholder-val="{{true}}"><span class="fl"><img src="{{tip.flag}}" alt=""></span></sc-if><span class="tx"><b>{{tip.title}}</b><span>{{tip.city}}</span></span><span class="stip-ms {{tip.msC}}">{{tip.ms}}<small>میلی‌ثانیه</small></span></div>
       <div class="stip-kv">
         <div><span>میزبان</span><b class="m">{{tip.host}}</b></div>
         <div><span>IP</span><b class="m">{{tip.ip}}</b></div>
         <div><span>مسیر</span><b>{{tip.route}}</b></div>
       </div>
       <div class="stip-p"><sc-for list="{{tip.pl}}" as="q" hint-placeholder-count="2"><span class="stip-c {{q.c}}">{{q.t}}</span></sc-for></div>
-      <div class="stip-l"><span>بار</span><span class="bar" aria-hidden="true"><i class="{{tip.loadC}}" style="width:{{tip.load}}%"></i></span><b>{{tip.load}}%</b></div>
+      <sc-if value="{{tip.notWl}}" hint-placeholder-val="{{true}}"><div class="stip-l"><span>بار</span><span class="bar" aria-hidden="true"><i class="{{tip.loadC}}" style="width:{{tip.load}}%"></i></span><b>{{tip.load}}%</b></div></sc-if>
+      <sc-if value="{{tip.isWl}}" hint-placeholder-val="{{false}}"><div class="stip-w"><p><span class="gl g-dashboard-speed" aria-hidden="true"></span>کانال پشتیبان: سرعت ممکن است کمتر از معمول باشد</p><sc-if value="{{tip.noUdp}}" hint-placeholder-val="{{false}}"><p class="no"><span class="gl g-gamepad" aria-hidden="true"></span>تماس‌ها و بازی‌ها کار نمی‌کنند</p></sc-if></div></sc-if>
     </div>
     <section class="servers {{svCls}}" aria-label="سرورها">
       <div class="sv-h">
@@ -249,6 +251,13 @@
         </div>
       </sc-if>
       <sc-if value="{{hasSrv}}" hint-placeholder-val="{{true}}">
+      <sc-if value="{{wl.hint}}" hint-placeholder-val="{{false}}">
+      <div class="wlh rise" role="status">
+        <span class="wlh-ic"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg></span>
+        <span class="tx"><b>سرورهای عادی پاسخ نمی‌دهند</b><span>کانال لیست‌های سفید را امتحان می‌کنید؟</span><em>کانال پشتیبان: سرعت ممکن است کمتر از معمول باشد</em></span>
+        <span class="wlh-a"><button class="addb {{wl.tryC}}" onClick="{{wl.tryGo}}">{{wl.tryT}}</button><button class="wlh-n" onClick="{{wl.hintOff}}">الان نه</button></span>
+      </div>
+      </sc-if>
       <div class="srow">
         <label class="search">
           <svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
@@ -271,7 +280,7 @@
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">اکنون</span></sc-if></b></span>
-            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if></span>
+            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if><sc-if value="{{n.tt}}" hint-placeholder-val="{{false}}"><span class="pi tt"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></span></sc-if></span>
           </button>
           <button class="sig {{n.sig}} {{n.sigX}}" onClick="{{n.ping}}" aria-label="Test latency to {{n.id}}" title="Test latency"><span class="b" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp" aria-hidden="true"></span><span class="v">{{n.ms}}<small>میلی‌ثانیه</small></span></button>
         </div>
@@ -282,12 +291,22 @@
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">اکنون</span></sc-if></b></span>
-            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if></span>
+            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if><sc-if value="{{n.tt}}" hint-placeholder-val="{{false}}"><span class="pi tt"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></span></sc-if></span>
           </button>
           <button class="sig {{n.sig}} {{n.sigX}}" onClick="{{n.ping}}" aria-label="Test latency to {{n.id}}" title="Test latency"><span class="b" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp" aria-hidden="true"></span><span class="v">{{n.ms}}<small>میلی‌ثانیه</small></span></button>
         </div>
         </sc-for>
       </div>
+      <sc-if value="{{wl.has}}" hint-placeholder-val="{{false}}">
+      <div class="r wlr wlp {{wl.rcls}}" id="srv-wl" onMouseEnter="{{wl.hin}}" onMouseLeave="{{wl.hout}}">
+        <button class="rsel" aria-pressed="{{wl.on}}" onClick="{{wl.pick}}">
+          <span class="wli"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg><span class="fl"><img src="{{wl.flag}}" alt=""></span></span>
+          <span class="nm"><b><span class="nmt">برای لیست‌های سفید</span><sc-if value="{{wl.now}}" hint-placeholder-val="{{false}}"><span class="now">اکنون</span></sc-if></b><span>{{wl.sub}}</span></span>
+        </button>
+        <span class="sig slow {{wl.sigC}}">{{wl.sigT}}</span>
+        <sc-if value="{{wl.multi}}" hint-placeholder-val="{{false}}"><div class="wlcs" role="radiogroup" aria-label="برای لیست‌های سفید"><sc-for list="{{wl.list}}" as="c" hint-placeholder-count="3"><button class="wlc {{c.c}}" role="radio" aria-checked="{{c.on}}" onClick="{{c.pick}}"><span class="fl"><img src="{{c.flag}}" alt=""></span>{{c.n}}</button></sc-for></div></sc-if>
+      </div>
+      </sc-if>
       </sc-if>
       </sc-if>
 
@@ -403,11 +422,14 @@
   </div>
   <div lang="en" class="dev" role="toolbar" aria-label="Subscription states">
     <div class="dg"><span class="dl">Subscription</span><div class="ds"><button class="{{dv.pl_0}}" onClick="{{dvSet.pl_0}}">Limited</button><button class="{{dv.pl_1}}" onClick="{{dvSet.pl_1}}">Unlimited</button><button class="{{dv.pl_2}}" onClick="{{dvSet.pl_2}}">No end date</button><button class="{{dv.pl_3}}" onClick="{{dvSet.pl_3}}">Expiring</button><button class="{{dv.pl_4}}" onClick="{{dvSet.pl_4}}">Expired</button><button class="{{dv.pl_5}}" onClick="{{dvSet.pl_5}}">None</button></div></div>
-    <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.tg_ok}}" onClick="{{dvSet.tg_ok}}">Installed</button><button class="{{dv.tg_missing}}" onClick="{{dvSet.tg_missing}}">Not installed</button></div></div>
+    <div class="dg"><span class="dl">Allowlist</span><div class="ds"><button class="{{dv.wl_none}}" onClick="{{dvSet.wl_none}}">None</button><button class="{{dv.wl_yes}}" onClick="{{dvSet.wl_yes}}">List</button><button class="{{dv.wl_on}}" onClick="{{dvSet.wl_on}}">On</button><button class="{{dv.wl_down}}" onClick="{{dvSet.wl_down}}">Down</button><button class="{{dv.wl_hint}}" onClick="{{dvSet.wl_hint}}">Hint</button></div></div>
+      <div class="dg"><span class="dl">Channels</span><div class="ds"><button class="{{dv.wn_1}}" onClick="{{dvSet.wn_1}}">1</button><button class="{{dv.wn_3}}" onClick="{{dvSet.wn_3}}">3</button><button class="{{dv.wn_5}}" onClick="{{dvSet.wn_5}}">5</button></div></div>
+      <div class="dg"><span class="dl">UDP</span><div class="ds"><button class="{{dv.udp_no}}" onClick="{{dvSet.udp_no}}">No</button><button class="{{dv.udp_yes}}" onClick="{{dvSet.udp_yes}}">Yes</button></div></div>
+      <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.tg_ok}}" onClick="{{dvSet.tg_ok}}">Installed</button><button class="{{dv.tg_missing}}" onClick="{{dvSet.tg_missing}}">Not installed</button></div></div>
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"state":{"editor":"enum","options":["on","off","ing","sw"],"default":"on","section":"State"},"sel":{"editor":"enum","options":["auto","de","nl","ru"],"default":"auto","section":"State"},"list":{"editor":"enum","options":["top","end"],"default":"top","section":"State"},"tab":{"editor":"enum","options":["vpn","telegram"],"default":"vpn","section":"State"},"pop":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"subs":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"sub":{"editor":"enum","options":["mine","work","family","test","expired","none"],"default":"mine","section":"State"},"srv":{"editor":"enum","options":["0","2","8","24"],"default":"8","section":"State"},"telegram":{"editor":"enum","options":["ok","missing"],"default":"ok","section":"State"},"add":{"editor":"enum","options":["none","check","confirm","consent","badlink","limit","expired","offline","drop","basic"],"default":"none","section":"State"},"banner":{"editor":"enum","options":["none","news","debug","update","newver"],"default":"none","section":"State"},"det":{"editor":"enum","options":["udp","dpi","none"],"default":"udp","section":"State"},"subst":{"editor":"enum","options":["ok","removed","stale"],"default":"ok","section":"State"},"brand":{"editor":"enum","options":["mistgate","polar","sunline","onyx"],"default":"mistgate","section":"Look"},"conn":{"editor":"enum","options":["none","rec","offline","error","ks","svc"],"default":"none","section":"State"},"why":{"editor":"enum","options":["net","sleep"],"default":"net","section":"State"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Look"},"accent":{"editor":"enum","options":["lavender","mint","sand","rose"],"default":"lavender","section":"Look"},"$preview":{"width":1160,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"state":{"editor":"enum","options":["on","off","ing","sw"],"default":"on","section":"State"},"wl":{"editor":"enum","options":["none","yes","down"],"default":"none","section":"State"},"wln":{"editor":"enum","options":["1","3","5"],"default":"1","section":"State"},"wltip":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"udp":{"editor":"enum","options":["no","yes"],"default":"no","section":"State"},"prof":{"editor":"enum","options":["auto","h2","vt","awg","tt"],"default":"auto","section":"State"},"sel":{"editor":"enum","options":["auto","de","nl","ru","wl"],"default":"auto","section":"State"},"list":{"editor":"enum","options":["top","end"],"default":"top","section":"State"},"tab":{"editor":"enum","options":["vpn","telegram"],"default":"vpn","section":"State"},"pop":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"subs":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"sub":{"editor":"enum","options":["mine","work","family","test","expired","none"],"default":"mine","section":"State"},"srv":{"editor":"enum","options":["0","2","8","24"],"default":"8","section":"State"},"telegram":{"editor":"enum","options":["ok","missing"],"default":"ok","section":"State"},"add":{"editor":"enum","options":["none","check","confirm","consent","badlink","limit","expired","offline","drop","basic"],"default":"none","section":"State"},"banner":{"editor":"enum","options":["none","news","debug","update","newver"],"default":"none","section":"State"},"det":{"editor":"enum","options":["udp","dpi","none"],"default":"udp","section":"State"},"subst":{"editor":"enum","options":["ok","removed","stale"],"default":"ok","section":"State"},"brand":{"editor":"enum","options":["mistgate","polar","sunline","onyx"],"default":"mistgate","section":"Look"},"conn":{"editor":"enum","options":["none","rec","offline","error","ks","svc"],"default":"none","section":"State"},"why":{"editor":"enum","options":["net","sleep"],"default":"net","section":"State"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Look"},"accent":{"editor":"enum","options":["lavender","mint","sand","rose"],"default":"lavender","section":"Look"},"$preview":{"width":1160,"height":800}}'>
 class Component extends DCLogic {
   faDigits() {
     if (this.faMo || typeof document === 'undefined') return;
@@ -439,6 +461,7 @@ class Component extends DCLogic {
 
   componentDidMount() { this.faDigits();
     if (this.props.list === 'end') setTimeout(() => { const l = document.querySelector('.list'); if (l) l.scrollTop = l.scrollHeight; }, 700);
+    if (this.props.wltip === 'open') setTimeout(() => this.wlTip(), 1100);
     this.tick = setInterval(() => {
       if (this.phase() === 'on') this.setState({ secs: this.secs() + 1 });
     }, 1000);
@@ -447,6 +470,8 @@ class Component extends DCLogic {
     clearInterval(this.tick); clearTimeout(this.t1); clearTimeout(this.t2);
   }
   st() { return this.state || {}; }
+  wlTip() { const el = document.querySelector('.r.wlr'); if (!el) return; const l = el.closest('.list'); if (l) l.scrollTop = l.scrollHeight; const r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl'; this.setState({ tipId: 'wl', tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - Math.max((document.querySelector('.stip') || {}).offsetHeight || 250, 356)))) }); }
+  wlEnd() { setTimeout(() => { const l = document.querySelector('.list'); if (l) l.scrollTop = l.scrollHeight; }, 60); }
   openAdd(kind) { clearTimeout(this.ta); this.setState({ add: 'check' }); this.ta = setTimeout(() => this.setState({ add: kind }), 900); }
   phase() { return this.st().phase || (this.props.state === 'off' ? 'off' : (this.props.state === 'ing' || this.props.state === 'sw' ? 'ing' : 'on')); }
   isSw() { return this.st().sw !== undefined ? this.st().sw : this.props.state === 'sw'; }
@@ -515,16 +540,16 @@ class Component extends DCLogic {
     const tab = this.st().tab || this.props.tab || 'vpn';
     const prof = this.st().prof || this.props.prof || 'خودکار';
     const popOpen = this.st().pop !== undefined ? this.st().pop : this.props.pop === 'open';
-    const NODES_ALL = [["de", "de", "آلمان", ["h2", "h2w", "vt", "vx", "awg"], 39, ""], ["de2", "de", "آلمان", ["h2", "h2w", "vt", "vx"], 44, ""], ["mass", "de", "آلمان", ["h2"], 61, ""], ["be", "by", "بلاروس", ["h2", "vt", "vx"], 58, "RU"], ["nl", "nl", "هلند", ["h2", "h2w", "vt", "vx", "awg"], 48, ""], ["ru", "ru", "روسیه", ["h2", "vt", "vx"], 12, ""], ["ru2", "ru", "روسیه", ["h2", "vt", "vx"], 15, ""], ["ro", "ro", "رومانی", ["h2", "h2w", "vt", "vx"], 63, ""], ["fi", "fi", "فنلاند", ["h2", "vt", "vx", "awg"], 41, ""], ["nl2", "nl", "هلند", ["h2", "vt"], 51, ""], ["lv", "lv", "لتونی", ["h2", "vt", "vx"], 36, ""], ["pl", "pl", "لهستان", ["h2", "vt", "vx"], 45, ""], ["ee", "ee", "استونی", ["h2", "vt"], 38, ""], ["se", "se", "سوئد", ["h2", "vt", "vx", "awg"], 55, ""], ["fr", "fr", "فرانسه", ["h2", "h2w", "vt", "vx"], 62, ""], ["de3", "de", "آلمان", ["vt", "vx"], 47, ""], ["fi2", "fi", "فنلاند", ["awg"], 43, ""], ["pl2", "pl", "لهستان", ["vt"], 49, ""], ["nl3", "nl", "هلند", ["h2", "awg"], 53, ""], ["se2", "se", "سوئد", ["vt", "vx"], 58, ""], ["fr2", "fr", "فرانسه", ["h2"], 66, ""], ["ro2", "ro", "رومانی", ["vt", "vx"], 70, ""], ["lv2", "lv", "لتونی", ["h2", "vt"], 40, ""], ["ee2", "ee", "استونی", ["awg"], 42, ""]];
+    const NODES_ALL = [["de", "de", "آلمان", ["h2", "h2w", "vt", "vx", "awg", "tt"], 39, ""], ["de2", "de", "آلمان", ["h2", "h2w", "vt", "vx"], 44, ""], ["mass", "de", "آلمان", ["h2"], 61, ""], ["be", "by", "بلاروس", ["h2", "vt", "vx"], 58, "RU"], ["nl", "nl", "هلند", ["h2", "h2w", "vt", "vx", "awg", "tt"], 48, ""], ["ru", "ru", "روسیه", ["h2", "vt", "vx", "tt"], 12, ""], ["ru2", "ru", "روسیه", ["h2", "vt", "vx"], 15, ""], ["ro", "ro", "رومانی", ["h2", "h2w", "vt", "vx"], 63, ""], ["fi", "fi", "فنلاند", ["h2", "vt", "vx", "awg"], 41, ""], ["nl2", "nl", "هلند", ["h2", "vt"], 51, ""], ["lv", "lv", "لتونی", ["h2", "vt", "vx"], 36, ""], ["pl", "pl", "لهستان", ["h2", "vt", "vx"], 45, ""], ["ee", "ee", "استونی", ["h2", "vt"], 38, ""], ["se", "se", "سوئد", ["h2", "vt", "vx", "awg"], 55, ""], ["fr", "fr", "فرانسه", ["h2", "h2w", "vt", "vx"], 62, ""], ["de3", "de", "آلمان", ["vt", "vx"], 47, ""], ["fi2", "fi", "فنلاند", ["awg"], 43, ""], ["pl2", "pl", "لهستان", ["vt"], 49, ""], ["nl3", "nl", "هلند", ["h2", "awg"], 53, ""], ["se2", "se", "سوئد", ["vt", "vx"], 58, ""], ["fr2", "fr", "فرانسه", ["h2"], 66, ""], ["ro2", "ro", "رومانی", ["vt", "vx"], 70, ""], ["lv2", "lv", "لتونی", ["h2", "vt"], 40, ""], ["ee2", "ee", "استونی", ["awg"], 42, ""]];
     const svN = this.st().svN !== undefined ? this.st().svN : (this.props.srv !== undefined ? Number(this.props.srv) : 8);
     const siPre = this.st().si !== undefined ? this.st().si : ({ mine: 0, work: 1, family: 2, test: 3, expired: 4, none: 5 }[this.props.sub] || 0);
     const TCITY = { de: 'فرانکفورت', by: 'مینسک', nl: 'آمستردام', ru: 'مسکو', ro: 'بخارست', fi: 'هلسینکی', lv: 'ریگا', pl: 'ورشو', ee: 'تالین', se: 'استکهلم', fr: 'پاریس' };
     const CITY = { nl: 'آمستردام', fi: 'هلسینکی', ro: 'Bucharest, Pipera Business District' }, V6 = { ru2: true, nl2: true }, NAMEOF = {}, CNT = {};
     NODES_ALL.forEach((n) => { CNT[n[2]] = (CNT[n[2]] || 0) + 1; NAMEOF[n[0]] = CITY[n[0]] ? ' · ' + CITY[n[0]] : (CNT[n[2]] > 1 ? ' ' + CNT[n[2]] : ''); });
     const NODES = siPre === 5 ? [] : (svN === 2 ? [NODES_ALL[0], NODES_ALL[4]] : NODES_ALL.slice(0, svN));
-    const FAM = { h2: 'h2', h2w: 'h2', vt: 'vless', vx: 'vless', awg: 'awg' };
-    const LABEL = { h2: 'HY2', h2w: 'HY2 · WARP', vt: 'VLESS · TCP', vx: 'VLESS · XHTTP', awg: 'AWG 3.1' };
-    const FULL = { h2: 'Hysteria2 · UDP', h2w: '‏Hysteria2 با خروجی WARP', vt: 'VLESS · TCP · REALITY', vx: 'VLESS · XHTTP', awg: 'AmneziaWG 3.1 · UDP' };
+    const FAM = { h2: 'h2', h2w: 'h2', vt: 'vless', vx: 'vless', awg: 'awg', tt: 'tt' };
+    const LABEL = { h2: 'HY2', h2w: 'HY2 · WARP', vt: 'VLESS · TCP', vx: 'VLESS · XHTTP', awg: 'AWG 3.1', tt: 'TT' };
+    const FULL = { h2: 'Hysteria2 · UDP', h2w: '‏Hysteria2 با خروجی WARP', vt: 'VLESS · TCP · REALITY', vx: 'VLESS · XHTTP', awg: 'AmneziaWG 3.1 · UDP', tt: 'TrustTunnel · TCP + UDP' };
     const node = NODES.find((n) => n[0] === (sel === 'خودکار' ? 'de' : sel)) || NODES[0] || NODES_ALL[0];
     const p = prof !== 'خودکار' && node[3].indexOf(prof) >= 0 ? prof : (node[3].indexOf('vt') >= 0 ? 'vt' : node[3][0]);
     const isProfAuto = !(prof !== 'خودکار' && node[3].indexOf(prof) >= 0);
@@ -541,12 +566,14 @@ class Component extends DCLogic {
     });
     const anyBusy = NODES.some((n) => checking[n[0]]);
     const FLAGS = {"de": "/_blob/b9d142e1783ba5a3056edc5da7cdd20f", "by": "/_blob/04222ed858541273845e5c24792dfe0c", "nl": "/_blob/36a15227713f5fed7fa96d99b57f5075", "ru": "/_blob/a658d425a4f899c328a7d60b130a9949", "ro": "/_blob/bdbee2951b5491a7a4a74a2804d772f2", "fi": "/_blob/858b6a863219a306c2c367366862ba62", "lv": "/_blob/ad07975874713d506bbd802fb2fbaa13", "pl": "/_blob/3dc63fca4e387768181c89cb6ede9a4a", "ee": "/_blob/69cce780180c1b67980a8dca35fac7b5", "se": "/_blob/9a3d133aa82690cc501e69bf3d200996", "fr": "/_blob/122ef9d158e532eba2f16b9884369769"};
-    const NAMES = { h2: 'Hysteria2', vless: 'VLESS', awg: 'AmneziaWG' };
+    const NAMES = { h2: 'Hysteria2', vless: 'VLESS', awg: 'AmneziaWG', tt: 'TrustTunnel' };
     // вердикт последней проверки сети — тот же, что на экране «Диагностика»
     const VERD = { nl: 'slow', ro: 'freeze', fi: 'down', pl: 'config' };
     const VDX = { slow: ['کاهش سرعت', 'dashboard-speed', 'warn', 1], freeze: ['فریز می‌شود', 'snow-flake', 'ice', 2], down: ['سرور از کار افتاده', 'cloud-xmark', 'neu', 3], config: ['خطای پیکربندی', 'wrench', 'lav', 4] };
     const cs0 = this.st().cs !== undefined ? this.st().cs : (this.props.conn && this.props.conn !== 'none' ? this.props.conn : '');
-    const pickSrv = (id) => { const to = id === 'خودکار' ? 'de' : id; if (phase === 'on' && !cs0 && to !== node[0]) this.switchTo(id); else this.setState({ sel: id, pop: false }); };
+    const wlK = this.st().wl !== undefined ? this.st().wl : (this.props.wl || 'none'), wlHas = wlK !== 'none' && NODES.length > 0 && siPre < 4, wlDown = wlK === 'down', wlSel = wlHas && !wlDown && sel === 'wl';
+    const wlN = Number(this.st().wlN !== undefined ? this.st().wlN : (this.props.wln || 1)), WLL = [['nl', 'هلند'], ['de', 'آلمان'], ['fi', 'فنلاند'], ['lv', 'لتونی'], ['pl', 'لهستان']].slice(0, wlN), wlC = WLL.find((x) => x[0] === this.st().wlCur) || WLL[0];
+    const pickSrv = (id) => { const to = id === 'خودکار' ? 'de' : id; if (phase === 'on' && !cs0 && to !== (wlSel ? 'wl' : node[0])) this.switchTo(id); else this.setState({ sel: id, pop: false }); };
     const bnK0 = this.st().bn !== undefined ? this.st().bn : (this.props.banner || 'none');
     const NEWV = bnK0 === 'newver' ? { mass: 1, ru2: 1 } : {};
     const rows = NODES.map((n) => {
@@ -559,8 +586,8 @@ class Component extends DCLogic {
       return { tipD: tipD, hin: (e) => { const el = e.currentTarget || e.target.closest('.r'), r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
           this.setState({ tipId: n[0], tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - ((document.querySelector('.stip') || {}).offsetHeight || 250)))) }); },
         hout: () => this.setState({ tipId: '' }),
-        id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0],
-        h2: fams.indexOf('h2') >= 0, vless: fams.indexOf('vless') >= 0, awg: fams.indexOf('awg') >= 0, label: fams.map((x) => NAMES[x]).join(', '),
+        id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0] && !wlSel,
+        h2: fams.indexOf('h2') >= 0, vless: fams.indexOf('vless') >= 0, awg: fams.indexOf('awg') >= 0, tt: fams.indexOf('tt') >= 0, label: fams.map((x) => NAMES[x]).join(', '),
         rcls: sel === n[0] ? 'on' : '', on: sel === n[0] ? 'true' : 'false', pick: () => pickSrv(n[0]),
         vd: VERD[n[0]] || '', vt: VERD[n[0]] ? VDX[VERD[n[0]]][0] : '', vi: VERD[n[0]] ? VDX[VERD[n[0]]][1] : 'check', vc: VERD[n[0]] ? VDX[VERD[n[0]]][2] : 'hide', vo: VERD[n[0]] ? VDX[VERD[n[0]]][3] : 0,
         vrow: NEWV[n[0]] || VERD[n[0]] === 'down' || VERD[n[0]] === 'config' ? 'dead' : '', pisC: VERD[n[0]] || NEWV[n[0]] ? 'hide' : '', sigX: NEWV[n[0]] || VERD[n[0]] === 'down' ? 'nov' : '',
@@ -568,18 +595,21 @@ class Component extends DCLogic {
     });
     const tipRow = rows.filter((x) => x.id === this.st().tipId)[0];
     if (tipRow) this.lastTip = tipRow.tipD;
-    const tip = this.lastTip || (rows[0] ? rows[0].tipD : { pl: [] });
+    const noUdp = (this.st().udp !== undefined ? this.st().udp : (this.props.udp || 'no')) !== 'yes';
+    if (this.st().tipId === 'wl' && wlHas) this.lastTip = { isWl: true, flag: FLAGS[wlC[0]], title: wlC[1], city: 'برای لیست‌های سفید', host: 'dns.vpn.example.com', ip: '203.0.113.53', route: 'کانال پشتیبان از طریق DNS', pl: [{ c: 'wl', t: 'لیست سفید' }], load: 0, loadC: '', kc: 'wl', ms: wlDown ? 'در دسترس نیست' : 'پشتیبان', msC: wlDown ? 'nov wl' : 'wl', noUdp: noUdp };
+    const tip0 = this.lastTip || (rows[0] ? rows[0].tipD : { pl: [] }), tip = Object.assign({ isWl: false }, tip0, { notWl: !tip0.isWl });
     const rcls = {}, rOn = {}, pickN = {}, nowN = {};
     NODES.forEach((n) => {
       rcls[n[0]] = sel === n[0] ? 'on' : '';
       rOn[n[0]] = sel === n[0] ? 'true' : 'false';
       pickN[n[0]] = () => pickSrv(n[0]);
-      nowN[n[0]] = phase === 'on' && n[0] === node[0];
+      nowN[n[0]] = phase === 'on' && n[0] === node[0] && !wlSel;
     });
     const cur = { cc: node[1], flag: FLAGS[node[1]], country: node[2], suf: NAMEOF[node[0]], title: node[2] + NAMEOF[node[0]], node: node[0], flagLabel: 'پرچم ' + node[2], fam: FAM[p], label: LABEL[p],
-      isH2: FAM[p] === 'h2', isVless: FAM[p] === 'vless', isAwg: FAM[p] === 'awg', ms: String(msOf(node)),
+      isH2: FAM[p] === 'h2', isVless: FAM[p] === 'vless', isAwg: FAM[p] === 'awg', isTt: FAM[p] === 'tt', ms: String(msOf(node)),
       sub: '', srvSub: (sel === 'خودکار' ? 'خودکار' : 'انتخاب شما') + ' · ' + (node[5] ? 'از طریق ' + node[5] : 'مستقیم'), prSub: isProfAuto ? 'خودکار' : 'انتخاب شما' };
-    const profs = node[3].map((k) => ({ fam: FAM[k], label: LABEL[k], full: FULL[k], isH2: FAM[k] === 'h2', isVless: FAM[k] === 'vless', isAwg: FAM[k] === 'awg',
+    if (wlSel) Object.assign(cur, { cc: wlC[0], flag: FLAGS[wlC[0]], country: wlC[1], suf: '', title: wlC[1], node: 'wl', flagLabel: wlC[1], fam: 'wl', label: 'لیست سفید', isH2: false, isVless: false, isAwg: false, isTt: false, isWl: true, ms: '—', srvSub: 'کانال پشتیبان', prSub: 'از طریق DNS' });
+    const profs = node[3].map((k) => ({ fam: FAM[k], label: LABEL[k], full: FULL[k], isH2: FAM[k] === 'h2', isVless: FAM[k] === 'vless', isAwg: FAM[k] === 'awg', isTt: FAM[k] === 'tt',
       cls: !isProfAuto && k === p ? 'on' : '', on: !isProfAuto && k === p ? 'true' : 'false', pick: () => this.setState({ prof: k, pop: false }) }));
     const SUBS = [{"name": "اشتراک من", "ini": "ا", "tone": "lav", "host": "vpn.example.com", "st": "24 روز مانده", "stCls": "", "meta": "8 سرور · 24 روز مانده", "tV": "24 روز", "tS": "تا 30 نوامبر", "tP": "80%", "tG": "", "tN": 1, "tInf": false, "tFin": true, "dV": "64.8 گیگابایت", "dS": "مانده از 100 گیگابایت", "dP": "65%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "2 از 5", "vS": "دستگاه در حال استفاده", "vP": "40%", "vG": "", "vN": 5, "vInf": false, "vFin": true, "src": "mg", "srcT": "Mistgate", "srcCls": "src-mg"}, {"name": "کار", "ini": "ک", "tone": "sky", "host": "corp.example.net/sub", "st": "نامحدود", "stCls": "", "meta": "5 سرور · نامحدود", "tV": "مادام‌العمر", "tS": "بدون تاریخ پایان", "tP": "100%", "tG": "inf", "tN": 1, "tInf": true, "tFin": false, "dV": "182 گیگابایت", "dS": "مصرف‌شده · بدون سقف", "dP": "100%", "dG": "inf", "dN": 1, "dInf": true, "dFin": false, "vV": "3", "vS": "بدون سقف", "vP": "100%", "vG": "inf", "vN": 1, "vInf": true, "vFin": false, "src": "link", "srcT": "لینک", "srcCls": "src-link"}, {"name": "خانواده", "ini": "خ", "tone": "mint", "host": "home.example.com", "st": "بدون تاریخ پایان", "stCls": "", "meta": "6 سرور · بدون تاریخ پایان", "tV": "مادام‌العمر", "tS": "بدون تاریخ پایان", "tP": "100%", "tG": "inf", "tN": 1, "tInf": true, "tFin": false, "dV": "38 گیگابایت", "dS": "مانده از 50 گیگابایت", "dP": "76%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "4 از 6", "vS": "دستگاه در حال استفاده", "vP": "67%", "vG": "", "vN": 6, "vInf": false, "vFin": true, "src": "mg", "srcT": "Mistgate", "srcCls": "src-mg"}, {"name": "grpc test", "ini": "G", "tone": "sand", "host": "test-servers.conf", "st": "3 روز مانده", "stCls": "warn", "meta": "2 سرور · 3 روز مانده", "tV": "3 روز", "tS": "تا 12 نوامبر", "tP": "10%", "tG": "warn", "tN": 1, "tInf": false, "tFin": true, "dV": "4.1 گیگابایت", "dS": "مانده از 20 گیگابایت", "dP": "20%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "1 از 1", "vS": "سقف پر شده", "vP": "100%", "vG": "warn", "vN": 1, "vInf": false, "vFin": true, "src": "file", "srcT": "فایل", "srcCls": "src-file"}, {"name": "اشتراک من", "ini": "ا", "tone": "lav", "host": "vpn.example.com", "st": "منقضی‌شده", "stCls": "bad", "meta": "8 سرور · انقضا در 2 نوامبر", "tV": "منقضی‌شده", "tS": "2 نوامبر", "tP": "0%", "tG": "bad", "tN": 1, "tInf": false, "tFin": true, "dV": "—", "dS": "برای استفاده تمدید کنید", "dP": "0%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "2 از 5", "vS": "دستگاه", "vP": "40%", "vG": "", "vN": 5, "vInf": false, "vFin": true, "src": "mg", "srcT": "Mistgate", "srcCls": "src-mg"}, {"name": "اشتراکی نیست", "ini": "+", "tone": "add", "host": "", "st": "", "stCls": "", "meta": "برای دریافت سرور، یک اشتراک اضافه کنید", "tV": "—", "tS": "", "tP": "0%", "tG": "", "tN": 1, "tInf": false, "tFin": true, "dV": "—", "dS": "", "dP": "0%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "—", "vS": "", "vP": "0%", "vG": "", "vN": 1, "vInf": false, "vFin": true, "src": "", "srcT": "", "srcCls": "hide"}];
     const SUBIX = { mine: 0, work: 1, family: 2, test: 3, expired: 4, none: 5 };
@@ -623,6 +653,24 @@ class Component extends DCLogic {
     [0, 1, 2, 3, 4, 5].forEach((v) => devOpt('pl', v, si === v, () => this.setState({ si: v, subsPop: false })));
     [['ok', false], ['missing', true]].forEach((v) => devOpt('tg', v[0], tgMissing === v[1], () => this.setState({ tgm: v[1], tgw: false, tab: 'telegram' })));
     ['dark', 'light'].forEach((v) => devOpt('th', v, theme === v, () => this.setState({ theme: v })));
+    const wlHintOn = wlHas && !wlDown && !this.st().wlHintOff && (cs === 'error' || (!!this.st().wlTry && ph === 'ing'));
+    const wlBase = { cs: '', wlHintOff: false, wlTry: false, tab: 'vpn', si: si > 3 ? 0 : si, svN: svN || 8 };
+    devOpt('wl', 'none', !wlHas, () => this.setState(Object.assign({}, wlBase, { wl: 'none', sel: sel === 'wl' ? 'auto' : sel })));
+    devOpt('wl', 'yes', wlHas && !wlDown && !wlSel && !wlHintOn, () => { this.setState(Object.assign({}, wlBase, { wl: 'yes', sel: sel === 'wl' ? 'auto' : sel })); this.wlEnd(); });
+    devOpt('wl', 'on', wlSel && !wlHintOn, () => { clearTimeout(this.t1); clearTimeout(this.t2); this.setState(Object.assign({}, wlBase, { wl: 'yes', sel: 'wl', phase: 'on', sw: false })); this.wlEnd(); });
+    devOpt('wl', 'down', wlHas && wlDown, () => { this.setState(Object.assign({}, wlBase, { wl: 'down', sel: sel === 'wl' ? 'auto' : sel })); this.wlEnd(); });
+    devOpt('wl', 'hint', wlHintOn, () => { clearTimeout(this.t1); clearTimeout(this.t2); this.setState(Object.assign({}, wlBase, { wl: 'yes', sel: sel === 'wl' ? 'auto' : sel, cs: 'error', wave: false })); });
+    [1, 3, 5].forEach((v) => devOpt('wn', v, wlN === v, () => { this.setState(Object.assign({ wlN: v, wlCur: 'nl' }, wlHas ? {} : { wl: 'yes' })); }));
+    [['no', true], ['yes', false]].forEach((v) => devOpt('udp', v[0], noUdp === v[1], () => { this.setState({ udp: v[0] }); if (wlHas) setTimeout(() => this.wlTip(), 80); }));
+    const wlTrying = !!this.st().wlTry && ph === 'ing';
+    const wl = { has: wlHas, flag: FLAGS[wlC[0]], country: wlC[1], multi: wlN > 1 && !wlDown, list: WLL.map((x) => ({ n: x[1], flag: FLAGS[x[0]], c: x[0] === wlC[0] ? 'on' : '', on: x[0] === wlC[0] ? 'true' : 'false', pick: () => { if (wlSel && ph === 'on' && !cs && x[0] !== wlC[0]) { this.setState({ wlCur: x[0] }); this.switchTo('wl'); } else { this.setState({ wlCur: x[0], sel: 'wl', pop: false }); if (phase === 'on' && !cs0 && !wlSel) this.switchTo('wl'); } } })), rcls: (wlSel ? 'on ' : '') + (wlDown ? 'dead' : ''), on: wlSel ? 'true' : 'false', now: wlSel && ph === 'on' && !cs,
+      sub: wlDown ? 'اکنون برقرار نمی‌شود' : 'کانال پشتیبان برای وقتی که سرورهای عادی مسدودند' + (wlN > 1 ? '' : ' · ' + wlC[1]), sigT: wlDown ? 'در دسترس نیست' : 'پشتیبان', sigC: wlDown ? 'off' : '', pick: () => { if (!wlDown) pickSrv('wl'); },
+      hin: (e) => { const el = e.currentTarget || e.target.closest('.r'), r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
+        this.setState({ tipId: 'wl', tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - Math.max((document.querySelector('.stip') || {}).offsetHeight || 250, 356)))) }); },
+      hout: () => this.setState({ tipId: '' }), what: (e) => { if (e && e.preventDefault) e.preventDefault(); if (this.st().tipId === 'wl') this.setState({ tipId: '' }); else this.wlTip(); },
+      onNow: wlSel && ph === 'on' && !cs, hint: wlHintOn, hintOff: () => this.setState({ wlHintOff: true }),
+      tryC: wlTrying ? 'busy' : '', tryT: wlTrying ? 'در حال اتصال…' : 'امتحان کنید',
+      tryGo: () => { if (wlTrying) return; clearTimeout(this.t1); clearTimeout(this.t2); this.setState({ sel: 'wl', cs: '', pop: false, wlTry: true, phase: 'ing', sw: false, wave: false, cstep: 2 }); this.t1 = setTimeout(() => { this.setState({ phase: 'on', secs: 0, wave: true, wlTry: false }); this.wlEnd(); this.t2 = setTimeout(() => this.setState({ wave: false }), 1900); }, 2100); } };
     // ---- баннер в шапке: один, самый важный ----
     const bnK = this.st().bn !== undefined ? this.st().bn : (this.props.banner || 'none');
     const BN = { news: ['megaphone', 'از ارائه‌دهنده شما', 'تعمیرات در 14 نوامبر، 02:00 تا 04:00', 'FaSettings.dc.html', '', ''], debug: ['lifebelt', 'مدیر درخواست عیب‌یابی کرده است', 'به رفع مشکل اتصال شما کمک می‌کند', 'FaDiag.dc.html', 'ارسال', ''], update: ['cloud-download', '‏Mistgate 1.5.0 آماده است', 'برای تکمیل، راه‌اندازی مجدد کنید', 'FaSettings.dc.html', 'راه‌اندازی دوباره', ''], newver: ['warning-circle', 'برخی سرورها به نسخه تازه‌تر Mistgate نیاز دارند', 'برای استفاده از آن‌ها به‌روزرسانی کنید', 'FaSettings.dc.html', 'به‌روزرسانی', 'warn'] };
@@ -651,13 +699,13 @@ class Component extends DCLogic {
       b2Go: () => { if (adK === 'limit') this.openAdd('confirm'); else this.setState({ add: 'none' }); } };
 
     return {
-      dv: dv, dvOn: dvOn, dvSet: dvSet,
+      dv: dv, dvOn: dvOn, dvSet: dvSet, wl: wl,
       ingT: this.isSw() ? 'تغییر سرور' : 'در حال اتصال',
       stepTxt: this.isSw() ? 'به %s — ترافیک شما ایمن نگه داشته شده'.replace('%s', cur.country) : ['در حال بررسی شبکه', 'به نظر UDP مسدود است — TCP را امتحان می‌کنیم', 'در حال اتصال به %s'.replace('%s', cur.title), 'در حال ایمن‌سازی تونل'][this.st().cstep || 0],
       rdDiag: (ph === 'on' && !cs) || cs === 'error' ? '' : 'hide', rdSet: si === 3 || si === 4 ? '' : 'hide',
       stepCls: (this.st().cstep || 0) % 2 ? 'sB' : 'sA',
       sbc: [0, 1, 2, 3].map((k) => (k < (this.st().cstep || 0) ? 'done' : (k === (this.st().cstep || 0) ? 'اکنون' : ''))),
-      theme: theme, accent: accent, logo: BR && si !== 5 ? BR.logo : logos[accent], ad: ad, bn: bn, det: det,
+      theme: theme, accent: accent, logo: BR && si !== 5 ? BR.logo : logos[accent], ad: ad, bn: bn, det: wlSel ? { on: false } : det,
       brC: BR && si !== 5 ? 'branded' : '', brStyle: BR && si !== 5 ? brTok : '', brLogoC: BR && si !== 5 ? 'br br-' + BR.shape : '', brAlt: BR && si !== 5 ? BR.name : 'mistgate', phase: ph,
       isOn: ph === 'on' && !cs, isOff: ph === 'off', isIng: ph === 'ing' && !cs, offOk: ph === 'off' && !blk && !cs,
       hasCs: !!cs, csT: cs ? CSX[cs][0] : '', csS: cs ? CSX[cs][1] : '', csTone: cs ? CSX[cs][2] : '', csComet: cs === 'rec' ? '' : 'hide',
@@ -698,9 +746,9 @@ class Component extends DCLogic {
       rmBtn: this.st().rmAsk != null && SUBS[this.st().rmAsk].src === 'mg' ? 'خروج' : 'حذف',
       rmCancel: () => this.setState({ rmAsk: null }),
       rmDo: () => { const i = this.st().rmAsk; const g = gone.concat([i]); const left = [0, 1, 2, 3].filter((k) => g.indexOf(k) < 0); this.setState({ gone: g, rmAsk: null, si: i === si ? (left.length ? left[0] : 5) : si, subsPop: false }); }, subsOpen: !!subsOpen, toggleSubs: () => this.setState({ subsPop: !subsOpen, pop: false }),
-      sigCls: sigCls, msTxt: Object.assign({ cur: String(msOf(node)) }, msTxt), ping: ping, pingAll: () => this.pingAll(), allBusy: anyBusy ? 'busy' : '',
+      sigCls: sigCls, msTxt: Object.assign({ cur: wlSel ? '—' : String(msOf(node)) }, msTxt), ping: ping, pingAll: () => this.pingAll(), allBusy: anyBusy ? 'busy' : '',
       profAuto: isProfAuto, poAutoCls: isProfAuto ? 'on' : '', profs: profs,
-      popOpen: !!popOpen, togglePop: () => this.setState({ pop: !popOpen }),
+      popOpen: !!popOpen && !wlSel, togglePop: () => { if (!wlSel) this.setState({ pop: !popOpen }); },
       pickProfAuto: () => this.setState({ prof: 'خودکار', pop: false })
     };
   }

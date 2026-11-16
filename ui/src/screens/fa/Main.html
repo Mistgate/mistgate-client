@@ -36,7 +36,7 @@
             <div class="onb-logo rise" aria-hidden="true"><i></i><i></i><img src="{{logo}}" alt="" width="54" height="54"></div>
             <h2 class="onb-t rise d1">اشتراک خود را اضافه کنید</h2>
             <p class="onb-s rise d1">لینک ارائه‌دهنده VPN را جای‌گذاری کنید — سرورها فوراً ظاهر می‌شوند</p>
-            <label class="onb-in rise d2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><input type="text" placeholder="https://… or vless://…" aria-label="Subscription link" spellcheck="false"><button class="onb-go" onClick="{{addSub}}" aria-label="افزودن اشتراک"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></label>
+            <label class="onb-in rise d2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><input type="text" placeholder="https://…, vless://… or tt://…" aria-label="Subscription link" spellcheck="false"><button class="onb-go" onClick="{{addSub}}" aria-label="افزودن اشتراک"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></label>
             <button class="clip rise d2" onClick="{{addSub}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4.5" width="12" height="16" rx="2.5"/><path d="M9.5 4.5V3.5h5v1"/><path d="M9.5 11h5M9.5 14.5h3"/></svg><span>لینکی در کلیپ‌بورد پیدا شد</span><b>استفاده</b></button>
             <p class="onb-alt rise d3"><button onClick="{{addFile}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4"/><path d="M12 11.5v5M9.5 14l2.5 2.5 2.5-2.5"/></svg>درون‌ریزی از فایل</button><i aria-hidden="true"></i><a href="https://vpn.example.com" target="_blank" rel="noopener">لینک را از کجا بگیرم؟</a></p>
           </div>
@@ -117,7 +117,7 @@
               </button>
               <span class="cb-div" aria-hidden="true"></span>
               <button class="cb-pr {{cur.fam}}" onClick="{{togglePop}}" aria-expanded="{{popOpen}}" aria-haspopup="listbox" aria-label="Protocol {{cur.label}}. Change">
-                <span class="pic"><sc-if value="{{cur.isH2}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{cur.isVless}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{cur.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if></span>
+                <span class="pic"><sc-if value="{{cur.isWl}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg></sc-if><sc-if value="{{cur.isH2}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{cur.isVless}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{cur.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if><sc-if value="{{cur.isTt}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></sc-if></span>
                 <span class="tx"><b>{{cur.label}}</b><span>{{cur.prSub}}</span></span>
                 <svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
@@ -127,7 +127,7 @@
                 <p class="pop-h">پروتکل روی {{cur.title}}</p>
                 <button class="po {{poAutoCls}}" role="option" aria-selected="{{profAuto}}" onClick="{{pickProfAuto}}"><span class="poi a"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 13.9 9 19.5 11 13.9 13 12 18.5 10.1 13 4.5 11 10.1 9z"/><path d="M18.5 15.5v4M16.5 17.5h4"/></svg></span><span class="pot"><b>خودکار</b><span>آنچه در شبکه شما کار می‌کند را انتخاب می‌کند</span></span></button>
                 <sc-for list="{{profs}}" as="o" hint-placeholder-count="5">
-                  <button class="po {{o.cls}}" role="option" aria-selected="{{o.on}}" onClick="{{o.pick}}"><span class="poi {{o.fam}}"><sc-if value="{{o.isH2}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{o.isVless}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{o.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if></span><span class="pot"><b>{{o.label}}</b><span>{{o.full}}</span></span></button>
+                  <button class="po {{o.cls}}" role="option" aria-selected="{{o.on}}" onClick="{{o.pick}}"><span class="poi {{o.fam}}"><sc-if value="{{o.isH2}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></sc-if><sc-if value="{{o.isVless}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></sc-if><sc-if value="{{o.isAwg}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></sc-if><sc-if value="{{o.isTt}}" hint-placeholder-val="{{false}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></sc-if></span><span class="pot"><b>{{o.label}}</b><span>{{o.full}}</span></span></button>
                 </sc-for>
               </div>
             </sc-if>
@@ -139,6 +139,7 @@
               <span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>{{up}} <small>مگابیت/ثانیه</small></span>
               <span>{{msTxt.cur}} <small>میلی‌ثانیه</small></span>
             </div>
+            <sc-if value="{{wl.onNow}}" hint-placeholder-val="{{false}}"><p class="det wl rise d3" role="status"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg>برای لیست‌های سفید · کانال پشتیبان</p></sc-if>
             <sc-if value="{{det.on}}" hint-placeholder-val="{{true}}"><a class="det rise d3 {{det.c}}" href="Diag.dc.html"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.01"/></svg>{{det.t}}<b>{{det.a}}<svg class="i s14" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></b></a></sc-if>
           </sc-if>
           <sc-if value="{{csNote}}" hint-placeholder-val="{{false}}">
@@ -168,15 +169,16 @@
       </sc-if>
       </div>
 
-    <div class="stip {{tipC}}" style="left:{{tipX}}px;top:{{tipY}}px" role="tooltip">
-      <div class="stip-h"><span class="fl"><img src="{{tip.flag}}" alt=""></span><span class="tx"><b>{{tip.title}}</b><span>{{tip.city}}</span></span><span class="stip-ms {{tip.msC}}">{{tip.ms}}<small>میلی‌ثانیه</small></span></div>
+    <div class="stip {{tipC}} {{tip.kc}}" style="left:{{tipX}}px;top:{{tipY}}px" role="tooltip">
+      <div class="stip-h"><sc-if value="{{tip.isWl}}" hint-placeholder-val="{{false}}"><span class="wli"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg><span class="fl"><img src="{{tip.flag}}" alt=""></span></span></sc-if><sc-if value="{{tip.notWl}}" hint-placeholder-val="{{true}}"><span class="fl"><img src="{{tip.flag}}" alt=""></span></sc-if><span class="tx"><b>{{tip.title}}</b><span>{{tip.city}}</span></span><span class="stip-ms {{tip.msC}}">{{tip.ms}}<small>میلی‌ثانیه</small></span></div>
       <div class="stip-kv">
         <div><span>میزبان</span><b class="m">{{tip.host}}</b></div>
         <div><span>IP</span><b class="m">{{tip.ip}}</b></div>
         <div><span>مسیر</span><b>{{tip.route}}</b></div>
       </div>
       <div class="stip-p"><sc-for list="{{tip.pl}}" as="q" hint-placeholder-count="2"><span class="stip-c {{q.c}}">{{q.t}}</span></sc-for></div>
-      <div class="stip-l"><span>بار</span><span class="bar" aria-hidden="true"><i class="{{tip.loadC}}" style="width:{{tip.load}}%"></i></span><b>{{tip.load}}%</b></div>
+      <sc-if value="{{tip.notWl}}" hint-placeholder-val="{{true}}"><div class="stip-l"><span>بار</span><span class="bar" aria-hidden="true"><i class="{{tip.loadC}}" style="width:{{tip.load}}%"></i></span><b>{{tip.load}}%</b></div></sc-if>
+      <sc-if value="{{tip.isWl}}" hint-placeholder-val="{{false}}"><div class="stip-w"><p><span class="gl g-dashboard-speed" aria-hidden="true"></span>کانال پشتیبان: سرعت ممکن است کمتر از معمول باشد</p><sc-if value="{{tip.noUdp}}" hint-placeholder-val="{{false}}"><p class="no"><span class="gl g-gamepad" aria-hidden="true"></span>تماس‌ها و بازی‌ها کار نمی‌کنند</p></sc-if></div></sc-if>
     </div>
     <section class="servers {{svCls}}" aria-label="سرورها">
       <div class="sv-h">
@@ -235,6 +237,13 @@
         </div>
       </sc-if>
       <sc-if value="{{hasSrv}}" hint-placeholder-val="{{true}}">
+      <sc-if value="{{wl.hint}}" hint-placeholder-val="{{false}}">
+      <div class="wlh rise" role="status">
+        <span class="wlh-ic"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg></span>
+        <span class="tx"><b>سرورهای عادی پاسخ نمی‌دهند</b><span>کانال لیست‌های سفید را امتحان می‌کنید؟</span><em>کانال پشتیبان: سرعت ممکن است کمتر از معمول باشد</em></span>
+        <span class="wlh-a"><button class="addb {{wl.tryC}}" onClick="{{wl.tryGo}}">{{wl.tryT}}</button><button class="wlh-n" onClick="{{wl.hintOff}}">الان نه</button></span>
+      </div>
+      </sc-if>
       <div class="srow">
         <label class="search">
           <svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
@@ -257,7 +266,7 @@
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">اکنون</span></sc-if></b></span>
-            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if></span>
+            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if><sc-if value="{{n.tt}}" hint-placeholder-val="{{false}}"><span class="pi tt"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></span></sc-if></span>
           </button>
           <button class="sig {{n.sig}} {{n.sigX}}" onClick="{{n.ping}}" aria-label="Test latency to {{n.id}}" title="Test latency"><span class="b" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp" aria-hidden="true"></span><span class="v">{{n.ms}}<small>میلی‌ثانیه</small></span></button>
         </div>
@@ -268,12 +277,22 @@
           <button class="rsel" aria-pressed="{{n.on}}" onClick="{{n.pick}}">
             <span class="fl"><img src="{{n.flag}}" alt="Flag of {{n.country}}"></span>
             <span class="nm"><b><span class="nmt">{{n.country}}<span class="c">{{n.suf}}</span></span><span class="mk {{n.mkc}}">{{n.mark}}</span><sc-if value="{{n.now}}" hint-placeholder-val="{{false}}"><span class="now">اکنون</span></sc-if></b></span>
-            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if></span>
+            <span class="vchip sm {{n.vc}}"><span class="gl g-{{n.vi}}" aria-hidden="true"></span>{{n.vt}}</span><span class="pis {{n.pisC}}" role="img" aria-label="{{n.label}}" title="{{n.label}}"><sc-if value="{{n.h2}}" hint-placeholder-val="{{true}}"><span class="pi h2"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg></span></sc-if><sc-if value="{{n.vless}}" hint-placeholder-val="{{true}}"><span class="pi vless"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg></span></sc-if><sc-if value="{{n.awg}}" hint-placeholder-val="{{false}}"><span class="pi awg"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.4 12.6 9.1-9.1"/><path d="m16 6 3 3"/><path d="m13.8 8.2 2 2"/></svg></span></sc-if><sc-if value="{{n.tt}}" hint-placeholder-val="{{false}}"><span class="pi tt"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19v-6.5a7.5 7.5 0 0 1 15 0V19"/><path d="M9.5 19v-6a2.5 2.5 0 0 1 5 0v6"/></svg></span></sc-if></span>
           </button>
           <button class="sig {{n.sig}} {{n.sigX}}" onClick="{{n.ping}}" aria-label="Test latency to {{n.id}}" title="Test latency"><span class="b" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp" aria-hidden="true"></span><span class="v">{{n.ms}}<small>میلی‌ثانیه</small></span></button>
         </div>
         </sc-for>
       </div>
+      <sc-if value="{{wl.has}}" hint-placeholder-val="{{false}}">
+      <div class="r wlr wlp {{wl.rcls}}" id="srv-wl" onMouseEnter="{{wl.hin}}" onMouseLeave="{{wl.hout}}">
+        <button class="rsel" aria-pressed="{{wl.on}}" onClick="{{wl.pick}}">
+          <span class="wli"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg><span class="fl"><img src="{{wl.flag}}" alt=""></span></span>
+          <span class="nm"><b><span class="nmt">برای لیست‌های سفید</span><sc-if value="{{wl.now}}" hint-placeholder-val="{{false}}"><span class="now">اکنون</span></sc-if></b><span>{{wl.sub}}</span></span>
+        </button>
+        <span class="sig slow {{wl.sigC}}">{{wl.sigT}}</span>
+        <sc-if value="{{wl.multi}}" hint-placeholder-val="{{false}}"><div class="wlcs" role="radiogroup" aria-label="برای لیست‌های سفید"><sc-for list="{{wl.list}}" as="c" hint-placeholder-count="3"><button class="wlc {{c.c}}" role="radio" aria-checked="{{c.on}}" onClick="{{c.pick}}"><span class="fl"><img src="{{c.flag}}" alt=""></span>{{c.n}}</button></sc-for></div></sc-if>
+      </div>
+      </sc-if>
       </sc-if>
       </sc-if>
 
@@ -389,6 +408,9 @@
   </div>
   <div lang="en" class="dev" role="toolbar" aria-label="Subscription states">
     <div class="dg"><span class="dl">Subscription</span><div class="ds"><button class="{{dv.pl_0}}" onClick="{{dvSet.pl_0}}">Limited</button><button class="{{dv.pl_1}}" onClick="{{dvSet.pl_1}}">Unlimited</button><button class="{{dv.pl_2}}" onClick="{{dvSet.pl_2}}">No end date</button><button class="{{dv.pl_3}}" onClick="{{dvSet.pl_3}}">Expiring</button><button class="{{dv.pl_4}}" onClick="{{dvSet.pl_4}}">Expired</button><button class="{{dv.pl_5}}" onClick="{{dvSet.pl_5}}">None</button></div></div>
-    <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.tg_ok}}" onClick="{{dvSet.tg_ok}}">Installed</button><button class="{{dv.tg_missing}}" onClick="{{dvSet.tg_missing}}">Not installed</button></div></div>
+    <div class="dg"><span class="dl">Allowlist</span><div class="ds"><button class="{{dv.wl_none}}" onClick="{{dvSet.wl_none}}">None</button><button class="{{dv.wl_yes}}" onClick="{{dvSet.wl_yes}}">List</button><button class="{{dv.wl_on}}" onClick="{{dvSet.wl_on}}">On</button><button class="{{dv.wl_down}}" onClick="{{dvSet.wl_down}}">Down</button><button class="{{dv.wl_hint}}" onClick="{{dvSet.wl_hint}}">Hint</button></div></div>
+      <div class="dg"><span class="dl">Channels</span><div class="ds"><button class="{{dv.wn_1}}" onClick="{{dvSet.wn_1}}">1</button><button class="{{dv.wn_3}}" onClick="{{dvSet.wn_3}}">3</button><button class="{{dv.wn_5}}" onClick="{{dvSet.wn_5}}">5</button></div></div>
+      <div class="dg"><span class="dl">UDP</span><div class="ds"><button class="{{dv.udp_no}}" onClick="{{dvSet.udp_no}}">No</button><button class="{{dv.udp_yes}}" onClick="{{dvSet.udp_yes}}">Yes</button></div></div>
+      <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.tg_ok}}" onClick="{{dvSet.tg_ok}}">Installed</button><button class="{{dv.tg_missing}}" onClick="{{dvSet.tg_missing}}">Not installed</button></div></div>
   </div>
 </div>

@@ -59,11 +59,13 @@ class Component extends DCLogic {
     const view = s0.vw || pr.view || 'fly';
     const tk = s0.tk || pr.toast || 'n1';
     const SERV = [["خودکار", "خودکار", "", 39, "", ""], ["ru", "روسیه", "", 12, "/blob/a658d425a4f899c328a7d60b130a9949.svg", ""], ["de", "آلمان", "", 39, "/blob/b9d142e1783ba5a3056edc5da7cdd20f.svg", ""], ["de2", "آلمان", " 2", 44, "/blob/b9d142e1783ba5a3056edc5da7cdd20f.svg", ""], ["nl", "هلند", " · آمستردام", 48, "/blob/36a15227713f5fed7fa96d99b57f5075.svg", "کند"], ["be", "بلاروس", "", 58, "/blob/04222ed858541273845e5c24792dfe0c.svg", ""], ["ru2", "روسیه", " 2", 15, "/blob/a658d425a4f899c328a7d60b130a9949.svg", ""]];
-    const sel = s0.sel || 'خودکار';
+    SERV.push(['wl', 'هلند', '', 0, '/blob/36a15227713f5fed7fa96d99b57f5075.svg', '']);
+    const wlK = s0.wl !== undefined ? s0.wl : (pr.wl || 'none'), wlHas = wlK !== 'none';
+    const sel = s0.sel || (wlK === 'on' ? 'wl' : 'خودکار');
     const DE = SERV.find((x) => x[0] === 'de');
     const node = sel === 'خودکار' ? DE : SERV.find((x) => x[0] === sel);
     const QUICK = {"recent": ["خودکار", "de", "nl", "ru", "be", "ru2"], "fast": ["خودکار", "ru", "ru2", "de", "de2", "be"]};
-    const LIST = (QUICK[pr.quick] || QUICK.recent).map((id) => SERV.find((x) => x[0] === id));
+    const LIST = (QUICK[pr.quick] || QUICK.recent).map((id) => SERV.find((x) => x[0] === id)).slice(0, wlHas ? 5 : 6);
     const sw = !!s0.sw && state === 'ing';
     const nodeT = node[1] + node[2];
     const step = s0.step || 0;
@@ -75,12 +77,15 @@ class Component extends DCLogic {
       error: { k: 'اتصال ممکن نیست', t: 'هیچ سروری پاسخ نمی‌دهد', tC: '', s: '12 راه روی 8 سرور امتحان شد', menuT: 'هیچ سروری پاسخ نمی‌دهد', menuS: 'همچنان در پس‌زمینه تلاش می‌شود', menuAct: 'تلاش دوباره', tip: '‏Mistgate · هیچ سروری پاسخ نمی‌دهد', orb: 'تلاش دوباره' },
       ks: { k: 'کلید قطع اضطراری', t: 'اینترنت مسدود است', tC: '', s: 'چیزی از این رایانه خارج نمی‌شود', menuT: 'اینترنت مسدود است', menuS: 'کلید قطع اضطراری روشن است', menuAct: 'اتصال', tip: '‏Mistgate · تا روشن‌شدن VPN اینترنت مسدود است', orb: 'اتصال' } };
     const H = HX[state];
+    const wlSel = wlHas && sel === 'wl';
+    if (wlSel) { HX.on.s = 'برای لیست‌های سفید · کانال پشتیبان'; }
     const toggle = () => { clearTimeout(this.tk); if (state === 'on' || state === 'ing') this.setState({ ts: 'off' }); else this.connect(); };
     const rows = LIST.map((x) => ({ n: x[1], suf: x[2], ms: x[3], flag: x[4], c: x[0] === sel ? 'on' : '', on: x[0] === sel ? 'true' : 'false',
       fgC: x[0] === 'خودکار' ? 'au' : '', imC: x[0] === 'خودکار' ? 'hide' : '', auC: x[0] === 'خودکار' ? '' : 'hide',
       v: x[5], vC: x[5] ? '' : 'hide',
       nowC: state === 'on' && sel === 'خودکار' && x[0] === node[0] ? '' : 'hide',
       go: () => { const to = x[0] === 'خودکار' ? DE[0] : x[0]; if (state === 'on' && to !== node[0]) this.switchTo(x[0]); else this.setState({ sel: x[0] }); } }));
+    const wl = { has: wlHas, c: wlSel ? 'on' : '', on: wlSel ? 'true' : 'false', nowC: wlSel && state === 'on' ? '' : 'hide', root: wlSel ? 'wl-on' : '', go: () => { if (state === 'on' && !wlSel) this.switchTo('wl'); else this.setState({ sel: 'wl' }); } };
     const S = { spd: state === 'on' ? '' : 'hide', off: state === 'off' ? '' : 'hide', ing: state === 'ing' ? '' : 'hide', err: state === 'error' ? '' : 'hide', ks: state === 'ks' ? '' : 'hide' };
     const dv = {}, dvSet = {};
     const dvOpt = (k, v, on, f) => { dv[k + '_' + v] = on ? 'on' : ''; dvSet[k + '_' + v] = f; };
@@ -88,6 +93,7 @@ class Component extends DCLogic {
     ['fly', 'menu', 'tip', 'toast'].forEach((v) => dvOpt('vw', v, view === v, () => this.setState({ vw: v })));
     ['n0', 'n1', 'n2', 'n3', 'n4'].forEach((v) => dvOpt('tk', v, tk === v && view === 'toast', () => this.setState({ tk: v, vw: 'toast' })));
     ['dark', 'light'].forEach((v) => dvOpt('th', v, theme === v, () => this.setState({ theme: v })));
+    dvOpt('wl', 'none', !wlHas, () => this.setState({ wl: 'none', sel: sel === 'wl' ? 'auto' : sel, vw: 'fly' })); dvOpt('wl', 'yes', wlHas && !wlSel, () => this.setState({ wl: 'yes', sel: sel === 'wl' ? 'auto' : sel, vw: 'fly' })); dvOpt('wl', 'on', wlSel, () => this.setState({ wl: 'yes', sel: 'wl', ts: 'on', vw: 'fly' }));
     const tsC = {}; ['n0', 'n1', 'n2', 'n3', 'n4'].forEach((k) => { tsC[k] = k === tk ? '' : 'hide'; });
     return {
       theme: theme, accent: accent, logo: BR ? BR.logo : logos[accent], state: state,
@@ -98,7 +104,7 @@ class Component extends DCLogic {
       iconClick: () => this.setState({ vw: view === 'fly' ? 'tip' : 'fly' }),
       subMeta: '8 سرور · 24 روز مانده', stepTxt: sw ? 'ترافیک شما ایمن نگه داشته شده' : STEPS[Math.min(step, 3)],
       sbc: [0, 1, 2, 3].map((k) => (k < step ? 'done' : (k === step ? 'cur' : ''))),
-      dv: dv, dvSet: dvSet
+      dv: dv, dvSet: dvSet, wl: wl
     };
   }
 }

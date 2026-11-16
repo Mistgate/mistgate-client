@@ -3,6 +3,7 @@ import { DCLogic } from '../../dc';
 class Component extends DCLogic {
   componentDidMount() {
     if (this.props.list === 'end') setTimeout(() => { const l = document.querySelector('.list'); if (l) l.scrollTop = l.scrollHeight; }, 700);
+    if (this.props.wltip === 'open') setTimeout(() => this.wlTip(), 1100);
     this.tick = setInterval(() => {
       if (this.phase() === 'on') this.setState({ secs: this.secs() + 1 });
     }, 1000);
@@ -11,6 +12,8 @@ class Component extends DCLogic {
     clearInterval(this.tick); clearTimeout(this.t1); clearTimeout(this.t2);
   }
   st() { return this.state || {}; }
+  wlTip() { const el = document.querySelector('.r.wlr'); if (!el) return; const l = el.closest('.list'); if (l) l.scrollTop = l.scrollHeight; const r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl'; this.setState({ tipId: 'wl', tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - Math.max((document.querySelector('.stip') || {}).offsetHeight || 250, 356)))) }); }
+  wlEnd() { setTimeout(() => { const l = document.querySelector('.list'); if (l) l.scrollTop = l.scrollHeight; }, 60); }
   openAdd(kind) { clearTimeout(this.ta); this.setState({ add: 'check' }); this.ta = setTimeout(() => this.setState({ add: kind }), 900); }
   phase() { return this.st().phase || (this.props.state === 'off' ? 'off' : (this.props.state === 'ing' || this.props.state === 'sw' ? 'ing' : 'on')); }
   isSw() { return this.st().sw !== undefined ? this.st().sw : this.props.state === 'sw'; }
@@ -79,16 +82,16 @@ class Component extends DCLogic {
     const tab = this.st().tab || this.props.tab || 'vpn';
     const prof = this.st().prof || this.props.prof || 'otomatik';
     const popOpen = this.st().pop !== undefined ? this.st().pop : this.props.pop === 'open';
-    const NODES_ALL = [["de", "de", "Almanya", ["h2", "h2w", "vt", "vx", "awg"], 39, ""], ["de2", "de", "Almanya", ["h2", "h2w", "vt", "vx"], 44, ""], ["mass", "de", "Almanya", ["h2"], 61, ""], ["be", "by", "Belarus", ["h2", "vt", "vx"], 58, "RU"], ["nl", "nl", "Hollanda", ["h2", "h2w", "vt", "vx", "awg"], 48, ""], ["ru", "ru", "Rusya", ["h2", "vt", "vx"], 12, ""], ["ru2", "ru", "Rusya", ["h2", "vt", "vx"], 15, ""], ["ro", "ro", "Romanya", ["h2", "h2w", "vt", "vx"], 63, ""], ["fi", "fi", "Finlandiya", ["h2", "vt", "vx", "awg"], 41, ""], ["nl2", "nl", "Hollanda", ["h2", "vt"], 51, ""], ["lv", "lv", "Letonya", ["h2", "vt", "vx"], 36, ""], ["pl", "pl", "Polonya", ["h2", "vt", "vx"], 45, ""], ["ee", "ee", "Estonya", ["h2", "vt"], 38, ""], ["se", "se", "İsveç", ["h2", "vt", "vx", "awg"], 55, ""], ["fr", "fr", "Fransa", ["h2", "h2w", "vt", "vx"], 62, ""], ["de3", "de", "Almanya", ["vt", "vx"], 47, ""], ["fi2", "fi", "Finlandiya", ["awg"], 43, ""], ["pl2", "pl", "Polonya", ["vt"], 49, ""], ["nl3", "nl", "Hollanda", ["h2", "awg"], 53, ""], ["se2", "se", "İsveç", ["vt", "vx"], 58, ""], ["fr2", "fr", "Fransa", ["h2"], 66, ""], ["ro2", "ro", "Romanya", ["vt", "vx"], 70, ""], ["lv2", "lv", "Letonya", ["h2", "vt"], 40, ""], ["ee2", "ee", "Estonya", ["awg"], 42, ""]];
+    const NODES_ALL = [["de", "de", "Almanya", ["h2", "h2w", "vt", "vx", "awg", "tt"], 39, ""], ["de2", "de", "Almanya", ["h2", "h2w", "vt", "vx"], 44, ""], ["mass", "de", "Almanya", ["h2"], 61, ""], ["be", "by", "Belarus", ["h2", "vt", "vx"], 58, "RU"], ["nl", "nl", "Hollanda", ["h2", "h2w", "vt", "vx", "awg", "tt"], 48, ""], ["ru", "ru", "Rusya", ["h2", "vt", "vx", "tt"], 12, ""], ["ru2", "ru", "Rusya", ["h2", "vt", "vx"], 15, ""], ["ro", "ro", "Romanya", ["h2", "h2w", "vt", "vx"], 63, ""], ["fi", "fi", "Finlandiya", ["h2", "vt", "vx", "awg"], 41, ""], ["nl2", "nl", "Hollanda", ["h2", "vt"], 51, ""], ["lv", "lv", "Letonya", ["h2", "vt", "vx"], 36, ""], ["pl", "pl", "Polonya", ["h2", "vt", "vx"], 45, ""], ["ee", "ee", "Estonya", ["h2", "vt"], 38, ""], ["se", "se", "İsveç", ["h2", "vt", "vx", "awg"], 55, ""], ["fr", "fr", "Fransa", ["h2", "h2w", "vt", "vx"], 62, ""], ["de3", "de", "Almanya", ["vt", "vx"], 47, ""], ["fi2", "fi", "Finlandiya", ["awg"], 43, ""], ["pl2", "pl", "Polonya", ["vt"], 49, ""], ["nl3", "nl", "Hollanda", ["h2", "awg"], 53, ""], ["se2", "se", "İsveç", ["vt", "vx"], 58, ""], ["fr2", "fr", "Fransa", ["h2"], 66, ""], ["ro2", "ro", "Romanya", ["vt", "vx"], 70, ""], ["lv2", "lv", "Letonya", ["h2", "vt"], 40, ""], ["ee2", "ee", "Estonya", ["awg"], 42, ""]];
     const svN = this.st().svN !== undefined ? this.st().svN : (this.props.srv !== undefined ? Number(this.props.srv) : 8);
     const siPre = this.st().si !== undefined ? this.st().si : ({ mine: 0, work: 1, family: 2, test: 3, expired: 4, none: 5 }[this.props.sub] || 0);
     const TCITY = { de: 'Frankfurt', by: 'Minsk', nl: 'Amsterdam', ru: 'Moskova', ro: 'Bükreş', fi: 'Helsinki', lv: 'Riga', pl: 'Varşova', ee: 'Tallinn', se: 'Stockholm', fr: 'Paris' };
     const CITY = { nl: 'Amsterdam', fi: 'Helsinki', ro: 'Bucharest, Pipera Business District' }, V6 = { ru2: true, nl2: true }, NAMEOF = {}, CNT = {};
     NODES_ALL.forEach((n) => { CNT[n[2]] = (CNT[n[2]] || 0) + 1; NAMEOF[n[0]] = CITY[n[0]] ? ' · ' + CITY[n[0]] : (CNT[n[2]] > 1 ? ' ' + CNT[n[2]] : ''); });
     const NODES = siPre === 5 ? [] : (svN === 2 ? [NODES_ALL[0], NODES_ALL[4]] : NODES_ALL.slice(0, svN));
-    const FAM = { h2: 'h2', h2w: 'h2', vt: 'vless', vx: 'vless', awg: 'awg' };
-    const LABEL = { h2: 'HY2', h2w: 'HY2 · WARP', vt: 'VLESS · TCP', vx: 'VLESS · XHTTP', awg: 'AWG 3.1' };
-    const FULL = { h2: 'Hysteria2 · UDP', h2w: 'WARP çıkışlı Hysteria2', vt: 'VLESS · TCP · REALITY', vx: 'VLESS · XHTTP', awg: 'AmneziaWG 3.1 · UDP' };
+    const FAM = { h2: 'h2', h2w: 'h2', vt: 'vless', vx: 'vless', awg: 'awg', tt: 'tt' };
+    const LABEL = { h2: 'HY2', h2w: 'HY2 · WARP', vt: 'VLESS · TCP', vx: 'VLESS · XHTTP', awg: 'AWG 3.1', tt: 'TT' };
+    const FULL = { h2: 'Hysteria2 · UDP', h2w: 'WARP çıkışlı Hysteria2', vt: 'VLESS · TCP · REALITY', vx: 'VLESS · XHTTP', awg: 'AmneziaWG 3.1 · UDP', tt: 'TrustTunnel · TCP + UDP' };
     const node = NODES.find((n) => n[0] === (sel === 'otomatik' ? 'de' : sel)) || NODES[0] || NODES_ALL[0];
     const p = prof !== 'otomatik' && node[3].indexOf(prof) >= 0 ? prof : (node[3].indexOf('vt') >= 0 ? 'vt' : node[3][0]);
     const isProfAuto = !(prof !== 'otomatik' && node[3].indexOf(prof) >= 0);
@@ -105,12 +108,14 @@ class Component extends DCLogic {
     });
     const anyBusy = NODES.some((n) => checking[n[0]]);
     const FLAGS = {"de": "/blob/b9d142e1783ba5a3056edc5da7cdd20f.svg", "by": "/blob/04222ed858541273845e5c24792dfe0c.svg", "nl": "/blob/36a15227713f5fed7fa96d99b57f5075.svg", "ru": "/blob/a658d425a4f899c328a7d60b130a9949.svg", "ro": "/blob/bdbee2951b5491a7a4a74a2804d772f2.svg", "fi": "/blob/858b6a863219a306c2c367366862ba62.svg", "lv": "/blob/ad07975874713d506bbd802fb2fbaa13.svg", "pl": "/blob/3dc63fca4e387768181c89cb6ede9a4a.svg", "ee": "/blob/69cce780180c1b67980a8dca35fac7b5.svg", "se": "/blob/9a3d133aa82690cc501e69bf3d200996.svg", "fr": "/blob/122ef9d158e532eba2f16b9884369769.svg"};
-    const NAMES = { h2: 'Hysteria2', vless: 'VLESS', awg: 'AmneziaWG' };
+    const NAMES = { h2: 'Hysteria2', vless: 'VLESS', awg: 'AmneziaWG', tt: 'TrustTunnel' };
     // вердикт последней проверки сети — тот же, что на экране «Диагностика»
     const VERD = { nl: 'slow', ro: 'freeze', fi: 'down', pl: 'config' };
     const VDX = { slow: ['Yavaşlatılıyor', 'dashboard-speed', 'warn', 1], freeze: ['Donuyor', 'snow-flake', 'ice', 2], down: ['Sunucu çalışmıyor', 'cloud-xmark', 'neu', 3], config: ['Yapılandırma hatası', 'wrench', 'lav', 4] };
     const cs0 = this.st().cs !== undefined ? this.st().cs : (this.props.conn && this.props.conn !== 'none' ? this.props.conn : '');
-    const pickSrv = (id) => { const to = id === 'otomatik' ? 'de' : id; if (phase === 'on' && !cs0 && to !== node[0]) this.switchTo(id); else this.setState({ sel: id, pop: false }); };
+    const wlK = this.st().wl !== undefined ? this.st().wl : (this.props.wl || 'none'), wlHas = wlK !== 'none' && NODES.length > 0 && siPre < 4, wlDown = wlK === 'down', wlSel = wlHas && !wlDown && sel === 'wl';
+    const wlN = Number(this.st().wlN !== undefined ? this.st().wlN : (this.props.wln || 1)), WLL = [['nl', 'Hollanda'], ['de', 'Almanya'], ['fi', 'Finlandiya'], ['lv', 'Letonya'], ['pl', 'Polonya']].slice(0, wlN), wlC = WLL.find((x) => x[0] === this.st().wlCur) || WLL[0];
+    const pickSrv = (id) => { const to = id === 'otomatik' ? 'de' : id; if (phase === 'on' && !cs0 && to !== (wlSel ? 'wl' : node[0])) this.switchTo(id); else this.setState({ sel: id, pop: false }); };
     const bnK0 = this.st().bn !== undefined ? this.st().bn : (this.props.banner || 'none');
     const NEWV = bnK0 === 'newver' ? { mass: 1, ru2: 1 } : {};
     const rows = NODES.map((n) => {
@@ -123,8 +128,8 @@ class Component extends DCLogic {
       return { tipD: tipD, hin: (e) => { const el = e.currentTarget || e.target.closest('.r'), r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
           this.setState({ tipId: n[0], tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - ((document.querySelector('.stip') || {}).offsetHeight || 250)))) }); },
         hout: () => this.setState({ tipId: '' }),
-        id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0],
-        h2: fams.indexOf('h2') >= 0, vless: fams.indexOf('vless') >= 0, awg: fams.indexOf('awg') >= 0, label: fams.map((x) => NAMES[x]).join(', '),
+        id: n[0], country: n[2], suf: NAMEOF[n[0]], mark: mark, mkc: mark ? (NEWV[n[0]] ? 'upd' : '') : 'hide', flag: FLAGS[n[1]], via: n[5], hasVia: !!n[5], now: phase === 'on' && n[0] === node[0] && !wlSel,
+        h2: fams.indexOf('h2') >= 0, vless: fams.indexOf('vless') >= 0, awg: fams.indexOf('awg') >= 0, tt: fams.indexOf('tt') >= 0, label: fams.map((x) => NAMES[x]).join(', '),
         rcls: sel === n[0] ? 'on' : '', on: sel === n[0] ? 'true' : 'false', pick: () => pickSrv(n[0]),
         vd: VERD[n[0]] || '', vt: VERD[n[0]] ? VDX[VERD[n[0]]][0] : '', vi: VERD[n[0]] ? VDX[VERD[n[0]]][1] : 'check', vc: VERD[n[0]] ? VDX[VERD[n[0]]][2] : 'hide', vo: VERD[n[0]] ? VDX[VERD[n[0]]][3] : 0,
         vrow: NEWV[n[0]] || VERD[n[0]] === 'down' || VERD[n[0]] === 'config' ? 'dead' : '', pisC: VERD[n[0]] || NEWV[n[0]] ? 'hide' : '', sigX: NEWV[n[0]] || VERD[n[0]] === 'down' ? 'nov' : '',
@@ -132,18 +137,21 @@ class Component extends DCLogic {
     });
     const tipRow = rows.filter((x) => x.id === this.st().tipId)[0];
     if (tipRow) this.lastTip = tipRow.tipD;
-    const tip = this.lastTip || (rows[0] ? rows[0].tipD : { pl: [] });
+    const noUdp = (this.st().udp !== undefined ? this.st().udp : (this.props.udp || 'no')) !== 'yes';
+    if (this.st().tipId === 'wl' && wlHas) this.lastTip = { isWl: true, flag: FLAGS[wlC[0]], title: wlC[1], city: 'Beyaz listeler için', host: 'dns.vpn.example.com', ip: '203.0.113.53', route: 'DNS üzerinden yedek kanal', pl: [{ c: 'wl', t: 'Beyaz liste' }], load: 0, loadC: '', kc: 'wl', ms: wlDown ? 'kullanılamıyor' : 'yedek', msC: wlDown ? 'nov wl' : 'wl', noUdp: noUdp };
+    const tip0 = this.lastTip || (rows[0] ? rows[0].tipD : { pl: [] }), tip = Object.assign({ isWl: false }, tip0, { notWl: !tip0.isWl });
     const rcls = {}, rOn = {}, pickN = {}, nowN = {};
     NODES.forEach((n) => {
       rcls[n[0]] = sel === n[0] ? 'on' : '';
       rOn[n[0]] = sel === n[0] ? 'true' : 'false';
       pickN[n[0]] = () => pickSrv(n[0]);
-      nowN[n[0]] = phase === 'on' && n[0] === node[0];
+      nowN[n[0]] = phase === 'on' && n[0] === node[0] && !wlSel;
     });
     const cur = { cc: node[1], flag: FLAGS[node[1]], country: node[2], suf: NAMEOF[node[0]], title: node[2] + NAMEOF[node[0]], node: node[0], flagLabel: 'Bayrak: ' + node[2], fam: FAM[p], label: LABEL[p],
-      isH2: FAM[p] === 'h2', isVless: FAM[p] === 'vless', isAwg: FAM[p] === 'awg', ms: String(msOf(node)),
+      isH2: FAM[p] === 'h2', isVless: FAM[p] === 'vless', isAwg: FAM[p] === 'awg', isTt: FAM[p] === 'tt', ms: String(msOf(node)),
       sub: '', srvSub: (sel === 'otomatik' ? 'Otomatik' : 'Sizin seçiminiz') + ' · ' + (node[5] ? 'aktarma: ' + node[5] : 'doğrudan'), prSub: isProfAuto ? 'Otomatik' : 'Sizin seçiminiz' };
-    const profs = node[3].map((k) => ({ fam: FAM[k], label: LABEL[k], full: FULL[k], isH2: FAM[k] === 'h2', isVless: FAM[k] === 'vless', isAwg: FAM[k] === 'awg',
+    if (wlSel) Object.assign(cur, { cc: wlC[0], flag: FLAGS[wlC[0]], country: wlC[1], suf: '', title: wlC[1], node: 'wl', flagLabel: wlC[1], fam: 'wl', label: 'Beyaz liste', isH2: false, isVless: false, isAwg: false, isTt: false, isWl: true, ms: '—', srvSub: 'yedek kanal', prSub: 'DNS üzerinden' });
+    const profs = node[3].map((k) => ({ fam: FAM[k], label: LABEL[k], full: FULL[k], isH2: FAM[k] === 'h2', isVless: FAM[k] === 'vless', isAwg: FAM[k] === 'awg', isTt: FAM[k] === 'tt',
       cls: !isProfAuto && k === p ? 'on' : '', on: !isProfAuto && k === p ? 'true' : 'false', pick: () => this.setState({ prof: k, pop: false }) }));
     const SUBS = [{"name": "Aboneliğim", "ini": "A", "tone": "lav", "host": "vpn.example.com", "st": "24 gün kaldı", "stCls": "", "meta": "8 sunucu · 24 gün kaldı", "tV": "24 gün", "tS": "30 Kasım’a kadar", "tP": "80%", "tG": "", "tN": 1, "tInf": false, "tFin": true, "dV": "64.8 GB", "dS": "kalan / 100 GB", "dP": "65%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "2/5", "vS": "cihaz kullanımda", "vP": "40%", "vG": "", "vN": 5, "vInf": false, "vFin": true, "src": "mg", "srcT": "Mistgate", "srcCls": "src-mg"}, {"name": "İş", "ini": "İ", "tone": "sky", "host": "corp.example.net/sub", "st": "Sınırsız", "stCls": "", "meta": "5 sunucu · sınırsız", "tV": "Süresiz", "tS": "süresiz", "tP": "100%", "tG": "inf", "tN": 1, "tInf": true, "tFin": false, "dV": "182 GB", "dS": "kullanıldı · sınırsız", "dP": "100%", "dG": "inf", "dN": 1, "dInf": true, "dFin": false, "vV": "3", "vS": "sınırsız", "vP": "100%", "vG": "inf", "vN": 1, "vInf": true, "vFin": false, "src": "link", "srcT": "Bağlantı", "srcCls": "src-link"}, {"name": "Aile", "ini": "A", "tone": "mint", "host": "home.example.com", "st": "Süresiz", "stCls": "", "meta": "6 sunucu · süresiz", "tV": "Süresiz", "tS": "süresiz", "tP": "100%", "tG": "inf", "tN": 1, "tInf": true, "tFin": false, "dV": "38 GB", "dS": "kalan / 50 GB", "dP": "76%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "4/6", "vS": "cihaz kullanımda", "vP": "67%", "vG": "", "vN": 6, "vInf": false, "vFin": true, "src": "mg", "srcT": "Mistgate", "srcCls": "src-mg"}, {"name": "grpc test", "ini": "G", "tone": "sand", "host": "test-servers.conf", "st": "3 gün kaldı", "stCls": "warn", "meta": "2 sunucu · 3 gün kaldı", "tV": "3 gün", "tS": "12 Kasım’a kadar", "tP": "10%", "tG": "warn", "tN": 1, "tInf": false, "tFin": true, "dV": "4.1 GB", "dS": "kalan / 20 GB", "dP": "20%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "1/1", "vS": "sınıra ulaşıldı", "vP": "100%", "vG": "warn", "vN": 1, "vInf": false, "vFin": true, "src": "file", "srcT": "Dosya", "srcCls": "src-file"}, {"name": "Aboneliğim", "ini": "A", "tone": "lav", "host": "vpn.example.com", "st": "Süresi doldu", "stCls": "bad", "meta": "8 sunucu · 2 Kasım’da bitti", "tV": "Süresi doldu", "tS": "2 Kasım’da", "tP": "0%", "tG": "bad", "tN": 1, "tInf": false, "tFin": true, "dV": "—", "dS": "kullanmak için yenileyin", "dP": "0%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "2/5", "vS": "cihaz", "vP": "40%", "vG": "", "vN": 5, "vInf": false, "vFin": true, "src": "mg", "srcT": "Mistgate", "srcCls": "src-mg"}, {"name": "Abonelik yok", "ini": "+", "tone": "add", "host": "", "st": "", "stCls": "", "meta": "Sunucu almak için bir abonelik ekleyin", "tV": "—", "tS": "", "tP": "0%", "tG": "", "tN": 1, "tInf": false, "tFin": true, "dV": "—", "dS": "", "dP": "0%", "dG": "", "dN": 1, "dInf": false, "dFin": true, "vV": "—", "vS": "", "vP": "0%", "vG": "", "vN": 1, "vInf": false, "vFin": true, "src": "", "srcT": "", "srcCls": "hide"}];
     const SUBIX = { mine: 0, work: 1, family: 2, test: 3, expired: 4, none: 5 };
@@ -187,6 +195,24 @@ class Component extends DCLogic {
     [0, 1, 2, 3, 4, 5].forEach((v) => devOpt('pl', v, si === v, () => this.setState({ si: v, subsPop: false })));
     [['ok', false], ['missing', true]].forEach((v) => devOpt('tg', v[0], tgMissing === v[1], () => this.setState({ tgm: v[1], tgw: false, tab: 'telegram' })));
     ['dark', 'light'].forEach((v) => devOpt('th', v, theme === v, () => this.setState({ theme: v })));
+    const wlHintOn = wlHas && !wlDown && !this.st().wlHintOff && (cs === 'error' || (!!this.st().wlTry && ph === 'ing'));
+    const wlBase = { cs: '', wlHintOff: false, wlTry: false, tab: 'vpn', si: si > 3 ? 0 : si, svN: svN || 8 };
+    devOpt('wl', 'none', !wlHas, () => this.setState(Object.assign({}, wlBase, { wl: 'none', sel: sel === 'wl' ? 'auto' : sel })));
+    devOpt('wl', 'yes', wlHas && !wlDown && !wlSel && !wlHintOn, () => { this.setState(Object.assign({}, wlBase, { wl: 'yes', sel: sel === 'wl' ? 'auto' : sel })); this.wlEnd(); });
+    devOpt('wl', 'on', wlSel && !wlHintOn, () => { clearTimeout(this.t1); clearTimeout(this.t2); this.setState(Object.assign({}, wlBase, { wl: 'yes', sel: 'wl', phase: 'on', sw: false })); this.wlEnd(); });
+    devOpt('wl', 'down', wlHas && wlDown, () => { this.setState(Object.assign({}, wlBase, { wl: 'down', sel: sel === 'wl' ? 'auto' : sel })); this.wlEnd(); });
+    devOpt('wl', 'hint', wlHintOn, () => { clearTimeout(this.t1); clearTimeout(this.t2); this.setState(Object.assign({}, wlBase, { wl: 'yes', sel: sel === 'wl' ? 'auto' : sel, cs: 'error', wave: false })); });
+    [1, 3, 5].forEach((v) => devOpt('wn', v, wlN === v, () => { this.setState(Object.assign({ wlN: v, wlCur: 'nl' }, wlHas ? {} : { wl: 'yes' })); }));
+    [['no', true], ['yes', false]].forEach((v) => devOpt('udp', v[0], noUdp === v[1], () => { this.setState({ udp: v[0] }); if (wlHas) setTimeout(() => this.wlTip(), 80); }));
+    const wlTrying = !!this.st().wlTry && ph === 'ing';
+    const wl = { has: wlHas, flag: FLAGS[wlC[0]], country: wlC[1], multi: wlN > 1 && !wlDown, list: WLL.map((x) => ({ n: x[1], flag: FLAGS[x[0]], c: x[0] === wlC[0] ? 'on' : '', on: x[0] === wlC[0] ? 'true' : 'false', pick: () => { if (wlSel && ph === 'on' && !cs && x[0] !== wlC[0]) { this.setState({ wlCur: x[0] }); this.switchTo('wl'); } else { this.setState({ wlCur: x[0], sel: 'wl', pop: false }); if (phase === 'on' && !cs0 && !wlSel) this.switchTo('wl'); } } })), rcls: (wlSel ? 'on ' : '') + (wlDown ? 'dead' : ''), on: wlSel ? 'true' : 'false', now: wlSel && ph === 'on' && !cs,
+      sub: wlDown ? 'Şu anda kurulamıyor' : 'Normal sunucular engellendiğinde yedek kanal' + (wlN > 1 ? '' : ' · ' + wlC[1]), sigT: wlDown ? 'kullanılamıyor' : 'yedek', sigC: wlDown ? 'off' : '', pick: () => { if (!wlDown) pickSrv('wl'); },
+      hin: (e) => { const el = e.currentTarget || e.target.closest('.r'), r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl';
+        this.setState({ tipId: 'wl', tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - Math.max((document.querySelector('.stip') || {}).offsetHeight || 250, 356)))) }); },
+      hout: () => this.setState({ tipId: '' }), what: (e) => { if (e && e.preventDefault) e.preventDefault(); if (this.st().tipId === 'wl') this.setState({ tipId: '' }); else this.wlTip(); },
+      onNow: wlSel && ph === 'on' && !cs, hint: wlHintOn, hintOff: () => this.setState({ wlHintOff: true }),
+      tryC: wlTrying ? 'busy' : '', tryT: wlTrying ? 'Bağlanıyor…' : 'Dene',
+      tryGo: () => { if (wlTrying) return; clearTimeout(this.t1); clearTimeout(this.t2); this.setState({ sel: 'wl', cs: '', pop: false, wlTry: true, phase: 'ing', sw: false, wave: false, cstep: 2 }); this.t1 = setTimeout(() => { this.setState({ phase: 'on', secs: 0, wave: true, wlTry: false }); this.wlEnd(); this.t2 = setTimeout(() => this.setState({ wave: false }), 1900); }, 2100); } };
     // ---- баннер в шапке: один, самый важный ----
     const bnK = this.st().bn !== undefined ? this.st().bn : (this.props.banner || 'none');
     const BN = { news: ['megaphone', 'Sağlayıcınızdan', '14 Kasım 02:00–04:00 arası bakım', 'Settings.dc.html', '', ''], debug: ['lifebelt', 'Yöneticiniz tanılama istiyor', 'Bağlantınızı düzeltmeye yardımcı olur', 'Diag.dc.html', 'Gönder', ''], update: ['cloud-download', 'Mistgate 1.5.0 hazır', 'Tamamlamak için yeniden başlatın', 'Settings.dc.html', 'Yeniden başlat', ''], newver: ['warning-circle', 'Bazı sunucular daha yeni bir Mistgate gerektiriyor', 'Kullanmak için güncelleyin', 'Settings.dc.html', 'Güncelle', 'warn'] };
@@ -215,13 +241,13 @@ class Component extends DCLogic {
       b2Go: () => { if (adK === 'limit') this.openAdd('confirm'); else this.setState({ add: 'none' }); } };
 
     return {
-      dv: dv, dvOn: dvOn, dvSet: dvSet,
+      dv: dv, dvOn: dvOn, dvSet: dvSet, wl: wl,
       ingT: this.isSw() ? 'Sunucu değiştiriliyor' : 'Bağlanıyor',
       stepTxt: this.isSw() ? 'Yeni sunucu: %s — trafiğiniz güvenle bekletiliyor'.replace('%s', cur.country) : ['Ağınız denetleniyor', 'UDP engelli görünüyor — TCP deneniyor', 'Ulaşılıyor: %s'.replace('%s', cur.title), 'Tünel güvene alınıyor'][this.st().cstep || 0],
       rdDiag: (ph === 'on' && !cs) || cs === 'error' ? '' : 'hide', rdSet: si === 3 || si === 4 ? '' : 'hide',
       stepCls: (this.st().cstep || 0) % 2 ? 'sB' : 'sA',
       sbc: [0, 1, 2, 3].map((k) => (k < (this.st().cstep || 0) ? 'done' : (k === (this.st().cstep || 0) ? 'şimdi' : ''))),
-      theme: theme, accent: accent, logo: BR && si !== 5 ? BR.logo : logos[accent], ad: ad, bn: bn, det: det,
+      theme: theme, accent: accent, logo: BR && si !== 5 ? BR.logo : logos[accent], ad: ad, bn: bn, det: wlSel ? { on: false } : det,
       brC: BR && si !== 5 ? 'branded' : '', brStyle: BR && si !== 5 ? brTok : '', brLogoC: BR && si !== 5 ? 'br br-' + BR.shape : '', brAlt: BR && si !== 5 ? BR.name : 'mistgate', phase: ph,
       isOn: ph === 'on' && !cs, isOff: ph === 'off', isIng: ph === 'ing' && !cs, offOk: ph === 'off' && !blk && !cs,
       hasCs: !!cs, csT: cs ? CSX[cs][0] : '', csS: cs ? CSX[cs][1] : '', csTone: cs ? CSX[cs][2] : '', csComet: cs === 'rec' ? '' : 'hide',
@@ -262,9 +288,9 @@ class Component extends DCLogic {
       rmBtn: this.st().rmAsk != null && SUBS[this.st().rmAsk].src === 'mg' ? 'Çıkış yap' : 'Kaldır',
       rmCancel: () => this.setState({ rmAsk: null }),
       rmDo: () => { const i = this.st().rmAsk; const g = gone.concat([i]); const left = [0, 1, 2, 3].filter((k) => g.indexOf(k) < 0); this.setState({ gone: g, rmAsk: null, si: i === si ? (left.length ? left[0] : 5) : si, subsPop: false }); }, subsOpen: !!subsOpen, toggleSubs: () => this.setState({ subsPop: !subsOpen, pop: false }),
-      sigCls: sigCls, msTxt: Object.assign({ cur: String(msOf(node)) }, msTxt), ping: ping, pingAll: () => this.pingAll(), allBusy: anyBusy ? 'busy' : '',
+      sigCls: sigCls, msTxt: Object.assign({ cur: wlSel ? '—' : String(msOf(node)) }, msTxt), ping: ping, pingAll: () => this.pingAll(), allBusy: anyBusy ? 'busy' : '',
       profAuto: isProfAuto, poAutoCls: isProfAuto ? 'on' : '', profs: profs,
-      popOpen: !!popOpen, togglePop: () => this.setState({ pop: !popOpen }),
+      popOpen: !!popOpen && !wlSel, togglePop: () => { if (!wlSel) this.setState({ pop: !popOpen }); },
       pickProfAuto: () => this.setState({ prof: 'otomatik', pop: false })
     };
   }

@@ -2966,7 +2966,97 @@ a.det{text-decoration:none}
   .orb::after,.halo::after,.fy-orb::after,.up-bar i::after{display:none}
 }
 /* end motion */
-/* «Справа налево» — добавка к зеркальной копии app.css */
+/* канал «Для белых списков»: запасной медленный канал, везде янтарный */
+.wli{position:relative;width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--wl-bg);color:var(--wl)}
+.wli>.i{width:17px;height:17px;stroke-width:2.2}
+.wli .fl{position:absolute;inset-inline-end:-4px;bottom:-4px;width:15px;height:15px;border-radius:5px;box-shadow:0 0 0 2px var(--surface)}
+.wli .fl::after{display:none}
+.r.dead .wli{opacity:.5;filter:grayscale(.7)}
+.r.wlr .mk{margin-inline-start:0}
+.sig.slow{justify-content:center;font:600 12px/1 var(--sans);color:var(--wl);background:var(--wl-bg)}
+.r.on .sig.slow{background:var(--wl-bg)}
+.sig.slow.off{color:var(--muted);background:var(--surface-2)}
+.cb-pr.wl{cursor:default}
+.cb-pr.wl .pic{background:var(--wl-bg);color:var(--wl)}
+.cb-pr.wl .chev{display:none}
+.det.wl{padding:0 12px 0 14px;background:var(--wl-bg);box-shadow:inset 0 0 0 1px var(--wl-line);color:var(--wl);font-weight:600}
+.det.wl .i{color:var(--wl)}
+.stip-c.wl{background:var(--wl-bg);color:var(--wl)}
+.stip-ms.wl{background:var(--wl-bg);color:var(--wl);font-family:var(--sans);font-size:12px}
+.stip-ms.wl small{display:none}
+.stip-ms.wl.nov{background:color-mix(in oklab,var(--text) 7%,transparent);color:var(--muted)}
+.stip-w{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--border)}
+.stip-w p{margin:0;display:flex;align-items:flex-start;gap:8px;font-size:12.5px;line-height:1.4;color:color-mix(in oklab,var(--text) 84%,transparent)}
+.stip-w .gl{width:15px;height:15px;flex:none;margin-top:1px;color:var(--wl)}
+.stip-w p.no .gl{color:var(--muted)}
+.wlh{display:grid;grid-template-columns:32px minmax(0,1fr);gap:4px 11px;margin:0 12px 10px;padding:12px 12px 10px;border-radius:14px;background:var(--wl-bg);box-shadow:inset 0 0 0 1px var(--wl-line)}
+.wlh-ic{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:var(--wl-bg);color:var(--wl)}
+.wlh-ic .i{width:17px;height:17px;stroke-width:2.2}
+.wlh .tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.wlh b{font-size:13.5px;line-height:1.3}
+.wlh .tx span{font-size:13px;line-height:1.35}
+.wlh .tx em{margin-top:2px;font-style:normal;font-size:12px;line-height:1.35;color:color-mix(in oklab,var(--text) 68%,transparent)}
+.wlh-a{grid-column:2;display:flex;align-items:center;gap:6px;margin-top:6px}
+.wlh .addb{height:32px;padding:0 13px;border-radius:10px;font-size:13px}
+.wlh .addb.busy{opacity:.65;pointer-events:none}
+.wlh-n{height:32px;padding:0 11px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:600 13px/1 Onest,sans-serif;transition:background .15s ease,color .15s ease}
+.wlh-n:hover{background:color-mix(in oklab,var(--text) 8%,transparent);color:var(--text)}
+.stip.wl .stip-kv b{white-space:normal;text-align:end;overflow:visible}
+.stip.wl .stip-h .tx span{white-space:nowrap}
+.dev{max-width:calc(100% - 20px);overflow-x:auto;scrollbar-width:none}
+.dev::-webkit-scrollbar{display:none}
+.fy-sep{display:block;height:1px;margin:6px 18px;background:color-mix(in oklab,var(--text) 8%,transparent)}
+.fy-r .fg.wl{background:var(--wl-bg);color:var(--wl)}
+.fy-r .fg.wl .i{width:14px;height:14px;stroke-width:2.3}
+.fy-r.wl .n{flex:0 1 auto}
+.fy-r.wl .mk{margin-inline-end:auto}
+.fy-r .ms.slow{color:var(--wl);font-weight:600}
+.wl-on .spd3 span:last-child{display:none}
+.mono.wl{background:var(--wl-bg);color:var(--wl)}
+.mono.wl .i{width:17px;height:17px;stroke-width:2.2}
+/* канал закреплён под списком: всегда на виду */
+.r.wlp{flex:none;width:auto;margin:8px 12px 12px;padding-inline-end:10px;border-radius:14px;background:var(--wl-bg);box-shadow:inset 0 0 0 1px var(--wl-line)}
+.r.wlp:hover{background:var(--wl-bg)}
+.r.wlp.on{background:var(--wl-bg);box-shadow:inset 0 0 0 1.5px var(--wl-line)}
+.r.wlp .rsel{min-height:60px;padding:9px 10px}
+.r.wlp .nm{display:flex;flex-direction:column;gap:2px;min-width:0}
+.r.wlp .nm>span{white-space:normal;font-size:12px;line-height:1.35;color:color-mix(in oklab,var(--text) 66%,transparent)}
+.r.wlp.dead{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair)}
+
+/* TrustTunnel: четвёртое семейство протоколов, коралловый */
+.mg{--tone-tt:#f2a48c;--tone-tt-bg:#3a2a25}
+.mg.t-light,.t-light{--tone-tt:#7c3520;--tone-tt-bg:#fbe5dc}
+.pi.tt,.poi.tt,.cb-pr.tt .pic,.stip-c.tt{background:var(--tone-tt-bg);color:var(--tone-tt)}
+.pop{max-height:296px;overflow-y:auto;scrollbar-width:thin}
+.r.wlp{flex-wrap:wrap}
+.wlcs{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:6px;padding:2px 10px 10px 0}
+.wlcs>sc-for,.wlcs>.sc-interp{display:contents}
+.wlc{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 5px 0 10px;border:0;border-radius:9px;background:color-mix(in oklab,var(--text) 6%,transparent);color:color-mix(in oklab,var(--text) 78%,transparent);font:600 12px/1 Onest,sans-serif;white-space:nowrap;transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+.wlc .fl{width:18px;height:18px;border-radius:6px}
+.wlc .fl::after{display:none}
+.wlc:hover{color:var(--text);background:color-mix(in oklab,var(--text) 10%,transparent)}
+.wlc.on{color:var(--wl);background:var(--wl-bg);box-shadow:inset 0 0 0 1px var(--wl-line)}
+.pop .po,.pop .pop-h{flex:none}
+
+/* v2: канал без янтарного — спокойная карточка, выбор акцентом */
+.mg{--wl:var(--accent-text);--wl-bg:color-mix(in oklab,var(--accent) 20%,transparent);--wl-line:color-mix(in oklab,var(--text) 10%,transparent)}
+.r.wlp,.wlh{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--wl-line)}
+.r.wlp:hover{background:color-mix(in oklab,var(--text) 7%,var(--surface-2))}
+.r.wlp.on{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent-line)}
+.r.wlp .nm b .nmt{font-size:14.5px}
+.sig.slow,.r.on .sig.slow{gap:6px;background:color-mix(in oklab,var(--text) 7%,transparent);color:color-mix(in oklab,var(--text) 72%,transparent)}
+.sig.slow .gl{width:13px;height:13px;color:var(--muted)}
+.sig.slow.off{color:var(--muted)}
+.det.wl{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair);color:color-mix(in oklab,var(--text) 82%,transparent);font-weight:500}
+.det.wl .i{color:var(--accent-text)}
+.stip-ms.wl{background:color-mix(in oklab,var(--text) 7%,transparent);color:color-mix(in oklab,var(--text) 72%,transparent)}
+.stip-w .gl{color:var(--muted)}
+.wlc{background:color-mix(in oklab,var(--text) 7%,transparent)}
+.wlc.on{color:var(--text);background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--accent-line)}
+.r.wlp.on .wlc.on{background:color-mix(in oklab,var(--accent) 22%,var(--surface))}
+.mk.wlk{background:color-mix(in oklab,var(--text) 8%,transparent);color:color-mix(in oklab,var(--text) 72%,transparent)}
+.t-light .mk.wlk{background:color-mix(in oklab,var(--text) 7%,transparent);color:color-mix(in oklab,var(--text) 72%,transparent)}
+.fy-r .ms.slow{color:var(--muted);font-weight:500}/* «Справа налево» — добавка к зеркальной копии app.css */
 [dir=rtl]{text-align:right}
 [dir=rtl] *{letter-spacing:0 !important}
 [dir=rtl] :not(.sc-interp):not(:has(*:not(.sc-interp))){unicode-bidi:plaintext}

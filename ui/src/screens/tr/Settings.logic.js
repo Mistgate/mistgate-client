@@ -36,7 +36,7 @@ class Component extends DCLogic {
     const tbs = { c: 'v-' + vp, t: vp === 'on' ? 'Bağlı' : (vp === 'ing' ? 'Bağlanıyor…' : 'VPN kapalı'), m: vp === 'on' ? 'Almanya' : '', mc: vp === 'on' ? '' : 'hide', a: vp === 'off' ? 'VPN’e bağlan' : 'VPN’i kapat',
       go: () => { clearTimeout(this.vt); if (vp === 'off') { this.setState({ vp: 'ing' }); this.vt = setTimeout(() => this.setState({ vp: 'on' }), 1300); } else this.setState({ vp: 'off' }); } };
 
-    const ON = Object.assign({ auto: true, game: false, lan: true, nt: true, n0: true, n1: true, n2: true, n3: true, n4: false, min: true, tray: true, au: true, rep: false }, s0.on || {});
+    const ON = Object.assign({ wl: false, auto: true, game: false, lan: true, nt: true, n0: true, n1: true, n2: true, n3: true, n4: false, min: true, tray: true, au: true, rep: false }, s0.on || {});
     const T = {}, A = {}, tg = {};
     Object.keys(ON).forEach((k) => { T[k] = ON[k] ? 'on' : ''; A[k] = ON[k] ? 'true' : 'false'; tg[k] = () => this.setState({ on: Object.assign({}, ON, { [k]: !ON[k] }) }); });
     const mkPick = (name, val, opts, set) => {
@@ -48,10 +48,10 @@ class Component extends DCLogic {
     // «Always» включается только после подтверждения: без VPN интернета не будет даже после перезагрузки
     const ksAsk = s0.ksAsk !== undefined ? s0.ksAsk : pr.confirm === 'ks';
     const [ks, ksA, ksSet] = mkPick('ks', ksV, ['off', 'while', 'always'], (o) => (o === 'always' && ksV !== 'always' ? this.setState({ ksAsk: true }) : this.setState({ ks: o, ksAsk: false })));
-    const [prk, prA, prSet] = mkPick('pr', prV, ['otomatik', 'h2', 'awg', 'vless'], (o) => this.setState({ pr: o }));
+    const [prk, prA, prSet] = mkPick('pr', prV, ['otomatik', 'h2', 'awg', 'vless', 'tt'], (o) => this.setState({ pr: o }));
     const [ch, chA, chSet] = mkPick('ch', chV, ['stable', 'beta'], (o) => this.setState({ ch: o }));
     const KSN = { off: 'Kapalı — VPN koparsa uygulamalar VPN’siz çevrimiçi olur', while: 'VPN koparsa, geri gelene kadar bu bilgisayardan hiçbir şey çıkmaz', always: 'VPN açık değilse hiç internet olmaz, yeniden başlatmadan sonra bile' };
-    const PRN = { auto: 'Mistgate her yolu dener ve ağınızda çalışanı kullanır', h2: 'Yalnızca Hysteria2. Engellenirse Mistgate kendiliğinden geçiş yapmaz', awg: 'Yalnızca AmneziaWG. Engellenirse Mistgate kendiliğinden geçiş yapmaz', vless: 'Yalnızca VLESS. Engellenirse Mistgate kendiliğinden geçiş yapmaz' };
+    const PRN = { auto: 'Mistgate her yolu dener ve ağınızda çalışanı kullanır', h2: 'Yalnızca Hysteria2. Engellenirse Mistgate kendiliğinden geçiş yapmaz', awg: 'Yalnızca AmneziaWG. Engellenirse Mistgate kendiliğinden geçiş yapmaz', vless: 'Yalnızca VLESS. Engellenirse Mistgate kendiliğinden geçiş yapmaz', tt: 'Yalnızca TrustTunnel. Engellenirse Mistgate kendiliğinden geçiş yapmaz' };
     const EX0 = [['192.168.1.50', 'Ev NAS’ı'], ['10.0.0.0/8', 'İş ağı'], ['office.example.com', 'Ofis portalı']];
     const gone = s0.exGone || [];
     const excList = EX0.filter((e) => gone.indexOf(e[0]) < 0).map((e) => ({ a: e[0], n: e[1], rm: () => this.setState({ exGone: gone.concat([e[0]]) }) }));
