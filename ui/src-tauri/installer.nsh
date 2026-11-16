@@ -75,8 +75,21 @@ Var MgFresh ; 1 when nothing of Mistgate was in the folder before this install
 
 !macro NSIS_HOOK_PREUNINSTALL
   nsExec::ExecToLog '"$INSTDIR\mistgate-clientd.exe" uninstall'
-  ; "start with Windows", written by the app for this user
+  ; "start with Windows", written by the app for its user. The uninstaller may run as another account (the one
+  ; that answered UAC), so the entry is taken from every signed-in user, not only from this one.
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Mistgate"
+  Push $0
+  Push $1
+  StrCpy $0 0
+  mg_run_next:
+    EnumRegKey $1 HKU "" $0
+    StrCmp $1 "" mg_run_done
+    DeleteRegValue HKU "$1\Software\Microsoft\Windows\CurrentVersion\Run" "Mistgate"
+    IntOp $0 $0 + 1
+    Goto mg_run_next
+  mg_run_done:
+  Pop $1
+  Pop $0
   DeleteRegKey HKLM "Software\Classes\mistgate"
 !macroend
 

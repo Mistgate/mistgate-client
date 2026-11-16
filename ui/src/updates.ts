@@ -35,6 +35,12 @@ export const updates = {
     try {
       found = await check({ timeout: 15000 });
       if (!found) return put({ up: 'latest', checked: Date.now() });
+      // The signature's own comment names the version the file was built as, and the updater checks that comment
+      // with the file. An older signed installer offered under a newer number does not match: it is refused here.
+      const builtAs = Object.values((found.rawJson as { platforms?: Record<string, { signature?: unknown }> }).platforms ?? {}).map((p) => {
+        try { return atob(String(p?.signature ?? '')).match(/^trusted comment:.*\tversion:(\S+)/m)?.[1] ?? ''; } catch { return ''; }
+      });
+      if (!builtAs.length || builtAs.some((v) => v !== found!.version)) { found = null; return put({ up: 'badsig', checked: Date.now() }); }
       const size = Number((found.rawJson as { size?: unknown }).size) || 0;
       const notes = (found.body ?? '').split('\n').map((l) => l.replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 6);
       put({ up: 'available', version: found.version, date: found.date ?? '', size, notes, checked: Date.now() });

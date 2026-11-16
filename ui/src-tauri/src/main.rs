@@ -197,7 +197,9 @@ fn icon_pixels(path: &str) -> Option<Vec<u8>> {
     use windows_sys::Win32::Graphics::Gdi::{DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS};
     use windows_sys::Win32::UI::Shell::ExtractIconExW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
-    if !path.to_ascii_lowercase().ends_with(".exe") || path.len() > 512 || path.chars().any(|c| c.is_control()) {
+    // a drive path only: a network path would have this account sign in to the host it names
+    let on_drive = matches!(path.as_bytes(), [d, b':', b'\\', ..] if d.is_ascii_alphabetic());
+    if !on_drive || !path.to_ascii_lowercase().ends_with(".exe") || path.len() > 512 || path.chars().any(|c| c.is_control()) {
         return None;
     }
     let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
