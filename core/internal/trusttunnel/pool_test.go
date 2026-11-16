@@ -89,6 +89,28 @@ func TestPoolExpandsAndReapsIdleExtras(t *testing.T) {
 	if count := pool.ConnectionCount(); count != 1 {
 		t.Fatalf("idle extras remained in the pool: %d connections", count)
 	}
+
+	// The device-wide stream cap: with every slot taken a dial waits, and goes through once one is given back.
+	if len(pool.slots) != 0 {
+		t.Fatalf("closed streams still hold %d slots", len(pool.slots))
+	}
+	for range maxStreams {
+		pool.slots <- struct{}{}
+	}
+	short, stop := context.WithTimeout(ctx, 100*time.Millisecond)
+	if _, err := pool.DialTCP(short, "example.test:443"); err != context.DeadlineExceeded {
+		t.Fatalf("dial past the stream cap = %v, want a wait until the deadline", err)
+	}
+	stop()
+	<-pool.slots
+	conn, err := pool.DialTCP(ctx, "example.test:443")
+	if err != nil {
+		t.Fatalf("dial after a slot was freed: %v", err)
+	}
+	_ = conn.Close()
+	if len(pool.slots) != maxStreams-1 {
+		t.Fatalf("slots after close = %d, want %d", len(pool.slots), maxStreams-1)
+	}
 }
 
 func TestUDPFramePayloadLimit(t *testing.T) {

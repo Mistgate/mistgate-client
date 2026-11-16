@@ -11,6 +11,7 @@ import (
 
 const (
 	maxPoolConnections = 8                // The provisional account limit is 16; a second device may share it.
+	maxStreams         = 64               // TCP streams of one device over all its connections: a fast download costs the node about 1 MiB a stream.
 	primaryReserve     = 4                // Keep room on the first connection for _udp2 and _check.
 	defaultExtraIdle   = 60 * time.Second // Our server closes an extra connection after it has no streams for this long.
 )
@@ -23,6 +24,7 @@ type Pool struct {
 	primary   *Client
 	extras    []*Client
 	idleAfter time.Duration
+	slots     chan struct{} // one per open TCP stream; a full channel makes the next dial wait
 
 	mu          sync.Mutex
 	closed      bool
@@ -48,7 +50,7 @@ func NewPool(ctx context.Context, primary *Client, config Config, idleAfter time
 	}
 	poolCtx, cancel := context.WithCancel(ctx)
 	p := &Pool{
-		ctx: poolCtx, cancel: cancel, config: config, primary: primary, idleAfter: idleAfter,
+		ctx: poolCtx, cancel: cancel, config: config, primary: primary, idleAfter: idleAfter, slots: make(chan struct{}, maxStreams),
 		connections: map[*Client]time.Time{primary: time.Now()}, reserved: make(map[*Client]int), changed: make(chan struct{}),
 	}
 	go p.maintain()
@@ -63,21 +65,32 @@ func (p *Pool) Primary() *Client {
 	return p.primary
 }
 
-// DialTCP picks a connection with room, opening another connection when the live pool is full.
+// DialTCP picks a connection with room, opening another connection when the live pool is full. Past maxStreams open
+// streams it waits for one to end.
 func (p *Pool) DialTCP(ctx context.Context, authority string) (net.Conn, error) {
 	if ctx == nil || !validAuthority(authority) {
 		return nil, ErrConfig
 	}
+	select {
+	case p.slots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.ctx.Done():
+		return nil, ErrSession
+	}
 	client, err := p.acquire(ctx)
 	if err != nil {
+		<-p.slots
 		return nil, err
 	}
 	conn, err := client.DialTCP(ctx, authority)
 	p.release(client)
 	if err != nil {
+		<-p.slots
 		return nil, err
 	}
-	return &pooledConn{Conn: conn, done: func() { p.noteActivity(client) }}, nil
+	// ponytail: the slot is given back at the first error or Close of the stream, so a half-closed stream is not counted.
+	return &pooledConn{Conn: conn, done: func() { p.noteActivity(client); <-p.slots }}, nil
 }
 
 // ReplacePrimary starts a fresh session after the first connection dies and closes its extras.
