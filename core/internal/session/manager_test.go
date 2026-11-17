@@ -775,7 +775,7 @@ func testShortSleepProbesImmediately(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, ProbeErr: errors.New("dead tunnel")})
 	timing := defaultManagerTiming()
 	timing.probeInterval = time.Hour
-	timing.probeRetryInterval = 15 * time.Millisecond
+	timing.probeRetryInterval = 300 * time.Millisecond // wide: the status between the two failures is read below
 	timing.probeFailureWindow = time.Hour
 	timing.networkEventGrace = time.Second
 	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{time.Second})
