@@ -23,6 +23,12 @@ var errTTUnavailable = errors.New("TrustTunnel session unavailable")
 // stream); the reference server drops live streams after 600 seconds without a new stream.
 const ttKeepaliveInterval = 45 * time.Second
 
+// ttH3CheckEvery is how often an HTTP/3 session is asked whether it still answers. HTTP/2 pings its connection itself;
+// QUIC ends a session only when nothing arrives, and a network that drops our packets while the server's pings still
+// come in keeps it "alive" for a minute (measured: 64 s). A check that gets no answer ends the session, so the redial
+// (HTTP/2, see Connect) starts within about 20 s. A variable for the test.
+var ttH3CheckEvery = ttKeepaliveInterval / 3
+
 // ttRefusalPatience is how long a tunnel that was up keeps redialing against refusals before it takes them for final.
 // The server also refuses an account that is at its 16 connections, a connection it is expiring and one whose account
 // was just switched off; it forgets a dead connection within about 2.5 to 15 minutes, which frees the places again. A
@@ -226,9 +232,9 @@ func (o *ttOutbound) reconnect() {
 }
 
 func (o *ttOutbound) keepalive() {
-	ticker := time.NewTicker(ttKeepaliveInterval)
+	ticker := time.NewTicker(ttH3CheckEvery)
 	defer ticker.Stop()
-	for {
+	for tick := 1; ; tick++ {
 		select {
 		case <-o.ctx.Done():
 			return
@@ -242,10 +248,22 @@ func (o *ttOutbound) keepalive() {
 			primary := pool.Primary()
 			clients := pool.KeepaliveClients()
 			results := make(chan error, len(clients))
+			asked := 0
 			for _, client := range clients {
-				go func(client *ttclient.Client) { results <- client.Check(o.ctx) }(client)
+				h3 := client.Protocol() == "h3"
+				if tick%3 != 0 && !h3 {
+					continue // HTTP/2 keeps its own interval
+				}
+				asked++
+				go func() {
+					err := client.Check(o.ctx)
+					if h3 && errors.Is(err, context.DeadlineExceeded) && o.ctx.Err() == nil {
+						_ = client.Close()
+					}
+					results <- err
+				}()
 			}
-			for range clients {
+			for range asked {
 				o.drop(primary, <-results)
 			}
 		}
