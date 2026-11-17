@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -14,7 +15,22 @@ const (
 	maxStreams         = 64               // TCP streams of one device over all its connections: a fast download costs the node about 1 MiB a stream.
 	primaryReserve     = 4                // Keep room on the first connection for _udp2 and _check.
 	defaultExtraIdle   = 60 * time.Second // Our server closes an extra connection after it has no streams for this long.
+	extraRetryAfter    = 10 * time.Second // After a failed dial of an extra connection the live ones carry the streams for this long.
 )
+
+// slotWait is how long a dial waits for one of the maxStreams places before it gives up. A variable for the test.
+var slotWait = 15 * time.Second
+
+// ErrStreamCap: no place among the device's maxStreams streams came free within slotWait.
+var ErrStreamCap = errors.New("TrustTunnel stream limit reached")
+
+type serviceDialKey struct{}
+
+// ServiceDial marks ctx for Pool.DialTCP as a dial of the service itself (the tunnel check): it is not counted among
+// maxStreams and does not wait for a place behind the applications' streams.
+func ServiceDial(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serviceDialKey{}, true)
+}
 
 // Pool keeps UDP on the first connection and spreads TCP streams across the endpoint's HTTP/2 connections.
 type Pool struct {
@@ -31,6 +47,7 @@ type Pool struct {
 	connections map[*Client]time.Time
 	reserved    map[*Client]int
 	dialing     chan struct{}
+	extraFailed time.Time // when the last dial of an extra connection failed
 	changed     chan struct{}
 	closeOnce   sync.Once
 }
@@ -66,31 +83,47 @@ func (p *Pool) Primary() *Client {
 }
 
 // DialTCP picks a connection with room, opening another connection when the live pool is full. Past maxStreams open
-// streams it waits for one to end.
+// streams it waits for one to end, for slotWait at most. A ServiceDial context skips both the count and the wait.
 func (p *Pool) DialTCP(ctx context.Context, authority string) (net.Conn, error) {
 	if ctx == nil || !validAuthority(authority) {
 		return nil, ErrConfig
 	}
-	select {
-	case p.slots <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-p.ctx.Done():
-		return nil, ErrSession
+	service := ctx.Value(serviceDialKey{}) != nil
+	giveBack := func() {
+		if !service {
+			<-p.slots
+		}
+	}
+	if !service {
+		select {
+		case p.slots <- struct{}{}:
+		default:
+			timer := time.NewTimer(slotWait)
+			defer timer.Stop()
+			select {
+			case p.slots <- struct{}{}:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-p.ctx.Done():
+				return nil, ErrSession
+			case <-timer.C:
+				return nil, ErrStreamCap
+			}
+		}
 	}
 	client, err := p.acquire(ctx)
 	if err != nil {
-		<-p.slots
+		giveBack()
 		return nil, err
 	}
 	conn, err := client.DialTCP(ctx, authority)
 	p.release(client)
 	if err != nil {
-		<-p.slots
+		giveBack()
 		return nil, err
 	}
 	// ponytail: the slot is given back at the first error or Close of the stream, so a half-closed stream is not counted.
-	return &pooledConn{Conn: conn, done: func() { p.noteActivity(client); <-p.slots }}, nil
+	return &pooledConn{Conn: conn, done: func() { p.noteActivity(client); giveBack() }}, nil
 }
 
 // ReplacePrimary starts a fresh session after the first connection dies and closes its extras.
@@ -201,7 +234,7 @@ func (p *Pool) acquire(ctx context.Context) (*Client, error) {
 			closeClients(removed)
 			return client, nil
 		}
-		if len(p.extras)+1 >= maxPoolConnections {
+		if len(p.extras)+1 >= maxPoolConnections || time.Since(p.extraFailed) < extraRetryAfter {
 			client := p.leastLoadedLocked()
 			if client == nil {
 				p.mu.Unlock()
@@ -245,7 +278,19 @@ func (p *Pool) acquire(ctx context.Context) (*Client, error) {
 			p.connections[client] = time.Now()
 			p.signalLocked()
 		}
+		// An extra connection that cannot be opened (the account's limit, a refused or slow handshake) must not fail
+		// the stream: a live connection carries it, queued behind the others. Only with none live is it an error.
+		var fallback *Client
+		if err != nil && ctx.Err() == nil && !p.closed && p.ctx.Err() == nil {
+			p.extraFailed = time.Now()
+			if fallback = p.leastLoadedLocked(); fallback != nil {
+				p.reserveLocked(fallback)
+			}
+		}
 		p.mu.Unlock()
+		if fallback != nil {
+			return fallback, nil
+		}
 		if !added {
 			if client != nil {
 				_ = client.Close()
@@ -490,7 +535,8 @@ type pooledConn struct {
 
 func (c *pooledConn) Read(payload []byte) (int, error) {
 	n, err := c.Conn.Read(payload)
-	if err != nil {
+	// A read deadline that passed leaves the stream open, so it still holds its place.
+	if err != nil && !errors.Is(err, os.ErrDeadlineExceeded) {
 		c.once.Do(c.done)
 	}
 	return n, err

@@ -596,6 +596,7 @@ func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 	timing.probeInterval = 5 * time.Millisecond
 	timing.probeRetryInterval = 2 * time.Millisecond
 	timing.probeFailureWindow = time.Millisecond
+	timing.refusalPatience = 30 * time.Millisecond // refused for longer than this: given up
 	manager := newManagerWithTimings(fake, settings.Defaults, timing, []time.Duration{10 * time.Millisecond})
 	defer manager.Close()
 	subscription, err := manager.Events().Subscribe([]string{"status"})
@@ -609,6 +610,8 @@ func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
 	fake.SetFailStartCode("auth_rejected")
 	fake.SetProbeErr(errors.New("tunnel is dead"))
+	// not at the first refusal: the session keeps reconnecting, with the reason shown
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Error == "auth_rejected" })
 	blocked := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" })
 	if blocked.Error != "auth_rejected" {
 		t.Fatalf("blocked status error = %q, want auth_rejected", blocked.Error)
@@ -629,7 +632,8 @@ func testFatalRetryBlocksAndConnectRetries(t *testing.T) {
 		t.Fatalf("Disconnect() = %#v, %v; want off", status, err)
 	}
 	targets := fake.Targets()
-	if len(targets) != 3 || !targets[1].Hold || !targets[2].Hold {
+	// the first, then held retries while the refusal is given time, then the manual one
+	if len(targets) < 3 || targets[0].Hold || !targets[1].Hold || !targets[len(targets)-1].Hold {
 		t.Fatalf("Start targets = %#v, want held automatic and manual retries", targets)
 	}
 }

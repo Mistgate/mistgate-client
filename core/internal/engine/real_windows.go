@@ -737,7 +737,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				return Info{}, runCtx.Err()
 			}
 			switch {
-			case isTTRefusal(err):
+			case ttclient.IsRefusal(err):
 				return Info{}, failure("auth_rejected", "TrustTunnel endpoint refused the handshake")
 			case errors.Is(err, ttclient.ErrCertificate):
 				return Info{}, failure("tunnel_failed", "TrustTunnel certificate verification")

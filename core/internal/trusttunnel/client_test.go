@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -332,7 +333,18 @@ func serveTCPTunnel(w http.ResponseWriter, r *http.Request, target string) {
 			_ = half.CloseWrite()
 		}
 	}()
-	_, _ = io.Copy(w, conn)
+	_, _ = io.Copy(flushWriter{w}, conn)
+}
+
+// flushWriter sends every write at once, so a short answer does not wait in the response buffer.
+type flushWriter struct{ http.ResponseWriter }
+
+func (w flushWriter) Write(payload []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(payload)
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return n, err
 }
 
 func serveUDPEcho(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +352,11 @@ func serveUDPEcho(w http.ResponseWriter, r *http.Request) {
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
+	echoUDPFrames(w, r)
+}
+
+// echoUDPFrames answers every frame of the request body with the same datagram from the destination back to the source.
+func echoUDPFrames(w http.ResponseWriter, r *http.Request) {
 	for {
 		body, err := readOutgoingBody(r.Body)
 		if err != nil {
@@ -489,5 +506,17 @@ func TestShortIncomingFrameIsSkipped(t *testing.T) {
 	body, err := readIncomingFrame(bytes.NewReader(stream))
 	if err != nil || len(body) != 37 {
 		t.Fatalf("frame after a short one: %d bytes, %v", len(body), err)
+	}
+}
+
+// Only the account turned away is a refusal; a server that fails or a destination that cannot be reached is not.
+func TestIsRefusalIsAboutTheAccount(t *testing.T) {
+	for code, refusal := range map[int]bool{400: true, 404: true, 403: true, 407: true, 429: true, 499: true, 200: false, 302: false, 500: false, 502: false, 503: false, 504: false} {
+		if got := IsRefusal(fmt.Errorf("dial: %w", StatusError{Code: code})); got != refusal {
+			t.Errorf("status %d: refusal = %v, want %v", code, got, refusal)
+		}
+	}
+	if !IsRefusal(ErrAuth) || IsRefusal(ErrStream) || IsRefusal(ErrSession) || IsRefusal(context.DeadlineExceeded) || IsRefusal(nil) {
+		t.Error("among the plain errors only the authentication error is a refusal")
 	}
 }

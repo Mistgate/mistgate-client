@@ -19,6 +19,7 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/netcfg"
+	ttclient "github.com/mistgate/mistgate-client/core/internal/trusttunnel"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -165,7 +166,8 @@ func (b *gvisorBridge) checkVPN6() {
 // address would end in this bridge's own stack, which may accept it before anything is dialed (a flow is accepted first
 // to read its name; a VLESS dial is only a request in flight), so it would say nothing about the server.
 func (b *gvisorBridge) reaches(ctx context.Context, target netip.AddrPort) error {
-	conn, err := b.vpn.DialTCP(ctx, target)
+	// The check is the service's own dial: TrustTunnel's stream cap must not hold it behind the applications.
+	conn, err := b.vpn.DialTCP(ttclient.ServiceDial(ctx), target)
 	if err != nil {
 		return err
 	}

@@ -422,7 +422,7 @@ func attemptTT(ctx context.Context, p *profile.TrustTunnel, endpoint netip.AddrP
 	defer client.Close()
 	if err := client.Check(ctx); err != nil {
 		switch {
-		case isTrustTunnelRefusal(err):
+		case ttclient.IsRefusal(err):
 			return 0, errAuthRejected
 		case errors.Is(err, ttclient.ErrCertificate), errors.Is(err, ttclient.ErrConfig):
 			return 0, errBadConfig
@@ -431,14 +431,6 @@ func attemptTT(ctx context.Context, p *profile.TrustTunnel, endpoint netip.AddrP
 		}
 	}
 	return max(time.Since(started), time.Microsecond), nil
-}
-
-func isTrustTunnelRefusal(err error) bool {
-	if errors.Is(err, ttclient.ErrAuth) {
-		return true
-	}
-	var status ttclient.StatusError
-	return errors.As(err, &status)
 }
 
 func attemptAWG(ctx context.Context, p *profile.AWG, endpoint netip.AddrPort, physical interfaceInfo, timeout time.Duration) (time.Duration, error) {

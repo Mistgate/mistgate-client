@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,7 +35,13 @@ const (
 	maxUDPFrame       = maxUDPPayload + udpIncomingHeader
 	udpIncomingHeader = 16 + 2 + 16 + 2
 	udpQueueSize      = 32
+	udpSendQueue      = 256     // Frames one _udp2 stream holds for its writer; a full queue drops the datagram.
+	maxSkippedFrame   = 1 << 20 // A longer incoming frame means the framing is lost, not that one datagram is odd.
 )
+
+// headerTimeout bounds the wait for a stream's response headers: the server's own connect timeout is 30 s. A variable
+// for the test.
+var headerTimeout = 35 * time.Second
 
 var (
 	ErrAuth        = errors.New("TrustTunnel authentication rejected")
@@ -343,24 +350,50 @@ func (c *Client) Err() error {
 	return c.err
 }
 
-// DialTCP opens one HTTP/2 CONNECT stream to authority.
+// DialTCP opens one HTTP/2 CONNECT stream to authority. As with net.Dialer, ctx bounds the dial only: the stream goes on
+// after it is cancelled and ends with Close or with the session.
 func (c *Client) DialTCP(ctx context.Context, authority string) (net.Conn, error) {
 	if ctx == nil || authority == "" || len(authority) > 320 {
 		return nil, ErrConfig
 	}
-	requestCtx, cancel := context.WithCancel(ctx)
-	pipeReader, pipeWriter := io.Pipe()
-	response, err := c.connect(requestCtx, authority, userAgentTCP, pipeReader)
+	response, writer, cancel, err := c.openStream(ctx, authority, userAgentTCP)
 	if err != nil {
-		_ = pipeReader.Close()
-		_ = pipeWriter.Close()
-		cancel()
 		return nil, err
 	}
 	return &streamConn{
-		reader: response.body, writer: pipeWriter, cancel: cancel,
+		reader: response.body, writer: writer, cancel: cancel,
 		local: tunnelAddr{value: "trusttunnel"}, remote: tunnelAddr{value: authority},
 	}, nil
+}
+
+// openStream sends the CONNECT and waits for the response headers. In x/net a request's context lives as long as its
+// stream, so the stream is made on the client's own context; ctx and headerTimeout only cancel it while the headers are
+// awaited, and a stream whose bound has fired is not handed out.
+func (c *Client) openStream(ctx context.Context, authority, userAgent string) (*httpResponse, *io.PipeWriter, context.CancelFunc, error) {
+	streamCtx, cancel := context.WithCancel(c.ctx)
+	stopCaller := context.AfterFunc(ctx, cancel)
+	timer := time.AfterFunc(headerTimeout, cancel)
+	pipeReader, pipeWriter := io.Pipe()
+	response, err := c.connect(streamCtx, authority, userAgent, pipeReader)
+	callerGone, timedOut := !stopCaller(), !timer.Stop()
+	if err == nil || errors.Is(err, context.Canceled) {
+		switch {
+		case callerGone:
+			err = ctx.Err()
+		case timedOut:
+			err = context.DeadlineExceeded
+		}
+	}
+	if err != nil {
+		if response != nil {
+			_ = response.body.Close()
+		}
+		_ = pipeReader.Close()
+		_ = pipeWriter.Close()
+		cancel()
+		return nil, nil, nil, err
+	}
+	return response, pipeWriter, cancel, nil
 }
 
 // Check opens the reserved health-check stream.
@@ -430,6 +463,17 @@ func (e StatusError) Error() string {
 }
 func (e StatusError) StatusCode() int { return e.Code }
 
+// IsRefusal says whether err is the endpoint turning this account away: the authentication error or any 4xx (the
+// reference server answers 407, ours shows its site, 404, to a wrong, switched-off or over-limit account). A 5xx is about
+// one destination or the server's health and says nothing about the account.
+func IsRefusal(err error) bool {
+	if errors.Is(err, ErrAuth) {
+		return true
+	}
+	var status StatusError
+	return errors.As(err, &status) && status.Code >= 400 && status.Code < 500
+}
+
 func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 	request := &http.Request{
 		Method: http.MethodConnect,
@@ -446,7 +490,7 @@ func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 		if input.ctx.Err() != nil {
 			return nil, input.ctx.Err()
 		}
-		if !c.h2.CanTakeNewRequest() {
+		if c.sessionGone() {
 			c.markDead(ErrSession)
 			return nil, ErrSession
 		}
@@ -459,6 +503,13 @@ func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 	return &httpResponse{status: response.StatusCode, warning: warning, body: response.Body}, nil
 }
 
+// sessionGone says whether the HTTP/2 connection is closed or closing (a GOAWAY). CanTakeNewRequest is no test of
+// that: it is false as well while the connection is merely at the server's stream limit.
+func (c *Client) sessionGone() bool {
+	state := c.h2.State()
+	return state.Closed || state.Closing
+}
+
 func (c *Client) watchSession() {
 	// HTTP/2 PINGs from ReadIdleTimeout detect an idle dead peer without a separate health request.
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -468,7 +519,7 @@ func (c *Client) watchSession() {
 		case <-c.dead:
 			return
 		case <-ticker.C:
-			if !c.h2.CanTakeNewRequest() {
+			if c.sessionGone() {
 				c.markDead(ErrSession)
 				return
 			}
@@ -504,19 +555,102 @@ type streamConn struct {
 	local  net.Addr
 	remote net.Addr
 
-	mu         sync.Mutex
-	closed     bool
-	readTimer  *time.Timer
-	writeTimer *time.Timer
-	closeOnce  sync.Once
+	mu           sync.Mutex
+	closed       bool
+	readDeadline time.Time
+	readChanged  chan struct{} // closed when readDeadline changes, to wake a Read that waits on it
+	pending      *pendingRead
+	spare        []byte // the buffer of the last finished pending read
+	writeTimer   *time.Timer
+	closeOnce    sync.Once
 }
 
+// pendingRead is a read of the stream that a deadline left running: the next Read takes its result. Its bytes go
+// through an own buffer because the caller's may be reused once Read has returned.
+type pendingRead struct {
+	buf  []byte
+	off  int // bytes of buf[:n] already handed out
+	n    int
+	err  error
+	done chan struct{}
+}
+
+// Read is a plain read of the stream while no read deadline is set. With one, the read runs in a goroutine and a
+// deadline that passes returns os.ErrDeadlineExceeded with the stream still usable: the result goes to the next Read.
+// One reader at a time, as everywhere here.
+// ponytail: a deadline set while a Read without one is blocked does not wake it; upgrade = always read through the
+// goroutine (a goroutine and a copy for every read of the stream).
 func (c *streamConn) Read(payload []byte) (int, error) {
-	n, err := c.reader.Read(payload)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return n, ErrStream
+	c.mu.Lock()
+	timed := c.pending != nil || !c.readDeadline.IsZero()
+	c.mu.Unlock()
+	if !timed || len(payload) == 0 {
+		n, err := c.reader.Read(payload)
+		return n, streamError(err)
 	}
-	return n, err
+	c.mu.Lock()
+	pending := c.pending
+	if pending == nil {
+		buf := c.spare
+		if cap(buf) < len(payload) {
+			buf = make([]byte, len(payload))
+		}
+		pending = &pendingRead{buf: buf[:len(payload)], done: make(chan struct{})}
+		c.pending, c.spare = pending, nil
+		go func() {
+			pending.n, pending.err = c.reader.Read(pending.buf)
+			close(pending.done)
+		}()
+	}
+	c.mu.Unlock()
+	for {
+		c.mu.Lock()
+		deadline := c.readDeadline
+		if c.readChanged == nil {
+			c.readChanged = make(chan struct{})
+		}
+		changed := c.readChanged
+		c.mu.Unlock()
+		var expired <-chan time.Time
+		var timer *time.Timer
+		if !deadline.IsZero() {
+			timer = time.NewTimer(time.Until(deadline))
+			expired = timer.C
+		}
+		select {
+		case <-pending.done:
+			if timer != nil {
+				timer.Stop()
+			}
+			n := copy(payload, pending.buf[pending.off:pending.n])
+			pending.off += n
+			if pending.off < pending.n {
+				return n, nil // the rest waits for the next Read
+			}
+			c.mu.Lock()
+			c.pending, c.spare = nil, pending.buf
+			c.mu.Unlock()
+			return n, streamError(pending.err)
+		case <-expired:
+			c.mu.Lock()
+			late := !c.readDeadline.IsZero() && !time.Now().Before(c.readDeadline)
+			c.mu.Unlock()
+			if late {
+				return 0, os.ErrDeadlineExceeded
+			}
+		case <-changed:
+			if timer != nil {
+				timer.Stop()
+			}
+		}
+	}
+}
+
+func streamError(err error) error {
+	if err != nil && !errors.Is(err, io.EOF) {
+		return ErrStream
+	}
+	return err
 }
 
 func (c *streamConn) Write(payload []byte) (int, error) {
@@ -531,9 +665,6 @@ func (c *streamConn) Close() error {
 	c.closeOnce.Do(func() {
 		c.mu.Lock()
 		c.closed = true
-		if c.readTimer != nil {
-			c.readTimer.Stop()
-		}
 		if c.writeTimer != nil {
 			c.writeTimer.Stop()
 		}
@@ -550,33 +681,34 @@ func (c *streamConn) CloseRead() error     { return c.reader.Close() }
 func (c *streamConn) LocalAddr() net.Addr  { return c.local }
 func (c *streamConn) RemoteAddr() net.Addr { return c.remote }
 func (c *streamConn) SetDeadline(deadline time.Time) error {
-	c.setTimer(&c.readTimer, deadline)
-	c.setTimer(&c.writeTimer, deadline)
-	return nil
+	_ = c.SetReadDeadline(deadline)
+	return c.SetWriteDeadline(deadline)
 }
+
 func (c *streamConn) SetReadDeadline(deadline time.Time) error {
-	c.setTimer(&c.readTimer, deadline)
-	return nil
-}
-func (c *streamConn) SetWriteDeadline(deadline time.Time) error {
-	c.setTimer(&c.writeTimer, deadline)
+	c.mu.Lock()
+	c.readDeadline = deadline
+	if c.readChanged != nil {
+		close(c.readChanged)
+		c.readChanged = nil
+	}
+	c.mu.Unlock()
 	return nil
 }
 
-func (c *streamConn) setTimer(current **time.Timer, deadline time.Time) {
+// SetWriteDeadline closes the stream when the time comes: an HTTP/2 write cannot be interrupted any other way.
+// ponytail: a write deadline ends the stream; upgrade = write through a goroutine as Read does with its deadline.
+func (c *streamConn) SetWriteDeadline(deadline time.Time) error {
 	c.mu.Lock()
-	if *current != nil {
-		(*current).Stop()
-		*current = nil
+	if c.writeTimer != nil {
+		c.writeTimer.Stop()
+		c.writeTimer = nil
 	}
 	if !deadline.IsZero() && !c.closed {
-		delay := time.Until(deadline)
-		if delay < 0 {
-			delay = 0
-		}
-		*current = time.AfterFunc(delay, func() { _ = c.Close() })
+		c.writeTimer = time.AfterFunc(max(time.Until(deadline), 0), func() { _ = c.Close() })
 	}
 	c.mu.Unlock()
+	return nil
 }
 
 type tunnelAddr struct{ value string }
@@ -595,11 +727,14 @@ type udpStream struct {
 	reader io.ReadCloser
 	writer *io.PipeWriter
 	cancel context.CancelFunc
+	out    chan []byte // encoded frames for the stream's one writer
+	done   chan struct{}
 	once   sync.Once
 }
 
 func (s *udpStream) close() {
 	s.once.Do(func() {
+		close(s.done)
 		_ = s.writer.Close()
 		_ = s.reader.Close()
 		s.cancel()
@@ -706,73 +841,75 @@ func (c *Client) writeUDP(flow *udpFlow, payload []byte, target netip.AddrPort) 
 		if err == nil {
 			c.udpStream = stream
 			go c.readUDPStream(stream)
+			go c.writeUDPStream(stream)
 		}
-	}
-	if err == nil {
-		_, err = stream.writer.Write(frame)
-	}
-	if err != nil && stream == nil {
-		c.udpMu.Unlock()
-		if errors.Is(err, ErrAuth) {
-			c.markDead(ErrAuth)
-		}
-		return err
-	}
-	if err != nil && stream != nil && c.udpStream == stream {
-		c.udpStream = nil
-		stream.close()
 	}
 	c.udpMu.Unlock()
 	if err != nil {
 		if errors.Is(err, ErrAuth) {
 			c.markDead(ErrAuth)
-		} else {
-			c.notifyFlows(ErrStream)
 		}
-		return ErrStream
+		return err
+	}
+	// The stream's pipe waits for HTTP/2 flow control, which the server opens at the account's rate limit, so nothing
+	// here may wait for it: a full queue drops the datagram, as UDP allows, and the other flows go on.
+	select {
+	case stream.out <- frame:
+	default:
 	}
 	return nil
 }
 
+// writeUDPStream is the one writer of a stream's pipe, so the frames of a flow keep their order.
+func (c *Client) writeUDPStream(stream *udpStream) {
+	for {
+		select {
+		case <-stream.done:
+			return
+		case frame := <-stream.out:
+			if _, err := stream.writer.Write(frame); err != nil {
+				c.endUDPStream(stream)
+				return
+			}
+		}
+	}
+}
+
+// endUDPStream drops a stream that failed; the next datagram opens a new one and the flows are told.
+func (c *Client) endUDPStream(stream *udpStream) {
+	c.udpMu.Lock()
+	if c.udpStream == stream {
+		c.udpStream = nil
+	}
+	c.udpMu.Unlock()
+	stream.close()
+	c.notifyFlows(ErrStream)
+}
+
 func (c *Client) openUDPStreamLocked() (*udpStream, error) {
-	requestCtx, cancel := context.WithCancel(c.ctx)
-	pipeReader, pipeWriter := io.Pipe()
-	response, err := c.connect(requestCtx, "_udp2", userAgentUDP, pipeReader)
+	response, writer, cancel, err := c.openStream(c.ctx, "_udp2", userAgentUDP)
 	if err != nil {
-		_ = pipeReader.Close()
-		_ = pipeWriter.Close()
-		cancel()
 		return nil, err
 	}
-	return &udpStream{reader: response.body, writer: pipeWriter, cancel: cancel}, nil
+	return &udpStream{
+		reader: response.body, writer: writer, cancel: cancel,
+		out: make(chan []byte, udpSendQueue), done: make(chan struct{}),
+	}, nil
 }
 
 func (c *Client) readUDPStream(stream *udpStream) {
 	for {
 		frame, err := readIncomingFrame(stream.reader)
 		if err != nil {
-			c.udpMu.Lock()
-			if c.udpStream == stream {
-				c.udpStream = nil
-				stream.close()
-			}
-			c.udpMu.Unlock()
-			c.notifyFlows(ErrStream)
-			if !c.h2.CanTakeNewRequest() {
+			c.endUDPStream(stream)
+			if c.sessionGone() {
 				c.markDead(ErrSession)
 			}
 			return
 		}
 		remote, destinationPort, payload, err := decodeIncomingBody(frame)
 		if err != nil {
-			c.udpMu.Lock()
-			if c.udpStream == stream {
-				c.udpStream = nil
-				stream.close()
-			}
-			c.udpMu.Unlock()
-			c.notifyFlows(ErrStream)
-			return
+			continue // a frame with no usable addresses is skipped whole, like a short one: the stream stays in step
 		}
 		c.flowMu.Lock()
 		flow := c.udpFlows[destinationPort]
@@ -827,12 +964,12 @@ func readIncomingFrame(reader io.Reader) ([]byte, error) {
 			return nil, err
 		}
 		length := binary.BigEndian.Uint32(prefix[:])
-		if length > maxUDPFrame {
+		if length > maxSkippedFrame {
 			return nil, ErrStream
 		}
-		if length < udpIncomingHeader {
-			// A frame too short to carry its addresses is skipped whole: the stream stays in step and the other
-			// flows live.
+		if length < udpIncomingHeader || length > maxUDPFrame {
+			// A frame too short to carry its addresses, or longer than any datagram, is skipped whole: the stream stays
+			// in step and the other flows live.
 			if _, err := io.CopyN(io.Discard, reader, int64(length)); err != nil {
 				return nil, ErrStream
 			}

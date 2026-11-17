@@ -56,6 +56,7 @@ type Manager struct {
 	probeFailureWindow time.Duration
 	networkEventGrace  time.Duration
 	longSleepThreshold time.Duration
+	refusalPatience    time.Duration
 	backoff            []time.Duration
 }
 
@@ -113,6 +114,7 @@ type actorState struct {
 	lastNetworkEvent   time.Time
 	probePending       bool
 	retryIndex         int
+	refusedSince       time.Time // the first refusal of the key in this run of reconnects; zero when there was none
 	// userServer is what the user asked for; state.target.Server moves off it when on_server_down is "next".
 	userServer string
 	// failures counts failed reconnect attempts in a row on state.target.Server.
@@ -133,6 +135,7 @@ type managerTiming struct {
 	probeFailureWindow time.Duration
 	networkEventGrace  time.Duration
 	longSleepThreshold time.Duration
+	refusalPatience    time.Duration
 }
 
 func defaultManagerTiming() managerTiming {
@@ -145,6 +148,10 @@ func defaultManagerTiming() managerTiming {
 		probeFailureWindow: 20 * time.Second,
 		networkEventGrace:  30 * time.Second,
 		longSleepThreshold: 120 * time.Second,
+		// A session that was up and is refused on its way back is not given up at once: a server may refuse an account that
+		// is fine (too many connections it has not yet noticed are dead, a panel in the middle of an update). A server
+		// forgets a dead connection within about 15 minutes at the latest; a key that is really gone stays refused.
+		refusalPatience: 10 * time.Minute,
 	}
 }
 
@@ -174,6 +181,9 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	if timing.probeFailureWindow <= 0 {
 		timing.probeFailureWindow = defaults.probeFailureWindow
 	}
+	if timing.refusalPatience <= 0 {
+		timing.refusalPatience = defaults.refusalPatience
+	}
 	if timing.networkEventGrace <= 0 {
 		timing.networkEventGrace = defaults.networkEventGrace
 	}
@@ -192,6 +202,7 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 		probeInterval:      timing.probeInterval,
 		probeRetryInterval: timing.probeRetryInterval,
 		probeFailureWindow: timing.probeFailureWindow,
+		refusalPatience:    timing.refusalPatience,
 		networkEventGrace:  timing.networkEventGrace,
 		longSleepThreshold: timing.longSleepThreshold,
 		backoff:            append([]time.Duration(nil), backoff...),
@@ -444,7 +455,7 @@ func (m *Manager) run() {
 						clearTimer(&retryTimer, &retryC)
 					} else if state.status.State == "reconnecting" {
 						state.status.Error = code
-						if fatalReconnectCode(code) {
+						if fatalReconnectCode(code) && !m.stillPatient(&state, code) {
 							state.status.State = "blocked"
 							state.status.Purpose = ""
 							clearTimer(&retryTimer, &retryC)
@@ -485,6 +496,7 @@ func (m *Manager) run() {
 					state.status.SinceUnix = time.Now().Unix()
 					resetProbeStreak(&state)
 					state.retryIndex = 0
+					state.refusedSince = time.Time{}
 					state.failures = 0
 					state.roundFailures = make(map[string]int)
 					state.holdReconnect = false
@@ -1147,6 +1159,18 @@ func (m *Manager) backoffAt(index int) time.Duration {
 		return m.backoff[len(m.backoff)-1]
 	}
 	return m.backoff[index]
+}
+
+// stillPatient: a refused key during a reconnect is retried like any failure until the refusals have lasted
+// refusalPatience without one success. Only the key's refusal: the other fatal codes do not pass with time.
+func (m *Manager) stillPatient(state *actorState, code string) bool {
+	if code != "auth_rejected" {
+		return false
+	}
+	if state.refusedSince.IsZero() {
+		state.refusedSince = time.Now()
+	}
+	return time.Since(state.refusedSince) < m.refusalPatience
 }
 
 func fatalReconnectCode(code string) bool {

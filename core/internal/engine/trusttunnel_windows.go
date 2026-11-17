@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
@@ -19,6 +20,12 @@ var errTTUnavailable = errors.New("TrustTunnel session unavailable")
 
 // Our server closes a connection with no streams after 60 seconds; the reference server drops live streams after 600 seconds without a new stream.
 const ttKeepaliveInterval = 45 * time.Second
+
+// ttRefusalPatience is how long a tunnel that was up keeps redialing against refusals before it takes them for final.
+// The server also refuses an account that is at its 16 connections, a connection it is expiring and one whose account
+// was just switched off; it forgets a dead connection within about 2.5 to 15 minutes, which frees the places again. A
+// variable for the test.
+var ttRefusalPatience = 10 * time.Minute
 
 type ttOutbound struct {
 	ctx      context.Context
@@ -31,6 +38,8 @@ type ttOutbound struct {
 	fatalCh   chan struct{}
 	fatalOnce sync.Once
 	closed    bool
+
+	asking atomic.Bool // one _check at a time decides what a refused stream meant
 }
 
 func startTT(ctx context.Context, p *profile.TrustTunnel, endpoints []netip.AddrPort) (*ttOutbound, error) {
@@ -118,8 +127,9 @@ func (o *ttOutbound) DialAuthority(ctx context.Context, authority string) (net.C
 	if err != nil {
 		return nil, err
 	}
+	primary := pool.Primary()
 	conn, err := pool.DialTCP(ctx, authority)
-	o.refuse(err)
+	o.refuse(primary, err)
 	return conn, err
 }
 
@@ -134,14 +144,25 @@ func (o *ttOutbound) ListenUDP(ctx context.Context) (packetFlow, error) {
 	}
 	flow, err := primary.ListenUDP(ctx)
 	if err != nil {
-		o.refuse(err)
+		o.refuse(primary, err)
 		return nil, err
 	}
-	return ttPacketFlow{flow: flow, outbound: o}, nil
+	return ttPacketFlow{flow: flow, outbound: o, primary: primary}, nil
 }
 
 func (o *ttOutbound) reconnect() {
 	backoff := time.Second
+	// refusedSince is the first refusal since the last success. Refusals alone, for ttRefusalPatience, are final.
+	var refusedSince time.Time
+	patientlyRefused := func(err error) bool {
+		if !ttclient.IsRefusal(err) {
+			return false
+		}
+		if refusedSince.IsZero() {
+			refusedSince = time.Now()
+		}
+		return time.Since(refusedSince) >= ttRefusalPatience
+	}
 	for {
 		pool := o.poolSnapshot()
 		if pool == nil {
@@ -161,7 +182,7 @@ func (o *ttOutbound) reconnect() {
 		if o.ctx.Err() != nil || o.isFatal() {
 			return
 		}
-		if isTTRefusal(client.Err()) {
+		if patientlyRefused(client.Err()) {
 			o.setFatal(client.Err())
 			return
 		}
@@ -170,7 +191,7 @@ func (o *ttOutbound) reconnect() {
 				return
 			}
 			replacement, err := o.redial()
-			if isTTRefusal(err) {
+			if patientlyRefused(err) {
 				o.setFatal(err)
 				return
 			}
@@ -183,6 +204,7 @@ func (o *ttOutbound) reconnect() {
 				return
 			}
 			backoff = time.Second
+			refusedSince = time.Time{}
 			break
 		}
 	}
@@ -202,16 +224,14 @@ func (o *ttOutbound) keepalive() {
 			if pool == nil {
 				return
 			}
+			primary := pool.Primary()
 			clients := pool.KeepaliveClients()
 			results := make(chan error, len(clients))
 			for _, client := range clients {
 				go func(client *ttclient.Client) { results <- client.Check(o.ctx) }(client)
 			}
 			for range clients {
-				if err := <-results; isTTRefusal(err) {
-					o.setFatal(err)
-					return
-				}
+				o.drop(primary, <-results)
 			}
 		}
 	}
@@ -242,21 +262,28 @@ func (o *ttOutbound) isFatal() bool {
 	return o.fatal != nil
 }
 
-func (o *ttOutbound) refuse(err error) {
-	if isTTRefusal(err) {
-		o.setFatal(err)
+// refuse takes a refusal seen once the tunnel was up as no final word: the server shows its site to an account that is
+// at its connection limit or on a connection it is expiring as well as to a wrong one. The first connection is dropped
+// (primary, as it was when the refused call began) so that reconnect redials and decides, with ttRefusalPatience.
+// A 5xx is about one destination (502 with a warning: unreachable, timed out, blocked) and is not a refusal.
+//
+// A refused stream is asked about first: a _check on the same connection. Some servers answer 4xx for one destination,
+// and dropping the connection for that would cut every program off each time one of them tried such an address.
+func (o *ttOutbound) refuse(primary *ttclient.Client, err error) {
+	if primary == nil || !ttclient.IsRefusal(err) || !o.asking.CompareAndSwap(false, true) {
+		return
 	}
+	go func() {
+		defer o.asking.Store(false)
+		o.drop(primary, primary.Check(o.ctx))
+	}()
 }
 
-// isTTRefusal: the endpoint will not serve this account, so trying again is pointless. A 4xx is that: the reference
-// server answers 407, ours shows its site (404) to a wrong or switched-off account. A 5xx is about one destination (502
-// with a warning: unreachable, timed out, blocked) and says nothing about the tunnel: only that connection fails.
-func isTTRefusal(err error) bool {
-	if errors.Is(err, ttclient.ErrAuth) {
-		return true
+// drop closes the first connection when its own _check was refused: reconnect takes it from there.
+func (o *ttOutbound) drop(primary *ttclient.Client, checkErr error) {
+	if primary != nil && ttclient.IsRefusal(checkErr) {
+		_ = primary.Close()
 	}
-	var status ttclient.StatusError
-	return errors.As(err, &status) && status.Code >= 400 && status.Code < 500
 }
 
 func (o *ttOutbound) redial() (*ttclient.Client, error) {
@@ -312,11 +339,12 @@ func nextTTBackoff(delay time.Duration) time.Duration {
 type ttPacketFlow struct {
 	flow     ttclient.PacketFlow
 	outbound *ttOutbound
+	primary  *ttclient.Client // the connection this flow was made on
 }
 
 func (f ttPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error {
 	err := f.flow.WriteTo(payload, target)
-	f.outbound.refuse(err)
+	f.outbound.refuse(f.primary, err)
 	return err
 }
 
