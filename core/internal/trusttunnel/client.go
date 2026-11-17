@@ -400,7 +400,7 @@ func (c *Client) connect(ctx context.Context, authority, userAgent string, body 
 	}
 	if response.status != 200 {
 		_ = response.body.Close()
-		return nil, statusError(response.status)
+		return nil, StatusError{Code: response.status, Warning: response.warning}
 	}
 	return response, nil
 }
@@ -415,18 +415,20 @@ type httpRequest struct {
 }
 
 type httpResponse struct {
-	status int
-	body   io.ReadCloser
+	status  int
+	warning int // the number that leads the server's X-Warning header, 0 without one
+	body    io.ReadCloser
 }
 
-type StatusError struct{ Code int }
+// StatusError is an answer other than 200. Warning is the server's own code for a destination it could not serve (the
+// number in X-Warning: 301 unavailable, 302 timed out, 310 blocked, 300 other); the header's text and the host the
+// server may name beside it are not kept.
+type StatusError struct{ Code, Warning int }
 
 func (e StatusError) Error() string {
 	return "TrustTunnel endpoint returned HTTP status " + strconv.Itoa(e.Code)
 }
 func (e StatusError) StatusCode() int { return e.Code }
-
-func statusError(code int) error { return StatusError{Code: code} }
 
 func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 	request := &http.Request{
@@ -450,7 +452,11 @@ func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 		}
 		return nil, ErrStream
 	}
-	return &httpResponse{status: response.StatusCode, body: response.Body}, nil
+	warning := 0
+	if digits, _, _ := strings.Cut(response.Header.Get("X-Warning"), " "); len(digits) == 3 {
+		warning, _ = strconv.Atoi(digits)
+	}
+	return &httpResponse{status: response.StatusCode, warning: warning, body: response.Body}, nil
 }
 
 func (c *Client) watchSession() {

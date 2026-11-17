@@ -1565,7 +1565,10 @@ func firstIPv4(p profile.Profile, adapter *netcfg.Adapter) (netip.Addr, bool) {
 // verifyReason words why the tunnel check failed, for the log: a class of failure, never an address or a name.
 func verifyReason(err error) string {
 	var status interface{ StatusCode() int }
+	var tt ttclient.StatusError
 	switch {
+	case errors.As(err, &tt) && tt.Warning != 0:
+		return "the server answered " + strconv.Itoa(tt.Code) + ", warning " + strconv.Itoa(tt.Warning)
 	case errors.As(err, &status):
 		return "the server answered " + strconv.Itoa(status.StatusCode())
 	case errors.Is(err, context.DeadlineExceeded):

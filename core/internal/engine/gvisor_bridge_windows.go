@@ -9,6 +9,7 @@ import (
 	"errors"
 	"github.com/mistgate/mistgate-client/core/internal/safe"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sync"
@@ -208,6 +209,8 @@ func (b *gvisorBridge) probe(ctx context.Context, targets []netip.AddrPort, time
 			return 0, ctx.Err()
 		}
 		lastErr = err
+		// one address of the check may be out of the server's reach while the tunnel is fine: worth a line, not a failure
+		slog.Info("tunnel check: an address did not answer: " + verifyReason(err))
 	}
 	return 0, lastErr
 }
