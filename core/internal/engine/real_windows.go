@@ -896,7 +896,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if runCtx.Err() != nil {
 			return Info{}, runCtx.Err()
 		}
-		return Info{}, failure("verify_failed", "verify tunnel connection")
+		return Info{}, failure("verify_failed", "verify tunnel connection: "+verifyReason(err))
 	}
 	if err := runCtx.Err(); err != nil {
 		return Info{}, err
@@ -1560,6 +1560,21 @@ func firstIPv4(p profile.Profile, adapter *netcfg.Adapter) (netip.Addr, bool) {
 		return netip.Addr{}, false
 	}
 	return netip.MustParseAddr("198.18.0.1"), adapter != nil
+}
+
+// verifyReason words why the tunnel check failed, for the log: a class of failure, never an address or a name.
+func verifyReason(err error) string {
+	var status interface{ StatusCode() int }
+	switch {
+	case errors.As(err, &status):
+		return "the server answered " + strconv.Itoa(status.StatusCode())
+	case errors.Is(err, context.DeadlineExceeded):
+		return "no answer in time"
+	case errors.Is(err, errTTUnavailable):
+		return "the session is gone"
+	default:
+		return "the connection was closed"
+	}
 }
 
 func step(report func(Step), current Step) {

@@ -248,12 +248,15 @@ func (o *ttOutbound) refuse(err error) {
 	}
 }
 
+// isTTRefusal: the endpoint will not serve this account, so trying again is pointless. A 4xx is that: the reference
+// server answers 407, ours shows its site (404) to a wrong or switched-off account. A 5xx is about one destination (502
+// with a warning: unreachable, timed out, blocked) and says nothing about the tunnel: only that connection fails.
 func isTTRefusal(err error) bool {
 	if errors.Is(err, ttclient.ErrAuth) {
 		return true
 	}
 	var status ttclient.StatusError
-	return errors.As(err, &status)
+	return errors.As(err, &status) && status.Code >= 400 && status.Code < 500
 }
 
 func (o *ttOutbound) redial() (*ttclient.Client, error) {
