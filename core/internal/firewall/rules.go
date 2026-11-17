@@ -974,7 +974,11 @@ func blockAll(session uintptr, baseObjects *baseObjects, weight uint8) error {
 }
 
 // Block all DNS traffic except towards specified DNS servers.
-func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, weightAllow, weightDeny uint8) error {
+//
+// Mistgate: the exception holds on the tunnel's adapter only. By the address alone it also let a question out of the
+// physical adapter whenever the route to the resolver was not the tunnel's: while the kill switch holds the network with
+// the tunnel down, or with a resolver that has a route of its own. Without an adapter (ifLUID 0) there is no exception.
+func blockDNS(except []netip.Addr, ifLUID uint64, session uintptr, baseObjects *baseObjects, weightAllow, weightDeny uint8) error {
 	if weightDeny >= weightAllow {
 		return errors.New("The allow weight must be greater than the deny weight")
 	}
@@ -1092,8 +1096,23 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 		}
 	}
 
-	allowConditionsV4 := make([]wtFwpmFilterCondition0, 0, len(denyConditions)+len(except))
-	allowConditionsV4 = append(allowConditionsV4, denyConditions...)
+	if ifLUID == 0 {
+		except = nil
+	}
+	luid := new(uint64) // on the heap: the condition holds its address as a number
+	*luid = ifLUID
+	ifaceCondition := wtFwpmFilterCondition0{
+		fieldKey:  cFWPM_CONDITION_IP_LOCAL_INTERFACE,
+		matchType: cFWP_MATCH_EQUAL,
+		conditionValue: wtFwpConditionValue0{
+			_type: cFWP_UINT64,
+			value: (uintptr)(unsafe.Pointer(luid)),
+		},
+	}
+	allowBase := len(denyConditions) + 1
+
+	allowConditionsV4 := make([]wtFwpmFilterCondition0, 0, allowBase+len(except))
+	allowConditionsV4 = append(append(allowConditionsV4, denyConditions...), ifaceCondition)
 	for _, ip := range except {
 		if !ip.Is4() {
 			continue
@@ -1109,8 +1128,8 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 	}
 
 	storedPointers := make([]*wtFwpByteArray16, 0, len(except))
-	allowConditionsV6 := make([]wtFwpmFilterCondition0, 0, len(denyConditions)+len(except))
-	allowConditionsV6 = append(allowConditionsV6, denyConditions...)
+	allowConditionsV6 := make([]wtFwpmFilterCondition0, 0, allowBase+len(except))
+	allowConditionsV6 = append(append(allowConditionsV6, denyConditions...), ifaceCondition)
 	for _, ip := range except {
 		if !ip.Is6() {
 			continue
@@ -1143,7 +1162,7 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 	//
 	// #5 Allow IPv4 outbound DNS.
 	//
-	if len(allowConditionsV4) > len(denyConditions) {
+	if len(allowConditionsV4) > allowBase {
 		displayData, err := createWtFwpmDisplayData0("Allow DNS outbound (IPv4)", "")
 		if err != nil {
 			return wrapErr(err)
@@ -1161,7 +1180,7 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 	//
 	// #6 Allow IPv4 inbound DNS.
 	//
-	if len(allowConditionsV4) > len(denyConditions) {
+	if len(allowConditionsV4) > allowBase {
 		displayData, err := createWtFwpmDisplayData0("Allow DNS inbound (IPv4)", "")
 		if err != nil {
 			return wrapErr(err)
@@ -1182,7 +1201,7 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 	//
 	// #7 Allow IPv6 outbound DNS.
 	//
-	if len(allowConditionsV6) > len(denyConditions) {
+	if len(allowConditionsV6) > allowBase {
 		displayData, err := createWtFwpmDisplayData0("Allow DNS outbound (IPv6)", "")
 		if err != nil {
 			return wrapErr(err)
@@ -1200,7 +1219,7 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 	//
 	// #8 Allow IPv6 inbound DNS.
 	//
-	if len(allowConditionsV6) > len(denyConditions) {
+	if len(allowConditionsV6) > allowBase {
 		displayData, err := createWtFwpmDisplayData0("Allow DNS inbound (IPv6)", "")
 		if err != nil {
 			return wrapErr(err)
@@ -1216,6 +1235,7 @@ func blockDNS(except []netip.Addr, session uintptr, baseObjects *baseObjects, we
 	}
 
 	runtime.KeepAlive(storedPointers)
+	runtime.KeepAlive(luid)
 
 	return nil
 }

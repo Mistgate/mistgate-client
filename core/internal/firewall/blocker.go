@@ -125,7 +125,7 @@ func EnableFirewall(luid uint64, doNotRestrict, allowLAN bool, restrictToDNSServ
 		}
 
 		if !doNotRestrict || len(restrictToDNSServers) > 0 {
-			err = blockDNS(restrictToDNSServers, session, baseObjects, 15, 14)
+			err = blockDNS(restrictToDNSServers, luid, session, baseObjects, 15, 14)
 			if err != nil {
 				return wrapErr(err)
 			}
