@@ -159,3 +159,34 @@ func TestDirectOutboundUsesLocalTCPAndUDPEchoListeners(t *testing.T) {
 		t.Fatalf("UDP echo = %q, %v", payload, err)
 	}
 }
+
+// A machine with IPv6 of its own behind a VPN that carries none: only the flows that leave directly are let in, the
+// rest are refused before they are accepted, so the program turns to IPv4 at once.
+func TestIPv6IntoAVPNWithoutIPv6IsADeadEnd(t *testing.T) {
+	real := directIPv6
+	defer func() { directIPv6 = real }()
+	directIPv6 = func() bool { return true }
+	direct6 := netip.MustParseAddr("2001:db8::1")
+	bridge := &gvisorBridge{vpn: &countOutbound{}, direct: &countOutbound{}, shouldDirect: func(address netip.Addr, _ string, _ []string) bool { return address == direct6 }}
+	vpn6 := netip.MustParseAddrPort("[2001:4860:4860::8888]:443")
+	if bridge.deadEnd6(vpn6, appNone) {
+		t.Fatal("refused while the VPN may carry IPv6")
+	}
+	bridge.noVPN6.Store(true)
+	for _, c := range []struct {
+		target netip.AddrPort
+		app    appVerdict
+		want   bool
+	}{
+		{vpn6, appNone, true},
+		{vpn6, appVPN, true},
+		{vpn6, appDirect, false},
+		{netip.AddrPortFrom(direct6, 443), appNone, false},
+		{netip.AddrPortFrom(direct6, 443), appVPN, true},
+		{netip.MustParseAddrPort("8.8.8.8:443"), appNone, false},
+	} {
+		if got := bridge.deadEnd6(c.target, c.app); got != c.want {
+			t.Errorf("deadEnd6(%v, app %v) = %v, want %v", c.target, c.app, got, c.want)
+		}
+	}
+}

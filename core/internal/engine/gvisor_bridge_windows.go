@@ -296,8 +296,9 @@ func (b *gvisorBridge) forwardTCP(req *tcp.ForwarderRequest) {
 	// This goroutine is the flow's own, so waiting here for the owner of the socket stalls nothing else.
 	srcAddr, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
 	app := b.appWait(false, netip.AddrPortFrom(srcAddr.Unmap(), id.RemotePort), target)
-	// A program kept on the VPN cannot use a VPN without IPv6: refuse as above.
-	if app == appVPN && target.Addr().Is6() && b.noVPN6.Load() {
+	// IPv6 beside the VPN, but this flow is the VPN's (a program kept on it, an address no rule sends direct): refuse
+	// as above.
+	if b.deadEnd6(target, app) {
 		req.Complete(true)
 		return
 	}
@@ -860,6 +861,26 @@ func (b *gvisorBridge) Close() {
 	b.wg.Wait()
 }
 
+// deadEnd6 says whether an IPv6 flow would go into a VPN that carries no IPv6, judged before the flow is accepted: by
+// its program, its address and the names remembered for it.
+// ponytail: a site rule known only by the name inside the flow is not seen here, so such a site loses its direct IPv6
+// and goes direct over IPv4; read the name first if that ever matters. UDP is left alone: QUIC gives up by itself.
+func (b *gvisorBridge) deadEnd6(target netip.AddrPort, app appVerdict) bool {
+	if !target.Addr().Is6() || !b.noVPN6.Load() {
+		return false
+	}
+	_, route := selectOutbound(target, "", b.rememberedNames(target, app, ""), b.shouldDirect, app, b.vpn, b.direct)
+	return route == geo.ViaVPN
+}
+
+// rememberedNames are the names the resolver gave this address: what the rules have when a flow shows no name.
+func (b *gvisorBridge) rememberedNames(target netip.AddrPort, app appVerdict, name string) []string {
+	if app == appNone && name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
+		return b.dns.lookupNames(target.Addr())
+	}
+	return nil
+}
+
 func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.Conn, error) {
 	conn, _, err := b.dialTCPName(ctx, target, "", appNone)
 	return conn, err
@@ -867,11 +888,7 @@ func (b *gvisorBridge) dialTCP(ctx context.Context, target netip.AddrPort) (net.
 
 // dialTCPName also says which route the flow was given, even when the dial fails.
 func (b *gvisorBridge) dialTCPName(ctx context.Context, target netip.AddrPort, name string, app appVerdict) (net.Conn, geo.Route, error) {
-	var remembered []string
-	if app == appNone && name == "" && b.hasSiteRules != nil && b.hasSiteRules() && b.dns != nil {
-		remembered = b.dns.lookupNames(target.Addr())
-	}
-	out, route := selectOutbound(target, name, remembered, b.shouldDirect, app, b.vpn, b.direct)
+	out, route := selectOutbound(target, name, b.rememberedNames(target, app, name), b.shouldDirect, app, b.vpn, b.direct)
 	conn, err := out.DialTCP(ctx, target)
 	return conn, route, err
 }
