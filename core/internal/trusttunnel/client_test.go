@@ -59,9 +59,11 @@ func TestFrameEncodingMatchesWireBytes(t *testing.T) {
 	}
 }
 
-func TestClientTCPUDPAndHalfClose(t *testing.T) {
+func TestClientTCPUDPAndHalfClose(t *testing.T) { eachTransport(t, testClientTCPUDPAndHalfClose) }
+
+func testClientTCPUDPAndHalfClose(t *testing.T, h3 bool) {
 	target := startEchoListener(t)
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) {
 		wantAgent := userAgentTCP
 		if r.Host == "_udp2" {
 			wantAgent = userAgentUDP
@@ -85,6 +87,9 @@ func TestClientTCPUDPAndHalfClose(t *testing.T) {
 	})
 	client := stub.dial(t, "user", "password")
 	defer client.Close()
+	if want := map[bool]string{false: "h2", true: "h3"}[h3]; client.Protocol() != want {
+		t.Fatalf("Protocol = %q, want %q", client.Protocol(), want)
+	}
 	if err := client.Check(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +180,11 @@ func TestClientTCPUDPAndHalfClose(t *testing.T) {
 }
 
 func TestClientAuthenticationClosesSession(t *testing.T) {
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) {
+	eachTransport(t, testClientAuthenticationClosesSession)
+}
+
+func testClientAuthenticationClosesSession(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) {
 		checkAuth(w, r)
 	})
 	client := stub.dial(t, "wrong", "password")
@@ -195,7 +204,11 @@ func TestClientAuthenticationClosesSession(t *testing.T) {
 }
 
 func TestClientOtherStatusCarriesOnlyStatus(t *testing.T) {
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+	eachTransport(t, testClientOtherStatusCarriesOnlyStatus)
+}
+
+func testClientOtherStatusCarriesOnlyStatus(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
 	client := stub.dial(t, "user", "password")
 	defer client.Close()
 	_, err := client.DialTCP(context.Background(), "example.test:443")
@@ -205,8 +218,10 @@ func TestClientOtherStatusCarriesOnlyStatus(t *testing.T) {
 	}
 }
 
-func TestClientCheckStatusIsARefusal(t *testing.T) {
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+func TestClientCheckStatusIsARefusal(t *testing.T) { eachTransport(t, testClientCheckStatusIsARefusal) }
+
+func testClientCheckStatusIsARefusal(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
 	client := stub.dial(t, "user", "password")
 	defer client.Close()
 	err := client.Check(context.Background())
@@ -217,48 +232,100 @@ func TestClientCheckStatusIsARefusal(t *testing.T) {
 }
 
 func TestClientCertificatePinChecksOnlyLeafHash(t *testing.T) {
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	eachTransport(t, testClientCertificatePinChecksOnlyLeafHash)
+}
+
+func testClientCertificatePinChecksOnlyLeafHash(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	config := stub.config()
 	config.Host, config.SNI = "relay.example.test", "relay.example.test"
 	config.Certs = nil
 	config.PinSHA256 = sha256.Sum256(stub.der)
 	config.HasPin = true
-	client, err := Dial(context.Background(), config)
+	client, err := stub.open(config)
 	if err != nil {
 		t.Fatalf("matching pin was rejected: %v", err)
 	}
 	_ = client.Close()
 
 	config.PinSHA256[0] ^= 0xff
-	if _, err := Dial(context.Background(), config); err != ErrCertificate {
+	if _, err := stub.open(config); err != ErrCertificate {
 		t.Fatalf("wrong pin error = %v, want ErrCertificate", err)
 	}
 }
 
-func TestClientCertificateAndALPN(t *testing.T) {
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	wrong := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+func TestClientCertificateAndALPN(t *testing.T) { eachTransport(t, testClientCertificateAndALPN) }
+
+func testClientCertificateAndALPN(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	wrong := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	config := stub.config()
 	config.Certs = [][]byte{wrong.der}
-	if _, err := Dial(context.Background(), config); err != ErrCertificate {
+	if _, err := stub.open(config); err != ErrCertificate {
 		t.Fatalf("wrong certificate error = %v", err)
 	}
 	config.Insecure = true
-	client, err := Dial(context.Background(), config)
+	client, err := stub.open(config)
 	if err != nil {
 		t.Fatalf("insecure TLS dial: %v", err)
 	}
 	_ = client.Close()
 
+	if h3 {
+		other := startQUICStub(t, "not-h3")
+		if _, err := dialH3(context.Background(), other.config()); err != ErrALPN {
+			t.Fatalf("a QUIC server that does not speak h3: error = %v", err)
+		}
+		return
+	}
 	h1 := newEndpoint(t, false, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	if _, err := Dial(context.Background(), h1.config()); err != ErrALPN {
 		t.Fatalf("HTTP/1.1 only error = %v", err)
 	}
 }
 
+// eachTransport runs a test of the session's behaviour on HTTP/2 and on HTTP/3: the streams, the framing and the errors
+// must be the same.
+func eachTransport(t *testing.T, run func(t *testing.T, h3 bool)) {
+	t.Run("h2", func(t *testing.T) { run(t, false) })
+	t.Run("h3", func(t *testing.T) { run(t, true) })
+}
+
+// endpointStub is a server on loopback: HTTP/2 over TCP (server) or HTTP/3 over UDP (h3).
 type endpointStub struct {
 	server *httptestServer
+	h3     *h3TestServer
 	der    []byte
+}
+
+// newTransportEndpoint is a stub on the transport under test. limit is the stub's stream limit per connection, 0 for the
+// default.
+func newTransportEndpoint(t *testing.T, h3 bool, limit uint32, handler http.HandlerFunc) *endpointStub {
+	t.Helper()
+	der, keyPair := endpointCertificate(t)
+	if !h3 {
+		return &endpointStub{server: newHTTPTestServerWithMaxConcurrentStreams(t, keyPair, handler, limit), der: der}
+	}
+	server, err := startH3TestServer(t, keyPair, handler, "127.0.0.1:0", int64(limit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &endpointStub{h3: server, der: der}
+}
+
+func (s *endpointStub) address() string {
+	if s.h3 != nil {
+		return s.h3.addr
+	}
+	return s.server.Addr()
+}
+
+// open is Dial or dialH3, as the stub is.
+func (s *endpointStub) open(config Config) (*Client, error) {
+	if s.h3 != nil {
+		return dialH3(context.Background(), config)
+	}
+	return Dial(context.Background(), config)
 }
 
 func newEndpoint(t *testing.T, h2 bool, handler http.HandlerFunc) *endpointStub {
@@ -269,14 +336,14 @@ func newEndpoint(t *testing.T, h2 bool, handler http.HandlerFunc) *endpointStub 
 }
 
 func (s *endpointStub) config() Config {
-	return Config{Host: "example.test", SNI: "example.test", Addresses: []string{s.server.Addr()}, Username: "user", Password: "password", Certs: [][]byte{s.der}}
+	return Config{Host: "example.test", SNI: "example.test", Addresses: []string{s.address()}, Username: "user", Password: "password", Certs: [][]byte{s.der}}
 }
 
 func (s *endpointStub) dial(t *testing.T, username, password string) *Client {
 	t.Helper()
 	config := s.config()
 	config.Username, config.Password = username, password
-	client, err := Dial(context.Background(), config)
+	client, err := s.open(config)
 	if err != nil {
 		t.Fatalf("Dial failed: %v", err)
 	}
@@ -472,6 +539,12 @@ func startHTTPTestServerWithMaxConcurrentStreams(t *testing.T, h2 bool, certific
 	if err != nil {
 		t.Fatal(err)
 	}
+	return serveHTTPTest(t, listener, h2, certificate, handler, max)
+}
+
+// serveHTTPTest serves handler on an open TCP listener, which the stub closes with the test.
+func serveHTTPTest(t *testing.T, listener net.Listener, h2 bool, certificate tls.Certificate, handler http.HandlerFunc, max uint32) *httptestServer {
+	t.Helper()
 	server := &http.Server{Handler: handler}
 	if h2 {
 		server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{certificate}, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12}

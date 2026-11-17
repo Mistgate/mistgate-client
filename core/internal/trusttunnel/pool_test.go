@@ -128,11 +128,11 @@ func TestUDPFramePayloadLimit(t *testing.T) {
 	}
 }
 
-// poolOn builds a pool whose first connection is on server.
-func poolOn(t *testing.T, server *httptestServer, der []byte) *Pool {
+// poolOn builds a pool whose first connection is on stub.
+func poolOn(t *testing.T, stub *endpointStub) *Pool {
 	t.Helper()
-	config := Config{Host: "example.test", SNI: "example.test", Addresses: []string{server.Addr()}, Username: "user", Password: "password", Certs: [][]byte{der}}
-	primary, err := Dial(context.Background(), config)
+	config := stub.config()
+	primary, err := stub.open(config)
 	if err != nil {
 		t.Fatalf("primary dial failed: %v", err)
 	}
@@ -150,11 +150,10 @@ func poolOn(t *testing.T, server *httptestServer, der []byte) *Pool {
 }
 
 // echoPool is a pool on a stub that tunnels every CONNECT to a local echo listener; limit is the stub's stream limit.
-func echoPool(t *testing.T, limit uint32) (*Pool, string) {
+func echoPool(t *testing.T, h3 bool, limit uint32) (*Pool, string) {
 	t.Helper()
 	target := startEchoListener(t)
-	der, certificate := endpointCertificate(t)
-	server := newHTTPTestServerWithMaxConcurrentStreams(t, certificate, func(w http.ResponseWriter, r *http.Request) {
+	stub := newTransportEndpoint(t, h3, limit, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -163,8 +162,8 @@ func echoPool(t *testing.T, limit uint32) (*Pool, string) {
 			return
 		}
 		serveTCPTunnel(w, r, target.Addr().String())
-	}, limit)
-	return poolOn(t, server, der), target.Addr().String()
+	})
+	return poolOn(t, stub), target.Addr().String()
 }
 
 // With every place taken a dial waits only so long, and the service's own dials do not wait at all.
@@ -172,7 +171,7 @@ func TestPoolStreamCapWaitIsBoundedAndServiceDialsSkipIt(t *testing.T) {
 	old := slotWait
 	slotWait = 150 * time.Millisecond
 	t.Cleanup(func() { slotWait = old })
-	pool, target := echoPool(t, 0)
+	pool, target := echoPool(t, false, 0)
 	for range maxStreams {
 		pool.slots <- struct{}{}
 	}
@@ -207,11 +206,10 @@ func TestPoolStreamCapWaitIsBoundedAndServiceDialsSkipIt(t *testing.T) {
 
 // An extra connection that cannot be opened is no reason to fail a stream that a live connection can carry.
 func TestPoolFallsBackWhenAnExtraConnectionFails(t *testing.T) {
-	der, certificate := endpointCertificate(t)
 	var mu sync.Mutex
 	var first string
 	var refusedChecks int
-	server := newHTTPTestServerWithMaxConcurrentStreams(t, certificate, func(w http.ResponseWriter, r *http.Request) {
+	stub := newTransportEndpoint(t, false, 4, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -235,8 +233,8 @@ func TestPoolFallsBackWhenAnExtraConnectionFails(t *testing.T) {
 		if r.Host != "_check" {
 			<-r.Context().Done()
 		}
-	}, 4) // the first connection keeps primaryReserve of the 4 back: one stream fits, the next wants an extra connection
-	pool := poolOn(t, server, der)
+	}) // the first connection keeps primaryReserve of the 4 back: one stream fits, the next wants an extra connection
+	pool := poolOn(t, stub)
 	for i := range 3 {
 		conn, err := pool.DialTCP(context.Background(), "example.test:443")
 		if err != nil {

@@ -23,10 +23,9 @@ func TestVerifyReasonNamesTheStatus(t *testing.T) {
 	}
 }
 
-// ttStub is a TrustTunnel endpoint on loopback that echoes every CONNECT, or answers refuse (a status) while it is set.
-func ttStub(t *testing.T, refuse *atomic.Int32) netip.AddrPort {
-	t.Helper()
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// ttEchoHandler is the endpoint side of ttStub: an echo for every CONNECT, or the status in refuse while one is set.
+func ttEchoHandler(refuse *atomic.Int32) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if code := int(refuse.Load()); code != 0 {
 			w.WriteHeader(code)
 			return
@@ -48,7 +47,13 @@ func ttStub(t *testing.T, refuse *atomic.Int32) netip.AddrPort {
 				return
 			}
 		}
-	}))
+	})
+}
+
+// ttStub is a TrustTunnel endpoint on loopback that echoes every CONNECT, or answers refuse (a status) while it is set.
+func ttStub(t *testing.T, refuse *atomic.Int32) netip.AddrPort {
+	t.Helper()
+	server := httptest.NewUnstartedServer(ttEchoHandler(refuse))
 	server.EnableHTTP2 = true
 	server.StartTLS()
 	t.Cleanup(server.Close)
@@ -58,21 +63,24 @@ func ttStub(t *testing.T, refuse *atomic.Int32) netip.AddrPort {
 // ttOutboundOn is an outbound as startTT builds it, minus the adapter's routes: the stub is on loopback.
 func ttOutboundOn(t *testing.T, endpoint netip.AddrPort) *ttOutbound {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	config := ttclient.Config{
+	return ttOutboundWith(t, ttclient.Config{
 		Host: "example.test", Addresses: []string{endpoint.String()}, Username: "user", Password: "password", Insecure: true,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, address)
 		},
-	}
-	client, err := ttclient.Dial(ctx, config)
+	})
+}
+
+// ttOutboundWith is ttOutboundOn for a config of the test's own.
+func ttOutboundWith(t *testing.T, config ttclient.Config) *ttOutbound {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	client, err := ttclient.Connect(ctx, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.Check(ctx); err != nil {
-		t.Fatal(err)
-	}
+	endpoint := client.Endpoint()
 	pool, err := ttclient.NewPool(ctx, client, config, 0)
 	if err != nil {
 		t.Fatal(err)

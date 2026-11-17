@@ -762,6 +762,9 @@ func TestClientAPITrustTunnelPaths(t *testing.T) {
 	if ca.TT == nil || ca.TT.HasPin || ca.TT.Insecure || ca.NoIPv6 {
 		t.Fatal("CA TrustTunnel path profile has incorrect fields")
 	}
+	if !pin.TT.H3 || ca.TT.H3 {
+		t.Fatal("the panel's transport (auto, h2) did not reach the profile as H3 (true, false)")
+	}
 	for _, entry := range store.state.Subscriptions[0].Entries {
 		if entry.Server.ID == "pth_tt_pin" {
 			var path syncPath

@@ -315,6 +315,22 @@ func (directOutbound) ListenUDP(ctx context.Context) (packetFlow, error) {
 	return &directPacketFlow{ctx: ctx, ready: make(chan struct{})}, nil
 }
 
+// directPacketConn opens a UDP socket bound to the physical interface that reaches target, so its packets bypass the
+// tunnel as directOutbound's TCP ones do.
+func directPacketConn(ctx context.Context, target netip.AddrPort) (net.PacketConn, error) {
+	index, err := netcfg.CachedPhysicalInterfaceIndexFor(target.Addr())
+	if err != nil {
+		return nil, err
+	}
+	var listen net.ListenConfig
+	listen.Control = netcfg.SocketControl(index)
+	network := "udp6"
+	if target.Addr().Is4() {
+		network = "udp4"
+	}
+	return listen.ListenPacket(ctx, network, ":0")
+}
+
 type directPacketFlow struct {
 	ctx    context.Context
 	mu     sync.Mutex
@@ -333,18 +349,7 @@ func (f *directPacketFlow) WriteTo(payload []byte, target netip.AddrPort) error 
 		return net.ErrClosed
 	}
 	if f.conn == nil {
-		index, err := netcfg.CachedPhysicalInterfaceIndexFor(target.Addr())
-		if err != nil {
-			f.mu.Unlock()
-			return err
-		}
-		var listen net.ListenConfig
-		listen.Control = netcfg.SocketControl(index)
-		network := "udp6"
-		if target.Addr().Is4() {
-			network = "udp4"
-		}
-		conn, err := listen.ListenPacket(f.ctx, network, ":0")
+		conn, err := directPacketConn(f.ctx, target)
 		if err != nil {
 			f.mu.Unlock()
 			return err

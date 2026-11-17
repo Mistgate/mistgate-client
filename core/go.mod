@@ -7,6 +7,7 @@ require (
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
 	github.com/apernet/hysteria/core/v2 v2.12.3
 	github.com/apernet/hysteria/extras/v2 v2.12.3
+	github.com/apernet/quic-go v0.62.1-0.20260912175848-73339f7edbb9
 	github.com/xtls/reality v0.0.0-20261108101329-4bb46b2afd8b
 	github.com/xtls/xray-core v1.260327.1-0.20261109052709-676eaf66f8f0
 	github.com/refraction-networking/utls v1.8.3-0.20261108164504-a13c59ffe98b
@@ -18,7 +19,6 @@ require (
 )
 
 require (
-	github.com/apernet/quic-go v0.62.1-0.20260912175848-73339f7edbb9 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

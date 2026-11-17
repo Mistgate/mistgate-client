@@ -21,6 +21,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/apernet/quic-go"
+	"github.com/apernet/quic-go/http3"
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
 )
@@ -68,14 +70,24 @@ type Config struct {
 	Name        string
 	DialContext func(ctx context.Context, network, address string) (net.Conn, error)
 	Resolve     func(ctx context.Context, host string) ([]netip.Addr, error)
+	// ListenPacket opens the UDP socket of one HTTP/3 session to target, so the caller can keep it off the tunnel like its
+	// TCP sockets. Without it the session binds a plain wildcard socket.
+	ListenPacket func(ctx context.Context, target netip.AddrPort) (net.PacketConn, error)
+	// H3 asks Connect to try HTTP/3 beside HTTP/2. Dial is always HTTP/2.
+	H3 bool
 }
 
+// Client is one session to the endpoint: HTTP/2 over TCP, or HTTP/3 over QUIC when h3 is set. The streams, the UDP framing
+// and the rest of the API are the same on both; only opening, one round trip, the load figures and the end differ.
 type Client struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	conn      net.Conn
 	transport *http2.Transport
 	h2        *http2.ClientConn
+	h3        *http3.ClientConn
+	quic      *quic.Conn
+	closeUDP  func() // closes the QUIC transport and the UDP socket under it, which quic-go leaves to us
 	endpoint  netip.AddrPort
 	config    Config
 
@@ -99,28 +111,17 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	addresses, err := resolveEndpoints(dialCtx, config)
+	plan, err := planDial(ctx, dialCtx, config)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, ErrEndpoint
+		return nil, err
 	}
 	dial := config.DialContext
 	if dial == nil {
 		dialer := &net.Dialer{Timeout: connectTimeout}
 		dial = dialer.DialContext
 	}
-	sni := config.SNI
-	if sni == "" {
-		sni = config.Host
-	}
-	roots, err := trustRoots(config.Certs)
-	if err != nil {
-		return nil, ErrCertificate
-	}
 	var lastErr error = ErrEndpoint
-	for _, endpoint := range addresses {
+	for _, endpoint := range plan.addresses {
 		if err := dialCtx.Err(); err != nil {
 			return nil, err
 		}
@@ -133,27 +134,8 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 			continue
 		}
 		tlsConfig := &utls.Config{
-			ServerName: sni, NextProtos: []string{"h2"}, MinVersion: utls.VersionTLS12, InsecureSkipVerify: true,
-		}
-		if config.HasPin {
-			pin := config.PinSHA256
-			tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-				if len(rawCerts) == 0 {
-					return ErrCertificate
-				}
-				sum := sha256.Sum256(rawCerts[0])
-				if subtle.ConstantTimeCompare(sum[:], pin[:]) != 1 {
-					return ErrCertificate
-				}
-				return nil
-			}
-		} else if !config.Insecure {
-			tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-				if err := verifyServer(rawCerts, roots, config.Host); err != nil {
-					return ErrCertificate
-				}
-				return nil
-			}
+			ServerName: plan.sni, NextProtos: []string{"h2"}, MinVersion: utls.VersionTLS12, InsecureSkipVerify: true,
+			VerifyPeerCertificate: plan.verify,
 		}
 		tlsConn := utls.UClient(raw, tlsConfig, utls.HelloChrome_Auto)
 		if err := tlsConn.HandshakeContext(dialCtx); err != nil {
@@ -192,6 +174,61 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 		return nil, ctx.Err()
 	}
 	return nil, lastErr
+}
+
+// dialPlan is what both transports settle before the first socket: the endpoints to try, the TLS server name and the
+// certificate check (nil when the link asks for none).
+type dialPlan struct {
+	addresses []netip.AddrPort
+	sni       string
+	verify    func(rawCerts [][]byte, _ [][]*x509.Certificate) error
+}
+
+// planDial resolves the endpoints on dialCtx; ctx is the caller's, to tell its cancel from a failed resolve.
+func planDial(ctx, dialCtx context.Context, config Config) (dialPlan, error) {
+	addresses, err := resolveEndpoints(dialCtx, config)
+	if err != nil {
+		if ctx.Err() != nil {
+			return dialPlan{}, ctx.Err()
+		}
+		return dialPlan{}, ErrEndpoint
+	}
+	sni := config.SNI
+	if sni == "" {
+		sni = config.Host
+	}
+	roots, err := trustRoots(config.Certs)
+	if err != nil {
+		return dialPlan{}, ErrCertificate
+	}
+	return dialPlan{addresses: addresses, sni: sni, verify: verifyPeer(config, roots)}, nil
+}
+
+// verifyPeer is the certificate check of both transports: the pinned leaf if the link has a pin, else the chain against
+// roots for the host, else none for a link that turns the check off.
+func verifyPeer(config Config, roots *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
+	if config.HasPin {
+		pin := config.PinSHA256
+		return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return ErrCertificate
+			}
+			sum := sha256.Sum256(rawCerts[0])
+			if subtle.ConstantTimeCompare(sum[:], pin[:]) != 1 {
+				return ErrCertificate
+			}
+			return nil
+		}
+	}
+	if config.Insecure {
+		return nil
+	}
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if err := verifyServer(rawCerts, roots, config.Host); err != nil {
+			return ErrCertificate
+		}
+		return nil
+	}
 }
 
 func validConfig(config Config) bool {
@@ -334,8 +371,21 @@ func verifyServer(rawCerts [][]byte, roots *x509.CertPool, host string) error {
 // Endpoint is the numeric address selected from Config.Addresses.
 func (c *Client) Endpoint() netip.AddrPort { return c.endpoint }
 
+// Protocol names the session's HTTP version for the log: "h3" or "h2".
+func (c *Client) Protocol() string {
+	if c.h3 != nil {
+		return "h3"
+	}
+	return "h2"
+}
+
 // Load reports active, reserved and queued HTTP/2 streams, plus the peer's stream limit.
 func (c *Client) Load() (active, limit int) {
+	if c.h3 != nil {
+		// ponytail: quic-go does not count streams; one QUIC connection holds the pool's 64 + 4 streams and the node grants 250, so the
+		// pool never opens a second one. A server with fewer than 68 streams per connection = count them in roundTrip.
+		return 0, h3StreamLimit
+	}
 	state := c.h2.State()
 	return state.StreamsActive + state.StreamsReserved + state.StreamsPending, int(state.MaxConcurrentStreams)
 }
@@ -485,7 +535,15 @@ func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 	request = request.WithContext(input.ctx)
 	request.Header.Set("Proxy-Authorization", input.authorization)
 	request.Header.Set("User-Agent", input.userAgent)
-	response, err := c.h2.RoundTrip(request)
+	// Both are http.RoundTrippers that end a request with its context. The request must not carry a Proto: with one,
+	// HTTP/3 sends an extended CONNECT.
+	var response *http.Response
+	var err error
+	if c.h3 != nil {
+		response, err = c.h3.RoundTrip(request)
+	} else {
+		response, err = c.h2.RoundTrip(request)
+	}
 	if err != nil {
 		if input.ctx.Err() != nil {
 			return nil, input.ctx.Err()
@@ -504,8 +562,14 @@ func (c *Client) roundTrip(input *httpRequest) (*httpResponse, error) {
 }
 
 // sessionGone says whether the HTTP/2 connection is closed or closing (a GOAWAY). CanTakeNewRequest is no test of
-// that: it is false as well while the connection is merely at the server's stream limit.
+// that: it is false as well while the connection is merely at the server's stream limit. A QUIC connection is gone once
+// its context is.
+// ponytail: an HTTP/3 GOAWAY is not seen; its new streams fail with ErrStream until the old ones end and the server
+// closes the connection. Our node sends none.
 func (c *Client) sessionGone() bool {
+	if c.h3 != nil {
+		return c.quic.Context().Err() != nil
+	}
 	state := c.h2.State()
 	return state.Closed || state.Closing
 }
@@ -537,6 +601,12 @@ func (c *Client) markDead(err error) {
 		c.mu.Unlock()
 		close(c.dead)
 		c.cancel()
+		if c.h3 != nil {
+			// quic-go closes neither the transport nor our socket under it, and a transport closed first sends no CONNECTION_CLOSE.
+			_ = c.quic.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeNoError), "")
+			c.closeUDP()
+			return
+		}
 		_ = c.h2.Close()
 		_ = c.conn.Close()
 	})

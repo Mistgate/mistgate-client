@@ -90,6 +90,23 @@ func TestParseTrustTunnelDefaultsAndLastValues(t *testing.T) {
 	}
 }
 
+// Tag 0x09 asks for the transport: 1 is HTTP/2 alone, 2 is HTTP/3 with the fall back to HTTP/2.
+func TestParseTrustTunnelTransportTag(t *testing.T) {
+	for _, test := range []struct {
+		transport uint64
+		h3        bool
+		ok        bool
+	}{{1, false, true}, {2, true, true}, {3, false, false}} {
+		p, err := ParseTrustTunnel(trustTunnelLink(append(trustTunnelBase(), trustTunnelTLV{tag: 0x09, value: trustTunnelVarint(test.transport)})...))
+		if (err == nil) != test.ok || err == nil && p.H3 != test.h3 {
+			t.Errorf("transport %d: H3 = %v, error = %v", test.transport, p != nil && p.H3, err)
+		}
+	}
+	if p, err := ParseTrustTunnel(trustTunnelLink(trustTunnelBase()...)); err != nil || p.H3 {
+		t.Fatalf("link without the tag: H3 = %v, %v", p != nil && p.H3, err)
+	}
+}
+
 func TestParseTrustTunnelTwoByteLengthAndPadding(t *testing.T) {
 	fields := append(trustTunnelBase(), trustTunnelTLV{tag: 0x0c, value: []byte(strings.Repeat("n", 80))})
 	raw := trustTunnelLink(fields...)
@@ -201,6 +218,9 @@ func TestParseTrustTunnelPath(t *testing.T) {
 		parsed.Username != "device" || parsed.Password != "secret" || !parsed.HasIPv6 || parsed.Insecure || !parsed.HasPin || parsed.PinSHA256[0] != 0xab {
 		t.Fatal("parsed TrustTunnel path has incorrect fields")
 	}
+	if !parsed.H3 {
+		t.Fatal("transport auto did not ask for HTTP/3")
+	}
 
 	valid["server"] = "2001:db8::7"
 	valid["transport"] = "h2"
@@ -211,7 +231,7 @@ func TestParseTrustTunnelPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	parsed, err = ParseTrustTunnelPath(raw)
-	if err != nil || parsed.Addresses[0] != "[2001:db8::7]:443" || parsed.HasPin {
+	if err != nil || parsed.Addresses[0] != "[2001:db8::7]:443" || parsed.HasPin || parsed.H3 {
 		t.Fatal("IPv6 CA path was not parsed correctly")
 	}
 	delete(valid, "tls")

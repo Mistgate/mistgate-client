@@ -36,6 +36,7 @@ type TrustTunnel struct {
 	Name      string
 	PinSHA256 [32]byte
 	HasPin    bool
+	H3        bool // try HTTP/3, falling back to HTTP/2
 }
 
 // ParseTrustTunnelPath reads the settings object of a panel's TrustTunnel path.
@@ -68,7 +69,7 @@ func ParseTrustTunnelPath(settings json.RawMessage) (*TrustTunnel, error) {
 	}
 	result := &TrustTunnel{
 		Host: input.SNI, SNI: input.SNI, Addresses: []string{net.JoinHostPort(input.Server, strconv.Itoa(input.Port))},
-		Username: input.Username, Password: input.Password, HasIPv6: true,
+		Username: input.Username, Password: input.Password, HasIPv6: true, H3: input.Transport == "auto",
 	}
 	switch input.TLS {
 	case "", "ca":
@@ -239,7 +240,7 @@ func ParseTrustTunnel(raw string) (*TrustTunnel, error) {
 		if !ok || used != len(value) || protocol != 1 && protocol != 2 {
 			return nil, errors.New("unsupported TrustTunnel transport")
 		}
-		// ponytail: HTTP/3 is step 2; links that request it use HTTP/2 until then.
+		profile.H3 = protocol == 2
 	}
 	if value, present := fields[0x0a]; present {
 		if _, ok := trustTunnelBool(value); !ok {

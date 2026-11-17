@@ -15,10 +15,10 @@ import (
 )
 
 // echoClient is a client on a stub that tunnels every CONNECT to a local echo listener.
-func echoClient(t *testing.T) (*Client, string) {
+func echoClient(t *testing.T, h3 bool) (*Client, string) {
 	t.Helper()
 	target := startEchoListener(t)
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -50,7 +50,11 @@ func echoRound(conn net.Conn, word string) error {
 
 // DialVPN and the proxy cancel the dial's context once the dial returns: the stream must live on.
 func TestStreamOutlivesTheDialContext(t *testing.T) {
-	client, target := echoClient(t)
+	eachTransport(t, testStreamOutlivesTheDialContext)
+}
+
+func testStreamOutlivesTheDialContext(t *testing.T, h3 bool) {
+	client, target := echoClient(t, h3)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	conn, err := client.DialTCP(ctx, target)
 	if err != nil {
@@ -66,11 +70,13 @@ func TestStreamOutlivesTheDialContext(t *testing.T) {
 }
 
 // A server that never answers the CONNECT holds nothing for ever, whatever the caller's context says.
-func TestDialTCPHeaderWaitIsBounded(t *testing.T) {
+func TestDialTCPHeaderWaitIsBounded(t *testing.T) { eachTransport(t, testDialTCPHeaderWaitIsBounded) }
+
+func testDialTCPHeaderWaitIsBounded(t *testing.T, h3 bool) {
 	old := headerTimeout
 	headerTimeout = 300 * time.Millisecond
 	t.Cleanup(func() { headerTimeout = old })
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -111,7 +117,11 @@ func TestDialTCPHeaderWaitIsBounded(t *testing.T) {
 
 // A read deadline is a timeout of that read: the stream stays, and an answer that comes later is not lost.
 func TestReadDeadlineLeavesTheStreamUsable(t *testing.T) {
-	pool, target := echoPool(t, 0)
+	eachTransport(t, testReadDeadlineLeavesTheStreamUsable)
+}
+
+func testReadDeadlineLeavesTheStreamUsable(t *testing.T, h3 bool) {
+	pool, target := echoPool(t, h3, 0)
 	conn, err := pool.DialTCP(context.Background(), target)
 	if err != nil {
 		t.Fatal(err)
@@ -153,8 +163,11 @@ func TestReadDeadlineLeavesTheStreamUsable(t *testing.T) {
 
 // A connection at the server's stream limit is full, not dead; only a closed or closing one is.
 func TestSessionAtTheStreamLimitIsAlive(t *testing.T) {
-	der, certificate := endpointCertificate(t)
-	server := newHTTPTestServerWithMaxConcurrentStreams(t, certificate, func(w http.ResponseWriter, r *http.Request) {
+	eachTransport(t, testSessionAtTheStreamLimitIsAlive)
+}
+
+func testSessionAtTheStreamLimitIsAlive(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 2, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -165,12 +178,8 @@ func TestSessionAtTheStreamLimitIsAlive(t *testing.T) {
 		if r.Host != "_check" {
 			<-r.Context().Done()
 		}
-	}, 2)
-	config := Config{Host: "example.test", SNI: "example.test", Addresses: []string{server.Addr()}, Username: "user", Password: "password", Certs: [][]byte{der}}
-	client, err := Dial(context.Background(), config)
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
+	client := stub.dial(t, "user", "password")
 	defer client.Close()
 	for range 2 {
 		conn, err := client.DialTCP(context.Background(), "example.test:443")
@@ -219,7 +228,11 @@ func TestOversizedIncomingFrameIsSkipped(t *testing.T) {
 
 // A frame for destination port 0 is a datagram no flow can have: it is skipped and the stream goes on.
 func TestDestinationPortZeroFrameIsSkipped(t *testing.T) {
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) {
+	eachTransport(t, testDestinationPortZeroFrameIsSkipped)
+}
+
+func testDestinationPortZeroFrameIsSkipped(t *testing.T, h3 bool) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -270,9 +283,13 @@ type sentFrame struct {
 // A datagram flood that the server's flow control holds back must not stop the other flows, and a flow's frames keep
 // their order.
 func TestStalledUDPUploadDoesNotBlockOtherFlows(t *testing.T) {
+	eachTransport(t, testStalledUDPUploadDoesNotBlockOtherFlows)
+}
+
+func testStalledUDPUploadDoesNotBlockOtherFlows(t *testing.T, h3 bool) {
 	release := make(chan struct{})
 	received := make(chan sentFrame, 4096)
-	stub := newEndpoint(t, true, func(w http.ResponseWriter, r *http.Request) {
+	stub := newTransportEndpoint(t, h3, 0, func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}

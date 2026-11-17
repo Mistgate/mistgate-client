@@ -34,6 +34,7 @@ func TestTrustTunnelSubscriptionProfileRoundTrip(t *testing.T) {
 		[2]byte{0x02, 0x0f}, []byte("203.0.113.8:443"),
 		[2]byte{0x05, 0x04}, []byte("user"),
 		[2]byte{0x06, 0x06}, []byte("secret"),
+		[2]byte{0x09, 0x01}, []byte{2},
 		[2]byte{0x0c, 0x04}, []byte("Edge"),
 	)
 	dir := t.TempDir()
@@ -53,6 +54,9 @@ func TestTrustTunnelSubscriptionProfileRoundTrip(t *testing.T) {
 	p := profiles[0]
 	if p.Protocol != "trusttunnel" || p.TT == nil || p.Name != "Edge" || p.TT.Host != "edge.example.test" || p.TT.Username != "user" || p.Sub != added.ID {
 		t.Fatalf("TrustTunnel profile did not round-trip: %#v", p)
+	}
+	if !p.TT.H3 {
+		t.Fatal("the HTTP/3 request of the link was lost on the way through the store")
 	}
 	if got := profile.TrustTunnelKind(profile.ErrTrustTunnelClientRandom); got != "trusttunnel (client random)" {
 		t.Fatalf("client random kind = %q", got)

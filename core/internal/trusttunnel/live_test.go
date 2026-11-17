@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/exec"
 	"strconv"
 	"sync"
 	"testing"
@@ -28,6 +29,9 @@ import (
 //	MG_TT_HTTP  host:port of a plain HTTP server reachable from the endpoint
 //	MG_TT_ECHO  ip:port of a UDP echo reachable from the endpoint
 //	MG_TT_IDLE  any value: also the two checks that sit idle for over a minute
+//	MG_TT_H3    any value: the path's transport "auto" is honoured, so Connect tries HTTP/3; every test then needs h3
+//	MG_TT_IPTABLES  any value: also TestLiveHTTP3Fallback, which drops UDP to the endpoint's port with iptables (only in
+//	            the stand's own network namespace, as root)
 func liveConfig(t *testing.T) trusttunnel.Config {
 	t.Helper()
 	file := os.Getenv("MG_TT_SYNC")
@@ -62,6 +66,9 @@ func liveConfig(t *testing.T) trusttunnel.Config {
 				Host: p.Host, Addresses: p.Addresses, SNI: p.SNI, Username: p.Username, Password: p.Password,
 				PinSHA256: p.PinSHA256, HasPin: p.HasPin, Certs: p.Certs, Insecure: p.Insecure,
 			}
+			if os.Getenv("MG_TT_H3") != "" {
+				config.H3 = p.H3
+			}
 			if address := os.Getenv("MG_TT_ADDR"); address != "" {
 				_, port, _ := net.SplitHostPort(p.Addresses[0])
 				config.Addresses = []string{net.JoinHostPort(address, port)}
@@ -77,15 +84,16 @@ func liveDial(t *testing.T, config trusttunnel.Config) *trusttunnel.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, err := trusttunnel.Dial(ctx, config)
+	trusttunnel.ForgetHTTP3() // what an earlier test chose does not decide this one
+	client, err := trusttunnel.Connect(ctx, config)
 	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	if err := client.Check(ctx); err != nil {
-		_ = client.Close()
-		t.Fatalf("check: %v", err)
+		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
+	t.Logf("protocol: %s", client.Protocol())
+	if config.H3 && client.Protocol() != "h3" {
+		t.Fatalf("HTTP/3 was asked for and the session is %s", client.Protocol())
+	}
 	return client
 }
 
@@ -131,11 +139,21 @@ func TestLiveRefusals(t *testing.T) {
 		t.Fatalf("the TLS session itself should open with a wrong password: %v", err)
 	}
 	defer client.Close()
+	t.Logf("protocol of Dial: %s", client.Protocol())
 	err = client.Check(ctx)
 	var status trusttunnel.StatusError
 	t.Logf("wrong password: check = %v (auth refusal: %v, status: %v)", err, errors.Is(err, trusttunnel.ErrAuth), errors.As(err, &status))
 	if err == nil {
 		t.Error("a wrong password passed the check")
+	}
+
+	// Connect says the same with H3 on: HTTP/3 turns nobody away, HTTP/2 has the word.
+	trusttunnel.ForgetHTTP3()
+	if connected, err := trusttunnel.Connect(ctx, wrong); !trusttunnel.IsRefusal(err) {
+		if connected != nil {
+			_ = connected.Close()
+		}
+		t.Errorf("Connect with a wrong password gave %v, want a refusal", err)
 	}
 }
 
@@ -272,9 +290,11 @@ func TestLiveIdle(t *testing.T) {
 	if os.Getenv("MG_TT_IDLE") == "" {
 		t.Skip("MG_TT_IDLE is not set")
 	}
+	// Both sessions are made before the subtests run side by side: liveDial clears what Connect remembers.
+	keptClient, leftClient := liveDial(t, config), liveDial(t, config)
 	t.Run("kept", func(t *testing.T) {
 		t.Parallel()
-		client := liveDial(t, config)
+		client := keptClient
 		for range 2 {
 			select {
 			case <-client.Done():
@@ -291,7 +311,7 @@ func TestLiveIdle(t *testing.T) {
 	})
 	t.Run("left", func(t *testing.T) {
 		t.Parallel()
-		client := liveDial(t, config)
+		client := leftClient
 		started := time.Now()
 		select {
 		case <-client.Done():
@@ -300,4 +320,121 @@ func TestLiveIdle(t *testing.T) {
 			t.Log("a session with no streams was still open after 100 s")
 		}
 	})
+}
+
+// With MG_TT_H3 the endpoint must be reachable over HTTP/3, and Connect must remember it for h3Retry.
+func TestLiveTransport(t *testing.T) {
+	config := liveConfig(t)
+	if !config.H3 {
+		t.Skip("MG_TT_H3 is not set, or the path's transport is h2")
+	}
+	client := liveDial(t, config) // fails unless the session is h3
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	second, err := trusttunnel.Connect(ctx, config)
+	if err != nil {
+		t.Fatalf("second connect: %v", err)
+	}
+	defer second.Close()
+	t.Logf("protocol of a connection right after one that got h3: %s", second.Protocol())
+	if second.Protocol() != "h2" {
+		t.Errorf("a host that just got HTTP/3 was dialled over %s, want h2", second.Protocol())
+	}
+	_ = client.Close()
+}
+
+// The rules are on INPUT, both ways: packets leave and vanish, as in a network that cuts UDP. On OUTPUT the send itself
+// would fail and the session would end at once, which no real network does.
+func iptablesDrop(t *testing.T, flag, port string) {
+	t.Helper()
+	for _, side := range []string{"--dport", "--sport"} {
+		out, err := exec.Command("iptables", flag, "INPUT", "-p", "udp", side, port, "-j", "DROP").CombinedOutput()
+		if err != nil {
+			t.Fatalf("iptables %s: %v: %s", flag, err, bytes.TrimSpace(out))
+		}
+	}
+}
+
+// UDP cut to the endpoint's port: a fresh connection is HTTP/2 and no slower than HTTP/2 alone; a live HTTP/3 session
+// ends with ErrSession within 45 s and the next connection is HTTP/2; with the rule gone HTTP/3 comes back.
+func TestLiveHTTP3Fallback(t *testing.T) {
+	config := liveConfig(t)
+	if os.Getenv("MG_TT_IPTABLES") == "" {
+		t.Skip("MG_TT_IPTABLES is not set")
+	}
+	if !config.H3 {
+		t.Skip("MG_TT_H3 is not set, or the path's transport is h2")
+	}
+	_, port, err := net.SplitHostPort(config.Addresses[0])
+	if err != nil {
+		t.Fatal("the endpoint address is not host:port")
+	}
+	connect := func(config trusttunnel.Config) (*trusttunnel.Client, time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		started := time.Now()
+		client, err := trusttunnel.Connect(ctx, config)
+		took := time.Since(started)
+		if err != nil {
+			t.Fatalf("connect: %v", err)
+		}
+		t.Cleanup(func() { _ = client.Close() })
+		return client, took
+	}
+	dropped := false
+	setDrop := func(on bool) {
+		if on != dropped {
+			iptablesDrop(t, map[bool]string{true: "-I", false: "-D"}[on], port)
+			dropped = on
+		}
+	}
+	t.Cleanup(func() { setDrop(false) })
+
+	h2Only := config
+	h2Only.H3 = false
+	var h2Slowest time.Duration
+	for range 3 {
+		_, took := connect(h2Only)
+		h2Slowest = max(h2Slowest, took)
+	}
+
+	setDrop(true)
+	trusttunnel.ForgetHTTP3()
+	client, took := connect(config)
+	t.Logf("UDP cut from the start: protocol %s in %v (HTTP/2 alone, slowest of 3: %v)", client.Protocol(), took, h2Slowest)
+	if client.Protocol() != "h2" || took > h2Slowest+200*time.Millisecond {
+		t.Errorf("with UDP cut: protocol %s in %v, want h2 within %v", client.Protocol(), took, h2Slowest+200*time.Millisecond)
+	}
+	_ = client.Close()
+
+	setDrop(false)
+	trusttunnel.ForgetHTTP3()
+	live, _ := connect(config)
+	if live.Protocol() != "h3" {
+		t.Fatalf("with UDP open again: protocol %s, want h3", live.Protocol())
+	}
+	setDrop(true)
+	cut := time.Now()
+	select {
+	case <-live.Done():
+		t.Logf("a live HTTP/3 session ended %v after UDP was cut: %v", time.Since(cut).Round(time.Second), live.Err())
+		if live.Err() != trusttunnel.ErrSession {
+			t.Errorf("the session ended with %v, want ErrSession", live.Err())
+		}
+	case <-time.After(45 * time.Second):
+		t.Fatal("a live HTTP/3 session was still up 45 s after UDP was cut")
+	}
+	next, _ := connect(config)
+	if next.Protocol() != "h2" {
+		t.Errorf("the connection after the loss is %s, want h2", next.Protocol())
+	}
+	_ = next.Close()
+
+	setDrop(false)
+	trusttunnel.ForgetHTTP3()
+	again, _ := connect(config)
+	if again.Protocol() != "h3" {
+		t.Errorf("with the rule gone and the memory cleared: protocol %s, want h3", again.Protocol())
+	}
 }

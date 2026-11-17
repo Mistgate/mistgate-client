@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strconv"
@@ -18,7 +19,8 @@ import (
 
 var errTTUnavailable = errors.New("TrustTunnel session unavailable")
 
-// Our server closes a connection with no streams after 60 seconds; the reference server drops live streams after 600 seconds without a new stream.
+// Our server closes a connection with no streams after 60 seconds (its HTTP/3 IdleTimeout is the same 60 s without a request
+// stream); the reference server drops live streams after 600 seconds without a new stream.
 const ttKeepaliveInterval = 45 * time.Second
 
 // ttRefusalPatience is how long a tunnel that was up keeps redialing against refusals before it takes them for final.
@@ -58,6 +60,7 @@ func startTT(ctx context.Context, p *profile.TrustTunnel, endpoints []netip.Addr
 	config := ttclient.Config{
 		Host: p.Host, Addresses: addresses, SNI: p.SNI, Username: p.Username, Password: p.Password,
 		HasIPv6: p.HasIPv6, Insecure: p.Insecure, PinSHA256: p.PinSHA256, HasPin: p.HasPin, Certs: p.Certs, Name: p.Name,
+		H3: p.H3,
 		DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {
 			endpoint, err := netip.ParseAddrPort(address)
 			if err != nil {
@@ -65,15 +68,13 @@ func startTT(ctx context.Context, p *profile.TrustTunnel, endpoints []netip.Addr
 			}
 			return (directOutbound{}).DialTCP(ctx, endpoint)
 		},
+		ListenPacket: directPacketConn,
 	}
-	client, err := ttclient.Dial(ctx, config)
+	client, err := ttclient.Connect(ctx, config)
 	if err != nil {
 		return nil, err
 	}
-	if err := client.Check(ctx); err != nil {
-		_ = client.Close()
-		return nil, err
-	}
+	logTTProtocol(client, config.H3)
 	endpoint := client.Endpoint()
 	// Keep reconnects on the endpoint whose bypass route the adapter will install.
 	config.Addresses = []string{endpoint.String()}
@@ -86,6 +87,19 @@ func startTT(ctx context.Context, p *profile.TrustTunnel, endpoints []netip.Addr
 	go out.reconnect()
 	go out.keepalive()
 	return out, nil
+}
+
+// logTTProtocol says which HTTP version a primary connection got, and that HTTP/3 was asked for when it did not. The line
+// carries no host or address.
+func logTTProtocol(client *ttclient.Client, asked bool) {
+	switch {
+	case client.Protocol() == "h3":
+		slog.Info("TrustTunnel over HTTP/3")
+	case asked:
+		slog.Info("TrustTunnel over HTTP/2 (HTTP/3 not used)")
+	default:
+		slog.Info("TrustTunnel over HTTP/2")
+	}
 }
 
 func (o *ttOutbound) Endpoint() netip.AddrPort { return o.endpoint }
@@ -203,6 +217,7 @@ func (o *ttOutbound) reconnect() {
 				_ = replacement.Close()
 				return
 			}
+			logTTProtocol(replacement, o.config.H3)
 			backoff = time.Second
 			refusedSince = time.Time{}
 			break
@@ -286,16 +301,9 @@ func (o *ttOutbound) drop(primary *ttclient.Client, checkErr error) {
 	}
 }
 
+// redial goes through Connect, which keeps a host that just lost its HTTP/3 session on HTTP/2.
 func (o *ttOutbound) redial() (*ttclient.Client, error) {
-	client, err := ttclient.Dial(o.ctx, o.config)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.Check(o.ctx); err != nil {
-		_ = client.Close()
-		return nil, err
-	}
-	return client, nil
+	return ttclient.Connect(o.ctx, o.config)
 }
 
 func (o *ttOutbound) setFatal(err error) {
