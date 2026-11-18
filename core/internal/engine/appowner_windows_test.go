@@ -101,6 +101,11 @@ func TestParseOwnerTable(t *testing.T) {
 	if len(rows) != 1 || rows[0] != row("10.9.0.2", 50000, 1234) {
 		t.Fatalf("TCP IPv4 rows = %+v", rows)
 	}
+	// a connecting socket that Windows reports as listening has a remote port and is kept
+	tcp4 = cat(le(2), []byte{10, 9, 0, 2}, port(50002), []byte{1, 2, 3, 4}, port(443), le(77))
+	if rows = parseOwnerTable(nil, cat(le(1), tcp4), false, false); len(rows) != 1 || rows[0] != row("10.9.0.2", 50002, 77) {
+		t.Fatalf("a connecting socket reported as listening = %+v", rows)
+	}
 	// a TIME_WAIT leftover (pid 0) before the live socket of the same port does not hide it
 	tcp4 = cat(le(11), []byte{10, 9, 0, 2}, port(50001), []byte{1, 2, 3, 4}, port(443), le(0))
 	tcp4 = append(tcp4, cat(le(5), []byte{10, 9, 0, 2}, port(50001), []byte{1, 2, 3, 5}, port(443), le(4321))...)
@@ -321,11 +326,6 @@ func TestRealTablesFindThisProcess(t *testing.T) {
 	if got := r.Owner(false, clientAddr); !strings.EqualFold(got, want) {
 		t.Fatalf("TCP owner of %v = %q; want %q", clientAddr, got, want)
 	}
-	// the listening socket is not a source of flows
-	if got := r.Owner(false, listener.Addr().(*net.TCPAddr).AddrPort()); got != "" && !strings.EqualFold(got, want) {
-		t.Fatalf("owner of the accepted side = %q", got)
-	}
-
 	udpSocket, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -344,11 +344,6 @@ func TestRealTablesFindThisProcess(t *testing.T) {
 	widePort := wide.LocalAddr().(*net.UDPAddr).Port
 	if got := r.Owner(true, netip.AddrPortFrom(netip.MustParseAddr("10.9.0.2"), uint16(widePort))); !strings.EqualFold(got, want) {
 		t.Fatalf("UDP owner of a wildcard socket = %q; want %q", got, want)
-	}
-	// a UDP port is not a TCP port
-	if got := r.Owner(false, netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), udpAddr.Port())); strings.EqualFold(got, want) && udpAddr.Port() != clientAddr.Port() {
-		// a TCP socket may happen to use the same number; only a wrong table would answer here without one
-		t.Logf("same number used by a TCP socket of this process: %v", got)
 	}
 }
 

@@ -341,12 +341,12 @@ func getOwnerTable(udp bool, family uint32, buf *[]byte) ([]byte, error) {
 // parseOwnerTable appends the rows of a MIB_{TCP,UDP}{,6}TABLE_OWNER_PID: a count, then fixed-size rows. Listening TCP
 // sockets are left out; a flow never comes from one. Ports are big endian in the first two bytes of their dword.
 func parseOwnerTable(rows []ownerRow, table []byte, udp, v6 bool) []ownerRow {
-	var rowSize, addrAt, addrLen, portAt, pidAt, stateAt int
+	var rowSize, addrAt, addrLen, portAt, pidAt, stateAt, remotePortAt int
 	switch {
 	case !udp && !v6:
-		rowSize, addrAt, addrLen, portAt, pidAt, stateAt = 24, 4, 4, 8, 20, 0
+		rowSize, addrAt, addrLen, portAt, pidAt, stateAt, remotePortAt = 24, 4, 4, 8, 20, 0, 16
 	case !udp && v6:
-		rowSize, addrAt, addrLen, portAt, pidAt, stateAt = 56, 0, 16, 20, 52, 48
+		rowSize, addrAt, addrLen, portAt, pidAt, stateAt, remotePortAt = 56, 0, 16, 20, 52, 48, 44
 	case udp && !v6:
 		rowSize, addrAt, addrLen, portAt, pidAt, stateAt = 12, 0, 4, 4, 8, -1
 	default:
@@ -362,7 +362,9 @@ func parseOwnerTable(rows []ownerRow, table []byte, udp, v6 bool) []ownerRow {
 	}
 	for i := 0; i < count; i++ {
 		row := table[i*rowSize : (i+1)*rowSize]
-		if stateAt >= 0 && binary.LittleEndian.Uint32(row[stateAt:]) == tcpStateListen {
+		// A socket in the middle of connecting can be reported as listening, with the remote port already set; a real
+		// listener has none.
+		if stateAt >= 0 && binary.LittleEndian.Uint32(row[stateAt:]) == tcpStateListen && binary.LittleEndian.Uint32(row[remotePortAt:]) == 0 {
 			continue
 		}
 		var addr netip.Addr
