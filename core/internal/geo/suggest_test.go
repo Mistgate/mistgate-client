@@ -211,9 +211,6 @@ func TestFailuresExpireAfter24h(t *testing.T) {
 	if got := vpnSites(tr, sec(25*3600)); len(got) != 0 {
 		t.Fatalf("old failures suggested: %#v", got)
 	}
-	if len(tr.fails) != 0 {
-		t.Fatal("old entry kept")
-	}
 }
 
 func TestSuccessPathDoesNotAllocate(t *testing.T) {

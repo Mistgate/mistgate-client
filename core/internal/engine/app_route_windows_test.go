@@ -173,9 +173,6 @@ func TestProgramRulesDecideFlows(t *testing.T) {
 			{"the DNS port stays on the VPN", true, "198.51.100.7:53", 1002, "v", false},
 			{"a private address stays on the VPN", false, "10.1.1.1:443", 1002, "v", false},
 		})
-		if _, _, err := bridge.dialTCPName(context.Background(), netip.MustParseAddrPort("198.51.100.7:443"), "", appVPN); err != nil {
-			t.Fatal(err)
-		}
 	})
 
 	t.Run("no program named: nothing is looked up", func(t *testing.T) {

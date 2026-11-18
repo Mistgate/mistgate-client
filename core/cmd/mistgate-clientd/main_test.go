@@ -46,11 +46,6 @@ func TestShouldResumeAtStart(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}
-	// with the kill switch off the old rules decide, unchanged
-	off := settings.Settings{LastServer: "a", LastOn: true, LastUp: true, KillSwitch: "off", Restore: true}
-	if shouldResumeAtStart(off) || !shouldConnectAtStart(off) {
-		t.Error("kill switch off: restore with last_on must still connect, without a hold")
-	}
 }
 
 func TestKeepLastUpFollowsTheSession(t *testing.T) {

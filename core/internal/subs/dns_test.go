@@ -125,13 +125,12 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	}
 
 	// kept with the subscription across a restart
-	saved, err := json.Marshal(store.state.Subscriptions[0])
+	reopened, err := openStore(store.dir, identityProtection, identityProtection, func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
-	var back storedSubscription
-	if err := json.Unmarshal(saved, &back); err != nil || !reflect.DeepEqual(back.DNS, p.PanelDNS) || !reflect.DeepEqual(back.DNSSplit, p.PanelSplit) {
-		t.Fatalf("stored again: %v, %v, %+v", err, back.DNS, back.DNSSplit)
+	if again, err := reopened.Profiles(); err != nil || len(again) != 1 || !reflect.DeepEqual(again[0].PanelDNS, p.PanelDNS) || !reflect.DeepEqual(again[0].PanelSplit, p.PanelSplit) {
+		t.Fatalf("after a restart: %v, %+v, %v", again, p.PanelSplit, err)
 	}
 
 	// not part of what the window sees

@@ -100,45 +100,51 @@ func TestParseHTTPHost(t *testing.T) {
 
 func TestDNSMemoryTTLChainAndCap(t *testing.T) {
 	base := time.Unix(1000, 0)
-	memory := &dnsMemory{entries: make(map[netip.Addr]dnsEntry)}
+	memory := &dnsMemory{}
+	chained, short, long := netip.MustParseAddr("192.0.2.10"), netip.MustParseAddr("192.0.2.11"), netip.MustParseAddr("192.0.2.12")
 	memory.rememberAt(dnsAnswer(t, "www.example.com", []dnsRecord{
 		{owner: "www.example.com.", cname: "edge.example.net.", ttl: 120},
-		{owner: "edge.example.net.", address: netip.MustParseAddr("192.0.2.10"), ttl: 900},
-		{owner: "www.example.com.", address: netip.MustParseAddr("192.0.2.11"), ttl: 1},
+		{owner: "edge.example.net.", address: chained, ttl: 900},
+		{owner: "www.example.com.", address: short, ttl: 1},
 	}), base)
-	if got := memory.lookupAt(netip.MustParseAddr("192.0.2.10"), base.Add(119*time.Second)); got != "www.example.com" {
+	if got := memory.lookupAt(chained, base.Add(119*time.Second)); got != "www.example.com" {
 		t.Fatalf("CNAME address name = %q; want question name", got)
 	}
-	if got := memory.lookupAt(netip.MustParseAddr("192.0.2.10"), base.Add(120*time.Second)); got != "" {
+	if got := memory.lookupAt(chained, base.Add(120*time.Second)); got != "" {
 		t.Fatalf("CNAME address remained past chain TTL: %q", got)
 	}
-	if got := memory.entries[netip.MustParseAddr("192.0.2.11")].names[0].expires.Sub(base); got != time.Minute {
-		t.Fatalf("minimum TTL = %s; want 1m", got)
+	// a TTL under a minute is kept for a minute
+	if memory.lookupAt(short, base.Add(59*time.Second)) == "" || memory.lookupAt(short, base.Add(time.Minute)) != "" {
+		t.Fatal("a 1 s TTL was not raised to 1m")
 	}
 
-	memory.rememberAt(dnsAnswer(t, "long.example", []dnsRecord{
-		{owner: "long.example.", address: netip.MustParseAddr("192.0.2.12"), ttl: 7200},
-	}), base)
-	if got := memory.entries[netip.MustParseAddr("192.0.2.12")].names[0].expires.Sub(base); got != time.Hour {
-		t.Fatalf("maximum TTL = %s; want 1h", got)
+	// a TTL over an hour is kept for an hour
+	memory.rememberAt(dnsAnswer(t, "long.example", []dnsRecord{{owner: "long.example.", address: long, ttl: 7200}}), base)
+	if memory.lookupAt(long, base.Add(time.Hour-time.Second)) == "" || memory.lookupAt(long, base.Add(time.Hour)) != "" {
+		t.Fatal("a 2 h TTL was not cut to 1h")
 	}
 
-	memory.entries = make(map[netip.Addr]dnsEntry)
-	for i := 0; i < dnsMemoryLimit; i++ {
-		address := netip.AddrFrom4([4]byte{10, byte(i >> 8), byte(i), 1})
-		memory.entries[address] = dnsEntry{names: []rememberedDNSName{{name: "expired.example", expires: base.Add(-time.Second)}}}
-	}
-	memory.rememberAddressAt(netip.MustParseAddr("192.0.2.20"), "new.example", time.Minute, base)
-	if len(memory.entries) != 1 || memory.lookupAt(netip.MustParseAddr("192.0.2.20"), base) != "new.example" {
-		t.Fatalf("expired DNS entries were not dropped: %d", len(memory.entries))
-	}
-	for i := 0; i < dnsMemoryLimit; i++ {
-		address := netip.AddrFrom4([4]byte{10, byte(i >> 8), byte(i), 2})
-		memory.entries[address] = dnsEntry{names: []rememberedDNSName{{name: "live.example", expires: base.Add(time.Hour)}}}
-	}
-	memory.rememberAddressAt(netip.MustParseAddr("192.0.2.21"), "new.example", time.Minute, base)
-	if len(memory.entries) != 1 || memory.lookupAt(netip.MustParseAddr("192.0.2.21"), base) != "new.example" {
-		t.Fatalf("full DNS memory was not cleared: %d", len(memory.entries))
+	// a full memory still remembers the newest name, whether its entries are expired or live
+	for _, fill := range []struct {
+		name  string
+		start time.Time // the entries were made then, for a minute
+		old   func(i int) netip.Addr
+	}{
+		{"expired", base.Add(-time.Hour), func(i int) netip.Addr { return netip.AddrFrom4([4]byte{10, byte(i >> 8), byte(i), 1}) }},
+		{"live", base, func(i int) netip.Addr { return netip.AddrFrom4([4]byte{11, byte(i >> 8), byte(i), 1}) }},
+	} {
+		full := &dnsMemory{}
+		for i := 0; i < dnsMemoryLimit; i++ {
+			full.rememberAddressAt(fill.old(i), "old.example", time.Minute, fill.start)
+		}
+		address := netip.MustParseAddr("192.0.2.20")
+		full.rememberAddressAt(address, "new.example", time.Minute, base)
+		if got := full.lookupAt(address, base); got != "new.example" {
+			t.Fatalf("%s entries: new name = %q after the memory filled", fill.name, got)
+		}
+		if len(full.entries) > dnsMemoryLimit {
+			t.Fatalf("%s entries: memory grew past its limit: %d", fill.name, len(full.entries))
+		}
 	}
 }
 

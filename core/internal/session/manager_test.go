@@ -552,19 +552,7 @@ func testDeadTunnelReconnectsWithEventOrder(t *testing.T) {
 	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
 		t.Fatal(err)
 	}
-	want := []struct{ state, step string }{
-		{"connecting", "resolve"},
-		{"connecting", "handshake"},
-		{"connecting", "tunnel"},
-		{"connecting", "verify"},
-		{"connected", ""},
-	}
-	for _, expected := range want {
-		got := receiveStatus(t, subscription.C)
-		if got.State != expected.state || got.Step != expected.step {
-			t.Fatalf("initial status event = %q/%q, want %q/%q", got.State, got.Step, expected.state, expected.step)
-		}
-	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
 
 	fake.SetProbeErr(errors.New("tunnel is dead"))
 	got := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Step == "" })

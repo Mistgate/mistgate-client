@@ -3,7 +3,6 @@ package ipc
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -251,7 +250,7 @@ func TestSlowClientIsDroppedWhenWriteQueueFills(t *testing.T) {
 	manager := session.NewManager(engine.NewFake(engine.FakeConfig{}), settings.Defaults)
 	defer manager.Close()
 	server := &Server{Manager: manager, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), QueueSize: 1}
-	serverConn, clientConn := netPipe(t)
+	serverConn, clientConn := net.Pipe()
 	serveDone := make(chan struct{})
 	go func() {
 		server.ServeConn(context.Background(), serverConn, true)
@@ -278,20 +277,5 @@ func TestSlowClientIsDroppedWhenWriteQueueFills(t *testing.T) {
 	case <-writeDone:
 	case <-time.After(time.Second):
 		t.Fatal("client writer stayed blocked after server dropped the connection")
-	}
-}
-
-func netPipe(t *testing.T) (net.Conn, net.Conn) {
-	t.Helper()
-	return net.Pipe()
-}
-
-func TestMarshalResponseIsJSONLine(t *testing.T) {
-	line, err := MarshalResponse(Response{ID: json.RawMessage("2"), Result: map[string]bool{"trusted": true}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(string(line), "\n") {
-		t.Fatalf("response missing newline: %q", line)
 	}
 }

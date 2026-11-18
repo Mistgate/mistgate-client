@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
-
-	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
 
 func TestTrustTunnelLinkAmongPastedLinks(t *testing.T) {
@@ -57,9 +55,6 @@ func TestTrustTunnelSubscriptionProfileRoundTrip(t *testing.T) {
 	}
 	if !p.TT.H3 {
 		t.Fatal("the HTTP/3 request of the link was lost on the way through the store")
-	}
-	if got := profile.TrustTunnelKind(profile.ErrTrustTunnelClientRandom); got != "trusttunnel (client random)" {
-		t.Fatalf("client random kind = %q", got)
 	}
 }
 

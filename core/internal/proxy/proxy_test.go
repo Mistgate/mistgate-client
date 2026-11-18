@@ -613,7 +613,7 @@ func TestReloadFollowsTheSettings(t *testing.T) {
 		}
 	}
 	echoOK()
-	if state := h.p.State(); !state.On || state.LAN || state.Clients < 0 {
+	if state := h.p.State(); !state.On || state.LAN {
 		t.Fatalf("state = %+v", state)
 	}
 

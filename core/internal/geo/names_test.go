@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unicode"
 )
 
 // nameStore is a store with one collection per side cached on disk (so nothing is fetched).
@@ -187,35 +186,18 @@ func TestRoutesFileWithoutBlockStillLoads(t *testing.T) {
 	}
 }
 
-// normalizeSiteDomain no longer splits the name; it must agree with the version that did.
-func TestNormalizeSiteDomainKeepsItsAnswers(t *testing.T) {
-	reference := func(value string) (string, bool) {
-		value = strings.ToLower(strings.TrimSuffix(value, "."))
-		if value == "" || len(value) > 253 || strings.ContainsAny(value, " /:\\?#@") {
-			return "", false
-		}
-		for _, label := range strings.Split(value, ".") {
-			if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-				return "", false
-			}
-			for _, r := range label {
-				if r == '-' || r >= '0' && r <= '9' || unicode.IsLetter(r) {
-					continue
-				}
-				return "", false
-			}
-		}
-		return value, true
-	}
-	for _, value := range []string{
-		"example.com", "Example.COM", "example.com.", "example.com..", ".", "..", ".a", "a.", "a..b", "a.b.", "-a.com", "a-.com", "a-b.com",
-		"a_b.com", "пример.рф", "ПРИМЕР.РФ", "exa mple.com", "a/b", "a:80", "a@b", "", "xn--p1ai", "1.2.3.4", strings.Repeat("a", 63) + ".com",
-		strings.Repeat("a", 64) + ".com", strings.Repeat("a.", 126) + "a", strings.Repeat("a.", 127) + "a",
+func TestNormalizeSiteDomain(t *testing.T) {
+	for value, want := range map[string]string{
+		"example.com": "example.com", "Example.COM": "example.com", "example.com.": "example.com", "a.": "a", "a.b.": "a.b",
+		"a-b.com": "a-b.com", "пример.рф": "пример.рф", "ПРИМЕР.РФ": "пример.рф", "xn--p1ai": "xn--p1ai", "1.2.3.4": "1.2.3.4",
+		strings.Repeat("a", 63) + ".com": strings.Repeat("a", 63) + ".com", strings.Repeat("a.", 126) + "a": strings.Repeat("a.", 126) + "a",
+		// refused: empty labels, a hyphen at an edge, a character a host name cannot hold, a label or a name too long
+		"example.com..": "", ".": "", "..": "", ".a": "", "a..b": "", "-a.com": "", "a-.com": "", "a_b.com": "", "exa mple.com": "",
+		"a/b": "", "a:80": "", "a@b": "", "": "", strings.Repeat("a", 64) + ".com": "", strings.Repeat("a.", 127) + "a": "",
 	} {
-		wantName, wantOK := reference(value)
-		gotName, gotOK := normalizeSiteDomain(value)
-		if gotName != wantName || gotOK != wantOK {
-			t.Errorf("normalizeSiteDomain(%q) = %q, %t; want %q, %t", value, gotName, gotOK, wantName, wantOK)
+		got, ok := normalizeSiteDomain(value)
+		if got != want || ok != (want != "") {
+			t.Errorf("normalizeSiteDomain(%q) = %q, %t; want %q", value, got, ok, want)
 		}
 	}
 }
