@@ -48,6 +48,7 @@ class Component extends DCLogic {
     this._mxPulse = (k) => emit(5 * (k || 1), 30, 300, .8 * (k || 1));
     const frame = (now) => {
       raf = requestAnimationFrame(frame);
+      if (document.documentElement.classList.contains('idle')) return; /* окно не в фокусе или скрыто: ничего не рисуем */
       const root = document.querySelector('.mg.app'), stage = root && root.querySelector('.stage'); if (!stage) return;
       const c = stage.querySelector('.mxc'); if (!c) return;
       if (c !== cv || c.offsetWidth !== W || c.offsetHeight !== H) { cv = c; if (!fit(c)) return; W = c.offsetWidth; H = c.offsetHeight; ctx = c.getContext('2d'); grid(); readAt = 0; }
