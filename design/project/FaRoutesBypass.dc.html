@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="fa">
+<head>
+<meta charset="utf-8">
+<title>Mistgate · Routes</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="app.fa.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=JetBrains+Mono:wght@500..700&amp;family=Vazirmatn:wght@400..800&amp;display=swap" rel="stylesheet">
+<style>html,body{margin:0;overflow:hidden;background:transparent}</style>
+</helmet>
+<div dir="rtl" class="desk">
+<div class="mg app t-{{theme}} a-{{accent}}">
+
+  <nav class="rail" aria-label="Sections">
+    <img class="rlogo" src="{{logo}}" alt="mistgate" width="32" height="32">
+    <a class="rb" href="FaBypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2.2"/></svg><span class="rbl">خانه</span></a>
+    <a class="rb on" href="FaRoutesBypass.dc.html" aria-current="page"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg><span class="rbl">مسیرها</span></a>
+    <a class="rb" href="FaDiag.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5H21"/></svg><span class="rbl">عیب‌یابی</span></a>
+    <a class="rb" href="FaSettings.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="rbl">تنظیمات</span></a>
+    <a class="rb sub" href="https://vpn.example.com" target="_blank" rel="noopener"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><span class="rbl">صفحه اشتراک</span></a>
+  </nav>
+
+  <div class="content">
+    <header class="tb">
+    <div class="bp-mode m2" role="tablist" aria-label="حالت"><a role="tab" class="{{vpnLock}}" aria-selected="false" href="FaRoutes.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/></svg>VPN</a><a role="tab" class="on" aria-selected="true" href="FaRoutesBypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="2.2"/><path d="M3 15h2.2a6.8 6.8 0 0 1 13.6 0H21"/></svg>دور زدن</a></div>
+    <div class="tbs {{tbs.c}}">
+      <a class="tbs-s" href="FaBypass.dc.html" title="Open Home"><i class="tbs-d" aria-hidden="true"></i><span>{{tbs.t}}</span><span class="tbs-m {{tbs.mc}}">{{tbs.m}}</span></a>
+      <button class="tbs-p" onClick="{{tbs.go}}" aria-label="{{tbs.a}}" title="{{tbs.a}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 7.2a7.5 7.5 0 1 0 10.8 0"/></svg></button>
+    </div>
+    <div class="cap">
+      <button aria-label="Minimize to tray"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      <button aria-label="Maximize"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+      <button aria-label="Close window"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    </header>
+
+    <main class="rt bp-rt">
+      <section class="rt-l">
+        <h1 class="h1x">مسیرها</h1>
+        <p class="rt-sub">چه چیزهایی با دور زدن و بدون سرور باز شوند</p>
+        <div class="bp-flow" aria-label="ترتیب برای هر سایت">
+          <p class="bp-flow-h">ترتیب برای هر سایت</p>
+          <div class="bp-step"><em aria-hidden="true"></em><span class="tx"><b>مستقیم</b><span>اگر سایت خودش باز شود</span></span></div>
+          <div class="bp-step bp-cur"><em aria-hidden="true"></em><span class="tx"><b>با دور زدن</b><span>روش برای شبکهٔ شما انتخاب می‌شود</span></span></div>
+          <sc-if value="{{hasSub}}" hint-placeholder-val="{{true}}"><div class="bp-step bp-vpn"><em aria-hidden="true"></em><span class="tx"><b>از طریق VPN</b><span>اگر دور زدن ناتوان باشد</span></span></div></sc-if>
+          <sc-if value="{{noSub}}" hint-placeholder-val="{{false}}"><div class="bp-step bp-dim"><em aria-hidden="true"></em><span class="tx"><b>از طریق VPN</b><span>اشتراک لازم است</span></span><a class="bp-a" href="FaMain.dc.html">افزودن</a></div></sc-if>
+        </div>
+        <sc-if value="{{hasSub}}" hint-placeholder-val="{{true}}">
+        <div class="bp-opt">
+          <span class="tx"><b>دور زدن برای سایت‌های مستقیم در VPN</b><span>وقتی VPN روشن است، سایت‌هایی که از آن رد نمی‌شوند هم با دور زدن باز می‌شوند</span></span>
+          <button class="sw {{dirC}}" role="switch" aria-checked="{{dirOn}}" aria-label="دور زدن برای سایت‌های مستقیم در VPN" onClick="{{dirTog}}"></button>
+        </div>
+        </sc-if>
+        <p class="rt-note"><span class="gl g-list" aria-hidden="true" style="width:14px;height:14px"></span>مجموعهٔ روش‌ها<span>{{setV}}</span></p>
+      </section>
+
+      <section class="lcard bp-card" aria-label="چه چیزهایی با دور زدن باز شوند">
+        <div class="rh">
+          <div class="rh-t"><b>{{cardT}}</b></div>
+          <div class="rh-a">
+            <button class="lsb {{reCls}}" onClick="{{recheck}}"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span>{{reBtn}}</span></button>
+          </div>
+        </div>
+        <div class="utabs" role="tablist" aria-label="چه چیزهایی با دور زدن باز شوند">
+          <button class="{{tab1C}}" role="tab" aria-selected="{{isSvc}}" onClick="{{tab1}}"><span class="gl g-view-grid" aria-hidden="true"></span>سرویس‌ها<span class="k">{{allN}}</span></button>
+          <button class="{{tab2C}}" role="tab" aria-selected="{{isSites}}" onClick="{{tab2}}"><span class="gl g-internet" aria-hidden="true"></span>سایت‌ها<span class="k">{{sitesN}}</span></button>
+          <button class="{{tab3C}}" role="tab" aria-selected="{{isExc}}" onClick="{{tab3}}"><span class="gl g-prohibition" aria-hidden="true"></span>استثناها<span class="k">{{excN}}</span></button>
+        </div>
+
+        <sc-if value="{{isSvc}}" hint-placeholder-val="{{true}}">
+          <div class="lc-row">
+            <label class="search lc-s"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="text" placeholder="جست‌وجو در فهرست" aria-label="جست‌وجو در فهرست"></label>
+          </div>
+          <div class="cats" role="tablist" aria-label="دسته‌ها">
+            <sc-for list="{{cats}}" as="c" hint-placeholder-count="5">
+              <button class="cat {{c.cls}}" role="tab" aria-selected="{{c.on}}" onClick="{{c.pick}}"><span class="gl g-{{c.g}}" aria-hidden="true"></span>{{c.label}}</button>
+            </sc-for>
+          </div>
+          <div class="grid">
+            <sc-for list="{{tiles}}" as="t" hint-placeholder-count="15">
+              <button class="tile {{t.cls}}" aria-pressed="{{t.on}}" onClick="{{t.flip}}">
+                <span class="mono {{t.tone}}"><span class="gl g-{{t.g}}" aria-hidden="true"></span><span class="ok" aria-hidden="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span></span>
+                <span class="tx"><b>{{t.name}}</b><span class="tm"><em class="way {{t.wayC}}">{{t.way}}</em><span>{{t.meta}}</span></span></span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isSites}}" hint-placeholder-val="{{false}}">
+          <div class="addrow">
+            <label class="search add-in"><span class="gl g-internet" aria-hidden="true"></span><input type="text" placeholder="یک سایت اضافه کنید، مثلاً example.com" aria-label="نشانی سایت" spellcheck="false"></label>
+            <button class="addb" onClick="{{addSite}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>افزودن</button>
+          </div>
+          <p class="hint">فقط نشانی اصلی بررسی می‌شود. تصاویر و ویدیو از نشانی‌های دیگر شاید بار نشوند</p>
+          <p class="sec-h">سایت‌های شما<span class="n">{{sitesN}}</span></p>
+          <div class="slist">
+            <sc-for list="{{sites}}" as="r" hint-placeholder-count="3">
+              <div class="site"><span class="mono {{r.tone}}"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>{{r.host}}</b><span class="tm"><em class="way {{r.wayC}}">{{r.way}}</em><span>{{r.meta}}</span></span></span><sc-if value="{{r.hasAct}}" hint-placeholder-val="{{false}}"><button class="bp-a" onClick="{{r.go}}">{{r.actT}}</button></sc-if><button class="rm" aria-label="حذف"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+            </sc-for>
+          </div>
+          <p class="sec-h">مستقیم باز نشدند<span class="n new">خودکار</span></p>
+          <div class="slist">
+            <div class="site sug"><span class="mono sand"><span class="gl g-flash" aria-hidden="true"></span></span><span class="tx"><b>news.example.com</b><span>۳ بار ناموفق در یک روز</span></span><button class="addb sm" onClick="{{addSite}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>دور زدن</button></div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isExc}}" hint-placeholder-val="{{false}}">
+          <div class="addrow">
+            <label class="search add-in"><span class="gl g-search" aria-hidden="true"></span><input type="text" placeholder="سایت یا برنامه" aria-label="سایت یا برنامه" spellcheck="false"></label>
+            <button class="addb" onClick="{{addSite}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>افزودن</button>
+          </div>
+          <p class="hint">هر چیزی را که دور زدن مزاحمش می‌شود اینجا اضافه کنید. کم پیش می‌آید: بازی‌های دارای ضدتقلب، بانک‌ها</p>
+          <p class="sec-h">دور زدن دست نمی‌زند<span class="n">{{excN}}</span></p>
+          <div class="slist">
+            <div class="site"><span class="mono neu"><span class="gl g-gamepad" aria-hidden="true"></span></span><span class="tx"><b>game.exe</b><span>بازی دارای ضدتقلب</span></span><button class="rm" aria-label="حذف"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+            <div class="site"><span class="mono neu"><span class="gl g-bank" aria-hidden="true"></span></span><span class="tx"><b>bank.example.com</b><span>مثل همیشه باز می‌شود</span></span><button class="rm" aria-label="حذف"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+            <a class="site sug bp-link" href="FaRoutes.dc.html"><span class="mono sky"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg></span><span class="tx"><b class="t">مجموعهٔ «مستقیم»</b><span>دور زدن به هیچ‌کدام از موارد آن هم دست نمی‌زند</span></span><span class="bp-go">باز کردن<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{dt.open}}" hint-placeholder-val="{{false}}">
+          <div class="bp-dts" onClick="{{dt.close}}"></div>
+          <div class="bp-dt" role="dialog" aria-label="{{dt.name}}">
+            <div class="bp-dth">
+              <span class="mono {{dt.tone}}"><span class="gl g-{{dt.g}}" aria-hidden="true"></span></span>
+              <span class="nm"><b>{{dt.name}}</b><span>{{dt.when}}</span></span>
+              <sc-if value="{{dt.hasChip}}" hint-placeholder-val="{{true}}"><span class="vchip sm {{dt.chipC}}"><i></i>{{dt.chipT}}</span></sc-if>
+              <button class="icb" onClick="{{dt.close}}" aria-label="بستن"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+            </div>
+            <div class="bp-ps">
+              <sc-for list="{{dt.parts}}" as="p" hint-placeholder-count="2">
+                <div class="bp-p {{p.c}}"><i class="bp-d" aria-hidden="true"></i><span class="bp-pn">{{p.n}}</span><span class="bp-po">{{p.o}}</span><span class="bp-pm">{{p.m}}</span></div>
+              </sc-for>
+            </div>
+            <sc-if value="{{dt.hasNote}}" hint-placeholder-val="{{false}}"><p class="bp-note {{dt.noteC}}"><span class="gl g-{{dt.noteI}}" aria-hidden="true"></span>{{dt.noteT}}</p></sc-if>
+            <div class="bp-acts">
+              <button class="bp-a ghost" onClick="{{dt.rm}}">حذف از دور زدن</button>
+              <span class="bp-sp"></span>
+              <sc-if value="{{dt.hasAct}}" hint-placeholder-val="{{false}}"><button class="bp-a" onClick="{{dt.go}}">{{dt.actT}}</button></sc-if>
+              <sc-if value="{{dt.hasPri}}" hint-placeholder-val="{{false}}"><button class="bp-a pri" onClick="{{dt.pri}}">{{dt.priT}}</button></sc-if>
+            </div>
+          </div>
+        </sc-if>
+      </section>
+    </main>
+  </div>
+
+</div>
+  <div lang="en" class="dev" role="toolbar" aria-label="Prototype states">
+    <div class="dg"><span class="dl">Network</span><div class="ds"><button class="{{dv.n_home}}" onClick="{{dvSet.n_home}}">Home</button><button class="{{dv.n_slow}}" onClick="{{dvSet.n_slow}}">Throttled</button><button class="{{dv.n_deep}}" onClick="{{dvSet.n_deep}}">Deep search</button><button class="{{dv.n_mobile}}" onClick="{{dvSet.n_mobile}}">Allowlist only</button></div></div>
+    <div class="dg"><span class="dl">Subscription</span><div class="ds"><button class="{{dv.s_yes}}" onClick="{{dvSet.s_yes}}">Yes</button><button class="{{dv.s_no}}" onClick="{{dvSet.s_no}}">No</button></div></div>
+    <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.t_no}}" onClick="{{dvSet.t_no}}">Not linked</button><button class="{{dv.t_yes}}" onClick="{{dvSet.t_yes}}">Linked</button></div></div>
+    <div class="dg"><span class="dl">Theme</span><div class="ds"><button class="{{dv.th_dark}}" onClick="{{dvSet.th_dark}}">Dark</button><button class="{{dv.th_light}}" onClick="{{dvSet.th_light}}">Light</button></div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode": {"editor": "enum", "options": ["off", "start", "probe", "on", "re", "err"], "default": "on", "section": "State"}, "net": {"editor": "enum", "options": ["home", "slow", "deep", "mobile"], "default": "home", "section": "State"}, "sub": {"editor": "enum", "options": ["yes", "no"], "default": "yes", "section": "State"}, "tg": {"editor": "enum", "options": ["no", "yes"], "default": "no", "section": "State"}, "tab": {"editor": "enum", "options": ["svc", "sites", "exc"], "default": "svc", "section": "State"}, "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Look"}, "accent": {"editor": "enum", "options": ["lavender", "mint", "sand", "rose"], "default": "lavender", "section": "Look"}}'>
+class Component extends DCLogic {
+  componentDidMount() {}
+  componentWillUnmount() { clearTimeout(this.t1); clearTimeout(this.t2); clearInterval(this.tp); }
+  st() { return this.state || {}; }
+  mode() { return this.st().mode || this.props.mode || 'on'; }
+  net() { return this.st().net || this.props.net || 'home'; }
+  tg() { return (this.st().tg || this.props.tg || 'no') === 'yes'; }
+  hasSub() { return (this.st().sub || this.props.sub || 'yes') === 'yes'; }
+  /* каталог сервисов — тот же, что в «Маршрутах»: имя, значок, тон */
+  cat() {
+    return { S: {"yt": ["YouTube", "media-video", "rose"], "ig": ["Instagram", "camera", "rose"], "fb": ["Facebook", "community", "sky"], "wa": ["WhatsApp", "chat-bubble", "mint"], "tg": ["Telegram", "send-diagonal", "sky"], "dc": ["Discord", "headset", "lav"], "x": ["X", "hashtag", "neu"], "tt": ["TikTok", "music-double-note", "rose"], "th": ["Threads", "at-sign", "neu"], "rd": ["Reddit", "chat-lines", "sand"], "sg": ["Signal", "message-text", "sky"], "pin": ["Pinterest", "pin", "rose"], "bsky": ["Bluesky", "cloud-sunny", "sky"], "md": ["Medium", "journal-page", "neu"], "pat": ["Patreon", "heart", "rose"], "nf": ["Netflix", "movie", "rose"], "sp": ["Spotify", "music-note", "mint"], "tw": ["Twitch", "antenna-signal", "lav"], "dis": ["Disney+", "magic-wand", "sky"], "hbo": ["HBO", "cinema-old", "lav"], "pv": ["Prime Video", "playlist-play", "sky"], "sc": ["SoundCloud", "sound-high", "sand"], "dz": ["Deezer", "album", "lav"], "td": ["Tidal", "sea-waves", "neu"], "vm": ["Vimeo", "play", "sky"], "wiki": ["Wikipedia", "open-book", "neu"], "hulu": ["Hulu", "tv", "mint"], "bbc": ["BBC", "rss-feed", "neu"], "oai": ["ChatGPT", "brain", "mint"], "cl": ["Claude", "circle-spark", "sand"], "gem": ["Gemini", "bright-star", "sky"], "grok": ["Grok", "brain-electricity", "neu"], "ppx": ["Perplexity", "search-engine", "mint"], "cop": ["Copilot", "code-brackets", "lav"], "steam": ["Steam", "arcade", "sky"], "epic": ["Epic Games", "trophy", "neu"], "ps": ["PlayStation", "medal", "sky"], "xb": ["Xbox", "rocket", "mint"], "nin": ["Nintendo", "dice-five", "rose"], "bz": ["Blizzard", "potion", "sky"], "ea": ["EA", "soccer-ball", "rose"], "ubi": ["Ubisoft", "hexagon-dice", "neu"], "rbx": ["Roblox", "cube", "sand"], "quest": ["Meta Quest", "augmented-reality", "neu"], "bng": ["Bungie", "planet", "neu"]},
+      L: { popular: ["yt", "dc", "tg", "wa", "ig", "fb", "x", "tt", "sg", "rbx", "oai", "nf", "sp", "tw", "steam"], social: ["yt", "ig", "fb", "wa", "tg", "dc", "x", "tt", "th", "rd", "sg", "pin", "bsky", "md", "pat"], media: ["nf", "sp", "tw", "dis", "hbo", "pv", "sc", "dz", "td", "vm", "wiki", "hulu", "bbc"], ai: ["oai", "cl", "gem", "grok", "ppx", "cop"], games: ["steam", "epic", "ps", "xb", "nin", "bz", "ea", "ubi", "rbx", "quest", "bng"] },
+      C: [['popular', 'محبوب', 'fire-flame'], ['social', 'شبکه‌های اجتماعی', 'chat-bubble'], ['media', 'رسانه', 'play'], ['ai', 'هوش مصنوعی', 'sparks'], ['games', 'بازی‌ها', 'gamepad']] };
+  }
+  sel() { return this.st().sel || { yt: 1, dc: 1, tg: 1, wa: 1, ig: 1, fb: 1 }; }
+  /* тестовые итоги по сценариям: части сервиса и что с ними */
+  parts(id) {
+    const n = this.net(), P = (name, o, m) => ({ n: name, o: o, m: m || '' }), wl = n === 'mobile';
+    if (id === 'yt') return wl ? [P('سایت', 'wl'), P('ویدیو', 'wl'), P('QUIC', 'wl')] : n === 'deep' ? [P('سایت', 'by', 'روش 9'), P('ویدیو', 'by', '18 Mbps · روش 9'), P('QUIC', 'tcp')] : [P('سایت', 'by', 'روش 4'), n === 'slow' ? P('ویدیو', 'slow', '1.4 Mbps · روش 4') : P('ویدیو', 'by', '24 Mbps · روش 4'), P('QUIC', 'tcp')];
+    if (id === 'dc') return [wl ? P('سایت و گفت‌وگو', 'wl') : n === 'deep' ? P('سایت و گفت‌وگو', 'deep', 'از 14:02') : P('سایت و گفت‌وگو', 'by', 'روش 7'), P('صدا', 'none', 'تا اولین تماس')];
+    if (id === 'tg') return wl ? [P('پیام‌ها', 'wl'), P('تماس‌ها', 'wl')] : n === 'deep' ? [P('پیام‌ها', 'ip'), P('تماس‌ها', 'ip')] : [P('پیام‌ها', 'by', 'روش 2'), P('تماس‌ها', 'by', 'روش 2')];
+    if (wl) return [P('سرویس', 'wl')];
+    if (id === 'ig' && n === 'deep') return [P('سرویس', 'ip')];
+    const by = { wa: 'روش 5', ig: 'روش 4', fb: 'روش 4', x: 'روش 4', sg: 'روش 7', rbx: 'روش 3', tt: 'روش 4' }[id];
+    return [by ? P('سرویس', 'by', by) : P('سرویس', 'self')];
+  }
+  ids() { const sel = this.sel(), C = this.cat(); return Object.keys(C.S).filter((k) => sel[k]); }
+  total() { return this.ids().reduce((a, k) => a + (k === 'tg' && !this.tg() ? 0 : this.parts(k).length), 0); }
+  runProbe(re) {
+    clearInterval(this.tp); clearTimeout(this.t1); const N = this.total();
+    this.setState({ mode: re ? 're' : 'probe', done: 0, fresh: false });
+    this.tp = setInterval(() => { const d = (this.st().done || 0) + 1; if (this._mxPulse) this._mxPulse(.75);
+      if (d >= N) { clearInterval(this.tp); this.setState({ done: N }); this.t1 = setTimeout(() => { this.setState({ mode: 'on', fresh: true, done: null, wave: !re && this.net() !== 'mobile' }); this.t1 = setTimeout(() => this.setState({ wave: false }), 2100); }, 520); } else this.setState({ done: d }); }, 560);
+  }
+  toggle() {
+    const m = this.mode(); clearInterval(this.tp); clearTimeout(this.t1);
+    if (m !== 'off') { this.setState({ mode: 'off', wave: false }); return; }
+    this.setState({ mode: 'start' }); this.t1 = setTimeout(() => this.runProbe(false), 1400);
+  }
+  renderVals() {
+    const logos = { lavender: '/_blob/9d2de0afb8b6790d36f13bd1b5071b3e', mint: '/_blob/f5477c216f0b7d12589860c6f5adf390', sand: '/_blob/84fb7f3b6f7f889d48124b78851ff2f5', rose: '/_blob/7fa8f33903a47546f9d5876df83ca7c1' };
+    const s = this.st(), theme = (s.theme || this.props.theme) === 'light' ? 'light' : 'dark', accent = logos[this.props.accent] ? this.props.accent : 'lavender';
+    const mode = this.mode(), net = this.net(), tg = this.tg(), hasSub = this.hasSub(), N = this.total(), vpn = s.vpn || {}, tab = s.tab || this.props.tab || 'svc', CT = this.cat(), sel = this.sel(), ids = this.ids();
+    const busy = mode === 'start' || mode === 'probe' || mode === 're', probing = mode === 'probe' || mode === 're';
+    const done = s.done != null ? s.done : (probing ? 4 : N), dead = mode === 'on' && net === 'mobile', off = mode === 'off' || mode === 'err' || mode === 'start';
+    const OT = { by: 'با دور زدن', self: 'خودش باز می‌شود', slow: 'کند', ip: 'نشانی بسته است', wl: 'فقط موارد مجاز', deep: 'در جست‌وجوی روش', ex: 'گزینه‌ای نمانده', chk: 'در حال بررسی', none: 'بررسی نشده', vpn: 'از طریق VPN', tcp: 'غیرفعال، ویدیو روی TCP می‌رود', unl: 'وصل نشده' };
+    const OC = { by: 'by', self: 'self', slow: 'slow', ip: 'bad', wl: 'bad', ex: 'bad', deep: 'deep', chk: 'chk', none: 'none', vpn: 'vpn', tcp: 'none', unl: 'none' };
+    const ago = s.fresh ? 'همین حالا' : '۲ دقیقه پیش', stop = (e) => { if (e && e.stopPropagation) e.stopPropagation(); };
+    let idx = 0, okN = 0, cur = '', slowYt = false, deepName = ''; const V = {};
+    ids.forEach((id) => {
+      const d = CT.S[id], unl = id === 'tg' && !tg, inVpn = !!vpn[id], start = idx, src = this.parts(id); let pend = false;
+      const parts = src.map((p) => {
+        let o = p.o, m = p.m, c = '';
+        if (unl) { o = 'unl'; m = ''; }
+        else { const i = idx++;
+          if (off) { o = 'none'; m = ''; }
+          else if (inVpn) { o = 'vpn'; m = ''; }
+          else if (mode === 'probe' && i >= done) { o = 'chk'; m = ''; pend = true; if (!cur) cur = d[0] + (src.length > 1 ? ' · ' + p.n.toLowerCase() : ''); }
+          else if (mode === 're' && i >= done) { c = ' p-re'; pend = true; if (!cur) cur = d[0] + (src.length > 1 ? ' · ' + p.n.toLowerCase() : ''); }
+          else if (probing && i === done - 1) c = ' p-in'; }
+        return { n: p.n, o: OT[o], m: m, c: 'p-' + OC[o] + c };
+      });
+      const main = src[0].o, anySlow = src.some((p) => p.o === 'slow'), bad = main === 'ip' || main === 'wl' || main === 'ex', deep = main === 'deep', live = !off && !unl, chk = mode === 'probe' && pend;
+      const opens = live && !inVpn && !bad && !deep && !chk; if (opens) okN++;
+      if (live && !inVpn && !chk && anySlow && id === 'yt') slowYt = true; if (live && !inVpn && !chk && deep) deepName = d[0];
+      /* строка состояния на плитке: слово + уточнение */
+      let st = 'none', way = '', meta = '', note = null, act = null, pri = null;
+      if (unl) { st = 'todo'; way = 'اتصال'; pri = s.tgAsk ? null : { t: 'اتصال به برنامه', go: () => { this.setState({ tgAsk: true }); this.t2 = setTimeout(() => { this.setState({ tg: 'yes', tgAsk: false, fresh: true }); if (this._mxPulse) this._mxPulse(1.2); }, 1900); } };
+        note = s.tgAsk ? { c: 'sky', i: 'send-diagonal', t: 'در حال باز کردن تلگرام — پروکسی را آنجا تأیید کنید' } : { c: '', i: 'info-circle', t: 'تلگرام خودش باز می‌شود و تأیید می‌خواهد. لازم نیست چیزی در برنامه وارد کنید' }; }
+      else if (off) { st = 'none'; way = ''; meta = 'در دور زدن'; }
+      else if (inVpn) { st = 'vpn'; way = 'از طریق VPN'; act = { t: 'برگرداندن به دور زدن', go: () => this.setState({ vpn: Object.assign({}, vpn, { [id]: false }) }) }; }
+      else if (chk) { st = 'chk'; way = 'در حال بررسی'; }
+      else {
+        if (bad) { st = 'bad'; way = 'باز نمی‌شود'; } else if (deep) { st = 'deep'; way = 'در جست‌وجوی روش'; } else if (anySlow) { st = 'slow'; way = 'کند'; meta = '1.4 Mbps'; } else if (main === 'self') { st = 'self'; way = 'خودش باز می‌شود'; } else { st = 'ok'; way = 'با دور زدن'; meta = src[0].m.replace(/^.*· /, ''); }
+        if ((bad || deep || anySlow) && hasSub) act = { t: 'از طریق VPN', go: () => this.setState({ vpn: Object.assign({}, vpn, { [id]: true }) }) };
+        if (main === 'wl') note = { c: '', i: 'prohibition', t: 'شبکه فقط موارد مجاز را راه می‌دهد. دور زدن اینجا کاری نمی‌کند' + (hasSub ? '' : '، VPN کمک می‌کند') };
+        else if (main === 'ip') note = { c: '', i: 'prohibition', t: 'اپراتور این نشانی را با هر روشی بسته است. دور زدن اینجا کاری نمی‌کند' + (hasSub ? '' : '، VPN کمک می‌کند') };
+        else if (deep) note = { c: '', i: 'timer', t: 'جست‌وجوی سریع جواب نداد، در پس‌زمینه عمیق‌تر می‌گردیم. چند دقیقه طول می‌کشد' + (hasSub ? '، فعلاً می‌توانید از VPN استفاده کنید' : '') };
+        else if (anySlow) note = { c: 'warn', i: 'dashboard-speed', t: 'اپراتور سرعت ویدیو را کم می‌کند. شاید دور زدن این را برطرف نکند' + (hasSub ? '' : '، VPN کمک می‌کند') };
+        else if (id === 'tg') note = { c: '', i: 'info-circle', t: 'تا وقتی Mistgate باز است کار می‌کند' };
+        else if (id === 'dc') note = { c: '', i: 'info-circle', t: 'صدا در اولین تماس بررسی می‌شود: برای آن ورود به حساب لازم است' };
+        else if (main === 'self') note = { c: '', i: 'info-circle', t: 'بدون هیچ دور زدنی کار می‌کند و برنامه چیزی را تغییر نمی‌دهد' };
+      }
+      V[id] = { st: st, way: way, meta: meta, parts: parts, note: note, act: act, pri: pri, hit: probing && !unl && done === idx && idx > start,
+        when: unl ? 'به برنامه وصل نشده' : off ? 'با روشن کردن بررسی می‌شود' : inVpn ? 'از سرور می‌گذرد' : chk ? 'در حال جست‌وجو' : 'بررسی‌شده ' + ago };
+    });
+    const allN = ids.length, catId = s.cat || 'popular', dtId = s.dt && sel[s.dt] ? s.dt : '';
+    const order = CT.L[catId].slice().sort((a, b) => (sel[b] ? 1 : 0) - (sel[a] ? 1 : 0));
+    const tiles = order.map((id) => { const d = CT.S[id], v = V[id], on = !!sel[id];
+      return { name: d[0], g: d[1], tone: d[2], on: on ? 'true' : 'false', cls: (on ? 'on bp-t-' + v.st : '') + (v && v.hit ? ' bp-hit' : ''), way: on ? v.way : '', wayC: on && v.way ? 'bp-w-' + v.st : 'hide', meta: on && !v.way ? v.meta : '',
+        flip: () => (on ? this.setState({ dt: id }) : this.setState({ sel: Object.assign({}, sel, { [id]: 1 }), fresh: s.fresh })) }; });
+    const cats = CT.C.map((c) => ({ label: c[1], g: c[2], cls: c[0] === catId ? 'on' : '', on: c[0] === catId ? 'true' : 'false', pick: () => this.setState({ cat: c[0] }) }));
+    const dv0 = dtId ? V[dtId] : null, dd = dtId ? CT.S[dtId] : null, CH = { ok: ['ice', 'باز می‌شود'], self: ['neu', 'خودش باز می‌شود'], slow: ['warn', 'کند'], bad: ['bad', 'باز نمی‌شود'], deep: ['lav', 'در جست‌وجوی روش'], vpn: ['lav', 'از طریق VPN'], chk: ['neu', 'در حال بررسی'] };
+    const dt = dv0 ? { open: true, name: dd[0], g: dd[1], tone: dd[2], when: dv0.when, parts: dv0.parts, hasChip: !!CH[dv0.st], chipC: CH[dv0.st] ? CH[dv0.st][0] : '', chipT: CH[dv0.st] ? CH[dv0.st][1] : '',
+      hasNote: !!dv0.note, noteC: dv0.note ? dv0.note.c : '', noteI: dv0.note ? dv0.note.i : 'info-circle', noteT: dv0.note ? dv0.note.t : '', hasPri: !!dv0.pri, priT: dv0.pri ? dv0.pri.t : '', pri: dv0.pri ? dv0.pri.go : stop,
+      hasAct: !!dv0.act, actT: dv0.act ? dv0.act.t : '', go: dv0.act ? dv0.act.go : stop, close: () => this.setState({ dt: '' }),
+      rm: () => this.setState({ sel: Object.assign({}, sel, { [dtId]: 0 }), dt: '', vpn: Object.assign({}, vpn, { [dtId]: false }) }) } : { open: false, parts: [] };
+    const sites = [['forum.example.com', 'self', ''], ['video.example.com', 'by', 'روش 3'], ['files.example.com', 'ip', '']].map((r) => {
+      const o = off ? 'none' : vpn[r[0]] ? 'vpn' : net === 'mobile' ? 'wl' : r[1], bad = o === 'ip' || o === 'wl';
+      const w = { none: ['', 'با روشن کردن بررسی می‌شود'], vpn: ['bp-w-vpn', 'از طریق VPN'], self: ['bp-w-self', 'خودش باز می‌شود'], by: ['bp-w-ok', 'با دور زدن'], ip: ['bp-w-bad', 'باز نمی‌شود'], wl: ['bp-w-bad', 'باز نمی‌شود'] }[o];
+      return { host: r[0], wayC: w[0] + (o === 'none' ? ' hide' : ' sep'), way: o === 'none' ? '' : w[1], meta: o === 'none' ? w[1] : o === 'by' ? r[2] : o === 'vpn' ? 'از سرور می‌گذرد' : o === 'ip' ? 'نشانی بسته است' : o === 'wl' ? 'فقط موارد مجاز' : 'بررسی‌شده ' + ago,
+        tone: bad ? 'rose' : o === 'by' ? 'sky' : o === 'vpn' ? 'lav' : 'neu', hasAct: (bad && hasSub) || o === 'vpn', actT: o === 'vpn' ? 'برگردان' : 'از طریق VPN', go: () => this.setState({ vpn: Object.assign({}, vpn, { [r[0]]: o !== 'vpn' }) }) };
+    });
+    const mobile = net === 'mobile', netV = { ic: mobile ? 'smartphone-device' : 'wifi', t: mobile ? 'موبایل' : 'Wi‑Fi', s: mode === 're' ? 'تازه، همین حالا' : mobile ? 'تازه، ۲ دقیقه پیش' : 'روش ذخیره شده', newC: mode === 're' || mobile ? 'new' : '' };
+    let det = { c: '', ic: 'info-circle', t: 'نشانی را پنهان و رمزنگاری نمی‌کند', a: 'جزئیات', go: () => this.setState({ about: true }) };
+    if (slowYt) det = { c: 'warn', ic: 'dashboard-speed', t: 'اپراتور سرعت YouTube را کم کرده', a: hasSub ? 'از طریق VPN' : 'جزئیات', go: () => (hasSub ? this.setState({ vpn: Object.assign({}, vpn, { yt: true }) }) : this.setState({ about: true })) };
+    else if (deepName) det = { c: '', ic: 'timer', t: 'در پس‌زمینه دنبال روشی برای ' + deepName + '', a: 'جزئیات', go: () => this.setState({ tab: 'svc', cat: 'popular', dt: 'dc' }) };
+    const set = (o) => () => { clearInterval(this.tp); clearTimeout(this.t1); this.setState(Object.assign({ wave: false }, o)); };
+    const dvOn = (b) => (b ? 'on' : ''), dv = {}, dvSet = {};
+    ['off', 'start', 'probe', 'on', 're', 'err'].forEach((k) => { dv['m_' + k] = dvOn(mode === k); });
+    dvSet.m_off = set({ mode: 'off' }); dvSet.m_start = set({ mode: 'start' }); dvSet.m_on = set({ mode: 'on', done: null }); dvSet.m_err = set({ mode: 'err' });
+    dvSet.m_probe = () => this.runProbe(false); dvSet.m_re = () => this.runProbe(true);
+    ['home', 'slow', 'deep', 'mobile'].forEach((k) => { dv['n_' + k] = dvOn(net === k); dvSet['n_' + k] = () => { this.setState({ net: k, vpn: {} }); if (this.mode() !== 'off' && this.mode() !== 'err') setTimeout(() => this.runProbe(true), 0); }; });
+    dv.s_yes = dvOn(hasSub); dv.s_no = dvOn(!hasSub); dvSet.s_yes = () => this.setState({ sub: 'yes' }); dvSet.s_no = () => this.setState({ sub: 'no', vpn: {} });
+    dv.t_no = dvOn(!tg); dv.t_yes = dvOn(tg); dvSet.t_no = () => this.setState({ tg: 'no', tgAsk: false, done: null }); dvSet.t_yes = () => this.setState({ tg: 'yes', tgAsk: false, done: null });
+    dv.th_dark = dvOn(theme === 'dark'); dv.th_light = dvOn(theme === 'light'); dvSet.th_dark = () => this.setState({ theme: 'dark' }); dvSet.th_light = () => this.setState({ theme: 'light' });
+    return {
+      theme: theme, accent: accent, logo: logos[accent], dv: dv, dvSet: dvSet,
+      phase: busy ? 'ing' : mode === 'on' ? 'on' : 'off', stCls: (dead ? 'bp-dead ' : '') + (mode === 'err' ? 'bp-err cs-err' : ''),
+      isOff: mode === 'off', isBusy: busy, isOn: mode === 'on' && !dead, isDead: dead, isErr: mode === 'err', isRe: mode === 're',
+      busyT: mode === 'start' ? 'در حال روشن کردن دور زدن' : mode === 're' ? 'بررسی دوبارهٔ شبکه' : 'در حال یافتن روش',
+      stepT: mode === 'start' ? 'در حال راه‌اندازی آداپتور شبکه' : (cur || 'جمع‌بندی نتایج'), stepCls: done % 2 ? 'sB' : 'sA', stepN: probing ? Math.min(done, N) + ' از ' + N : '',
+      chipT: 'دور زدن فعال است', chipC: '', onT: okN === 1 ? 'باز:' : 'باز:', okN: okN, allN: allN, net: netV,
+      toggle: () => this.toggle(), pressed: mode === 'off' ? 'false' : 'true', pwLabel: mode === 'off' ? 'روشن کردن دور زدن' : 'خاموش کردن دور زدن',
+      fix: () => { this.setState({ mode: 'start' }); this.t1 = setTimeout(() => this.runProbe(false), 1400); },
+      hasSub: hasSub, noSub: !hasSub, showBar: (mode === 'on' && !dead) || mode === 're', recheck: () => { if (mode === 'on' || mode === 're') this.runProbe(true); }, reCls: mode === 're' ? 'busy' : '',
+      reT: mode === 're' ? 'در حال بررسی' : 'بررسی دوباره', reS: mode === 're' ? Math.min(done, N) + ' از ' + N + ' بخش' : 'آخرین جست‌وجو: ' + ago, setV: '۹ نوامبر',
+      hasDet: mode === 'on' && !dead, det: det, openAbout: () => this.setState({ about: true }), closeAbout: () => this.setState({ about: false }), about: !!s.about, wave: !!s.wave,
+      cardT: mode === 'off' ? 'چه چیزهایی با دور زدن باز شوند' : mode === 'err' ? 'چه چیزهایی با دور زدن باز شوند' : dead ? 'شبکه فقط موارد مجاز را راه می‌دهد' : 'با دور زدن و بدون سرور', reBtn: mode === 're' ? 'در حال بررسی' : 'بررسی',
+      isSvc: tab === 'svc', isSites: tab === 'sites', isExc: tab === 'exc', tab1C: dvOn(tab === 'svc'), tab2C: dvOn(tab === 'sites'), tab3C: dvOn(tab === 'exc'),
+      tab1: () => this.setState({ tab: 'svc', dt: '' }), tab2: () => this.setState({ tab: 'sites', dt: '' }), tab3: () => this.setState({ tab: 'exc', dt: '' }),
+      vpnLock: hasSub ? '' : 'lock', dirC: s.dir === false ? '' : 'on', dirOn: s.dir === false ? 'false' : 'true', dirTog: () => this.setState({ dir: s.dir === false }),
+      tbs: { c: mode === 'on' ? (dead ? 'bp-bad' : 'bp-on') : probing ? 'v-ing' : '', t: mode === 'off' || mode === 'err' ? 'دور زدن خاموش است' : probing ? 'در حال جست‌وجو' : dead ? 'دور زدن ناتوان است' : 'دور زدن فعال است', m: mode === 'on' && !dead ? okN + ' از ' + allN : '', mc: mode === 'on' && !dead ? '' : 'hide', a: mode === 'off' ? 'روشن کردن دور زدن' : 'خاموش کردن دور زدن', go: () => (mode === 'off' ? this.runProbe(false) : set({ mode: 'off' })()) },
+      tiles: tiles, cats: cats, dt: dt, sites: sites, sitesN: sites.length, excN: 2, addSite: () => {},
+    };
+  }
+}
+</script>
+</body>
+</html>

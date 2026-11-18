@@ -1,0 +1,230 @@
+<div class="desk">
+<div class="mg app t-{{theme}} a-{{accent}}">
+
+  <nav class="rail" aria-label="Sections">
+    <img class="rlogo" src="{{logo}}" alt="mistgate" width="32" height="32">
+    <a class="rb on" href="Main.dc.html" aria-current="page"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2.2"/></svg><span class="rbl">Home</span></a>
+    <a class="rb" href="RoutesBypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg><span class="rbl">Routes</span></a>
+    <a class="rb" href="Diag.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5H21"/></svg><span class="rbl">Diagnostics</span></a>
+    <a class="rb" href="Settings.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="rbl">Settings</span></a>
+    <a class="rb sub" href="https://vpn.example.com" target="_blank" rel="noopener"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><span class="rbl">Subscription page</span></a>
+  </nav>
+
+  <div class="content">
+    <header class="tb">
+    <div class="bp-mode m2" role="tablist" aria-label="Mode"><a role="tab" class="{{vpnLock}}" aria-selected="false" href="Main.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/></svg>VPN</a><a role="tab" class="on" aria-selected="true" href="Bypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="2.2"/><path d="M3 15h2.2a6.8 6.8 0 0 1 13.6 0H21"/></svg>Bypass</a></div>
+    <div class="cap">
+      <button aria-label="Minimize to tray"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      <button aria-label="Maximize"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+      <button aria-label="Close window"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    </header>
+
+    <main class="body">
+      <div class="left">
+      <section class="stage bp-st s-{{phase}} {{stCls}}" aria-label="Bypass">
+        <div class="mx" aria-hidden="true"><canvas class="mxc"></canvas></div>
+        <div class="top">
+          <sc-if value="{{isOff}}" hint-placeholder-val="{{false}}">
+            <p class="ttl rise" role="status">Bypass is off</p>
+            <p class="sub-t rise d1">Opens sites directly, with no server. No subscription needed</p>
+          </sc-if>
+          <sc-if value="{{isBusy}}" hint-placeholder-val="{{false}}">
+            <p class="ttl rise" role="status">{{busyT}}</p>
+            <span class="comet rise d1" aria-hidden="true"></span>
+            <p class="cstep rise d1" aria-live="polite"><span class="shim {{stepCls}}">{{stepT}}</span><b>{{stepN}}</b></p>
+          </sc-if>
+          <sc-if value="{{isOn}}" hint-placeholder-val="{{true}}">
+            <div class="chips2 rise"><p class="chip bp-chip {{chipC}}" role="status"><span class="dot"></span>{{chipT}}</p><span class="rchip"><span class="gl g-{{net.ic}}" aria-hidden="true" style="width:14px;height:14px"></span>{{net.t}}</span></div>
+            <p class="bp-n rise d1">{{onT}} <b>{{okN}}</b><small> of </small><b>{{allN}}</b></p>
+          </sc-if>
+          <sc-if value="{{isDead}}" hint-placeholder-val="{{false}}">
+            <p class="ttl rise bad" role="status">Bypass cannot help here</p>
+            <p class="sub-t rise d1">The mobile network allows only listed sites</p>
+          </sc-if>
+          <sc-if value="{{isErr}}" hint-placeholder-val="{{false}}">
+            <p class="ttl rise bad" role="status">Bypass did not start</p>
+            <p class="sub-t rise d1">The Mistgate service is not responding</p>
+          </sc-if>
+        </div>
+
+        <div class="orb">
+          <span class="ring r-off" aria-hidden="true"></span>
+          <span class="ring r-ing" aria-hidden="true"></span>
+          <span class="ring r-on" aria-hidden="true"></span>
+          <span class="halo" aria-hidden="true"></span>
+          <button class="pw" onClick="{{toggle}}" aria-pressed="{{pressed}}" aria-label="{{pwLabel}}"><span class="lay l-off"></span><span class="lay l-ing"></span><span class="lay l-on"></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 7.2a7.5 7.5 0 1 0 10.8 0"/></svg></button>
+        </div>
+
+        <div class="bot">
+          <sc-if value="{{isErr}}" hint-placeholder-val="{{false}}">
+            <div class="blk-b rise">
+              <button class="cta" onClick="{{fix}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/><path d="m9.5 12 2 2 3.5-4"/></svg>Start the service</button>
+              <p class="cta-sub">Windows will ask for administrator rights</p>
+            </div>
+          </sc-if>
+          <sc-if value="{{isDead}}" hint-placeholder-val="{{false}}">
+            <div class="blk-b rise">
+              <sc-if value="{{hasSub}}" hint-placeholder-val="{{true}}">
+                <a class="cta" href="Main.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h6"/><path d="m18 14 3 3-3 3"/></svg>Turn on VPN for allowlist networks</a>
+                <p class="cta-sub">Your subscription has a server for such networks</p>
+              </sc-if>
+              <sc-if value="{{noSub}}" hint-placeholder-val="{{false}}">
+                <a class="cta ghost" href="Main.dc.html">Add a VPN subscription</a>
+                <p class="cta-sub">On this kind of network only a VPN opens sites</p>
+              </sc-if>
+            </div>
+          </sc-if>
+          <sc-if value="{{showBar}}" hint-placeholder-val="{{true}}">
+            <div class="bp-bar rise">
+              <button class="{{reCls}}" onClick="{{recheck}}" aria-label="Check again">
+                <span class="pic"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg></span>
+                <span class="tx"><b>{{reT}}</b><span>{{reS}}</span></span>
+              </button>
+              <span class="cb-div" aria-hidden="true"></span>
+              <span class="bp-set">
+                <span class="tx"><b>Method set</b><span class="m">{{setV}}</span></span>
+              </span>
+            </div>
+          </sc-if>
+          <sc-if value="{{isOff}}" hint-placeholder-val="{{false}}">
+            <p class="offrow rise d2"><button class="bp-det" onClick="{{openAbout}}"><span class="gl g-info-circle" aria-hidden="true"></span>Does not hide your address or encrypt<b>Details<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></b></button></p>
+          </sc-if>
+          <sc-if value="{{hasDet}}" hint-placeholder-val="{{true}}">
+            <button class="bp-det rise d2 {{det.c}}" onClick="{{det.go}}"><span class="gl g-{{det.ic}}" aria-hidden="true"></span>{{det.t}}<b>{{det.a}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></b></button>
+          </sc-if>
+          <sc-if value="{{isRe}}" hint-placeholder-val="{{false}}">
+            <p class="cta-sub cs-note rise d2">Previous results apply until new ones arrive</p>
+          </sc-if>
+        </div>
+      </section>
+
+      <div class="plan bp-plan" aria-label="Good to know">
+        <div class="bp-f">
+          <span class="k"><span class="gl g-{{net.ic}}" aria-hidden="true"></span>Network<i class="{{net.newC}}" aria-hidden="true"></i></span>
+          <b>{{net.t}}</b><span class="s">{{net.s}}</span>
+        </div>
+        <div class="bp-f">
+          <span class="k"><span class="gl g-eye" aria-hidden="true"></span>Privacy</span>
+          <b>As without VPN</b><span class="s">address visible</span>
+        </div>
+        <div class="bp-f">
+          <span class="k"><span class="gl g-shield-xmark" aria-hidden="true"></span>Kill switch</span>
+          <b>Off</b><span class="s">no server</span>
+        </div>
+      </div>
+      </div>
+
+    <section class="servers" aria-label="What we open">
+      <div class="bp-h">
+        <span class="mono sky"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="2.2"/><path d="M3 15h2.2a6.8 6.8 0 0 1 13.6 0H21"/></svg></span>
+        <span class="nm"><b>Bypass without a server</b><span>{{headS}}</span></span>
+        <button class="icb {{reCls}}" onClick="{{recheck}}" aria-label="Check again" title="Check again"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg></button>
+      </div>
+      <div class="bp-tabs">
+        <div class="bp-seg two {{tabC2}}" role="tablist" aria-label="What we open">
+          <button role="tab" class="{{tab1C}}" aria-selected="{{isSvc}}" onClick="{{tab1}}">Services <span class="k">{{allN}}</span></button>
+          <button role="tab" class="{{tab2C}}" aria-selected="{{isSites}}" onClick="{{tab2}}">My sites <span class="k">{{sitesN}}</span></button>
+        </div>
+      </div>
+
+      <sc-if value="{{isSvc}}" hint-placeholder-val="{{true}}">
+      <div class="bp-sum" aria-label="{{sumT}}">
+        <span class="bp-segs" aria-hidden="true"><sc-for list="{{segs}}" as="g" hint-placeholder-count="6"><i class="{{g.c}}"></i></sc-for></span>
+        <span class="bp-sumt"><b>{{sumN}}</b> {{sumT}}</span>
+      </div>
+      <div class="bp-list" aria-label="Services">
+        <sc-for list="{{svcs}}" as="s" hint-placeholder-count="6">
+        <div class="bp-s {{s.c}}">
+          <div class="bp-sh" role="button" tabindex="0" aria-expanded="{{s.open}}" onClick="{{s.tog}}">
+            <span class="mono {{s.tone}}"><span class="gl g-{{s.ic}}" aria-hidden="true"></span></span>
+            <span class="nm"><b>{{s.name}}</b>
+              <sc-if value="{{s.multi}}" hint-placeholder-val="{{true}}"><span class="bp-mini"><sc-for list="{{s.parts}}" as="p" hint-placeholder-count="2"><em class="{{p.c}}"><i></i>{{p.n}}</em></sc-for></span></sc-if>
+              <sc-if value="{{s.single}}" hint-placeholder-val="{{false}}"><span class="bp-one">{{s.sub}}</span></sc-if>
+            </span>
+            <sc-if value="{{s.hasChip}}" hint-placeholder-val="{{true}}"><span class="vchip sm {{s.chipC}}"><i></i>{{s.chipT}}</span></sc-if>
+            <sc-if value="{{s.hasPri}}" hint-placeholder-val="{{false}}"><button class="bp-a pri" onClick="{{s.pri}}">{{s.priT}}</button></sc-if>
+            <sc-if value="{{s.hasSw}}" hint-placeholder-val="{{false}}"><button class="sw {{s.swC}}" role="switch" aria-checked="{{s.en}}" aria-label="Open {{s.name}} with bypass" onClick="{{s.sw}}"></button></sc-if>
+            <svg class="i bp-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <sc-if value="{{s.open}}" hint-placeholder-val="{{false}}">
+          <div class="bp-body">
+            <div class="bp-ps">
+              <sc-for list="{{s.parts}}" as="p" hint-placeholder-count="2">
+                <div class="bp-p {{p.c}}"><i class="bp-d" aria-hidden="true"></i><span class="bp-pn">{{p.n}}</span><span class="bp-po">{{p.o}}</span><span class="bp-pm">{{p.m}}</span></div>
+              </sc-for>
+            </div>
+            <sc-if value="{{s.hasNote}}" hint-placeholder-val="{{false}}"><p class="bp-note {{s.noteC}}"><span class="gl g-{{s.noteI}}" aria-hidden="true"></span>{{s.noteT}}</p></sc-if>
+            <div class="bp-acts">
+              <span class="bp-when">{{s.when}}</span>
+              <sc-if value="{{s.hasAct}}" hint-placeholder-val="{{false}}"><button class="bp-a {{s.actC}}" onClick="{{s.go}}">{{s.actT}}</button></sc-if>
+              <sc-if value="{{s.hasOff}}" hint-placeholder-val="{{true}}"><button class="bp-a ghost" onClick="{{s.sw}}">{{s.offT}}</button></sc-if>
+            </div>
+          </div>
+          </sc-if>
+        </div>
+        </sc-for>
+        <a class="bp-r bp-link" href="RoutesBypass.dc.html"><span class="mono neu"><span class="gl g-view-grid" aria-hidden="true"></span></span><span class="nm"><b class="t">Service catalog</b><span>Choose what to open with bypass</span></span><span class="bp-go">Routes<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isSites}}" hint-placeholder-val="{{false}}">
+      <div class="bp-list rise" aria-label="My sites">
+        <sc-for list="{{sites}}" as="r" hint-placeholder-count="3">
+        <div class="bp-r">
+          <span class="mono {{r.tone}}"><span class="gl g-internet" aria-hidden="true"></span></span>
+          <span class="nm"><b>{{r.host}}</b><span>{{r.sub}}</span></span>
+          <sc-if value="{{r.noAct}}" hint-placeholder-val="{{true}}"><span class="vchip sm {{r.chipC}}"><i></i>{{r.chipT}}</span></sc-if>
+          <sc-if value="{{r.hasAct}}" hint-placeholder-val="{{false}}"><button class="bp-a" onClick="{{r.go}}">{{r.actT}}</button></sc-if>
+        </div>
+        </sc-for>
+        <a class="bp-r bp-link" href="RoutesBypass.dc.html"><span class="mono neu"><span class="gl g-view-grid" aria-hidden="true"></span></span><span class="nm"><b class="t">Sites and exceptions</b><span>Add a site or remove one from bypass</span></span><span class="bp-go">Routes<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>
+      </div>
+      </sc-if>
+    </section>
+    </main>
+
+  </div>
+
+  <sc-if value="{{about}}" hint-placeholder-val="{{false}}">
+    <div class="scrim" onClick="{{closeAbout}}"></div>
+    <div class="sheet bp-sheet" role="dialog" aria-label="How bypass differs from a VPN">
+      <h3>Bypass opens sites, but does not hide you</h3>
+      <div class="bp-cmp">
+        <div class="bp-col" style="--c:var(--sky)">
+          <b><i></i>Bypass</b>
+          <p class="y"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>No server and no subscription</p>
+          <p class="y"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>The method is picked automatically for your network</p>
+          <p class="n"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>Does not hide your address or encrypt traffic</p>
+          <p class="n"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>Powerless when the address itself is blocked or the network allows only listed sites</p>
+          <p class="n"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>No speed guarantee, and it may stop working after changes at your provider</p>
+        </div>
+        <div class="bp-col" style="--c:var(--mint)">
+          <b><i></i>VPN</b>
+          <p class="y"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Traffic goes through a server and is encrypted</p>
+          <p class="y"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Hides your address from sites</p>
+          <p class="y"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Works where bypass is powerless</p>
+          <p class="y"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Kill switch cuts the network if the tunnel drops</p>
+          <p class="n"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>Needs a subscription</p>
+        </div>
+      </div>
+      <p class="bp-ord">With a subscription, for every site: <span class="mk">direct</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span class="mk">with bypass</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span class="mk" style="background:var(--tone-lav-bg);color:var(--tone-lav)">via VPN</span></p>
+      <div class="cf-a"><button class="addb" onClick="{{closeAbout}}" style="justify-content:center">Got it</button></div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{wave}}" hint-placeholder-val="{{false}}">
+    <div class="wave" aria-hidden="true"><canvas class="wvc"></canvas></div>
+  </sc-if>
+
+</div>
+  <div lang="en" class="dev dtop" role="toolbar" aria-label="Prototype states">
+    <div class="dg"><span class="dl">Bypass</span><div class="ds"><button class="{{dv.m_off}}" onClick="{{dvSet.m_off}}">Off</button><button class="{{dv.m_start}}" onClick="{{dvSet.m_start}}">Starting</button><button class="{{dv.m_probe}}" onClick="{{dvSet.m_probe}}">Probing</button><button class="{{dv.m_on}}" onClick="{{dvSet.m_on}}">Works</button><button class="{{dv.m_re}}" onClick="{{dvSet.m_re}}">Recheck</button><button class="{{dv.m_err}}" onClick="{{dvSet.m_err}}">Error</button></div></div>
+    <div class="dg"><span class="dl">Network</span><div class="ds"><button class="{{dv.n_home}}" onClick="{{dvSet.n_home}}">Home</button><button class="{{dv.n_slow}}" onClick="{{dvSet.n_slow}}">Throttled</button><button class="{{dv.n_deep}}" onClick="{{dvSet.n_deep}}">Deep search</button><button class="{{dv.n_mobile}}" onClick="{{dvSet.n_mobile}}">Allowlist only</button></div></div>
+  </div>
+  <div lang="en" class="dev" role="toolbar" aria-label="Prototype context">
+    <div class="dg"><span class="dl">Subscription</span><div class="ds"><button class="{{dv.s_yes}}" onClick="{{dvSet.s_yes}}">Yes</button><button class="{{dv.s_no}}" onClick="{{dvSet.s_no}}">No</button></div></div>
+    <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.t_no}}" onClick="{{dvSet.t_no}}">Not linked</button><button class="{{dv.t_yes}}" onClick="{{dvSet.t_yes}}">Linked</button></div></div>
+    <div class="dg"><span class="dl">Theme</span><div class="ds"><button class="{{dv.th_dark}}" onClick="{{dvSet.th_dark}}">Dark</button><button class="{{dv.th_light}}" onClick="{{dvSet.th_light}}">Light</button></div></div>
+  </div>
+</div>

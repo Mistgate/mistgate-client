@@ -1,0 +1,145 @@
+<div class="desk">
+<div class="mg app t-{{theme}} a-{{accent}}">
+
+  <nav class="rail" aria-label="Sections">
+    <img class="rlogo" src="{{logo}}" alt="mistgate" width="32" height="32">
+    <a class="rb" href="Bypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2.2"/></svg><span class="rbl">Ana sayfa</span></a>
+    <a class="rb on" href="RoutesBypass.dc.html" aria-current="page"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg><span class="rbl">Rotalar</span></a>
+    <a class="rb" href="Diag.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5H21"/></svg><span class="rbl">Tanılama</span></a>
+    <a class="rb" href="Settings.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="rbl">Ayarlar</span></a>
+    <a class="rb sub" href="https://vpn.example.com" target="_blank" rel="noopener"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></svg><span class="rbl">Abonelik sayfası</span></a>
+  </nav>
+
+  <div class="content">
+    <header class="tb">
+    <div class="bp-mode m2" role="tablist" aria-label="Mod"><a role="tab" class="{{vpnLock}}" aria-selected="false" href="Routes.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/></svg>VPN</a><a role="tab" class="on" aria-selected="true" href="RoutesBypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="2.2"/><path d="M3 15h2.2a6.8 6.8 0 0 1 13.6 0H21"/></svg>Atlatma</a></div>
+    <div class="tbs {{tbs.c}}">
+      <a class="tbs-s" href="Bypass.dc.html" title="Open Home"><i class="tbs-d" aria-hidden="true"></i><span>{{tbs.t}}</span><span class="tbs-m {{tbs.mc}}">{{tbs.m}}</span></a>
+      <button class="tbs-p" onClick="{{tbs.go}}" aria-label="{{tbs.a}}" title="{{tbs.a}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 7.2a7.5 7.5 0 1 0 10.8 0"/></svg></button>
+    </div>
+    <div class="cap">
+      <button aria-label="Minimize to tray"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      <button aria-label="Maximize"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+      <button aria-label="Close window"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    </header>
+
+    <main class="rt bp-rt">
+      <section class="rt-l">
+        <h1 class="h1x">Rotalar</h1>
+        <p class="rt-sub">Sunucusuz, atlatmayla neler açılsın</p>
+        <div class="bp-flow" aria-label="Her site için sıra">
+          <p class="bp-flow-h">Her site için sıra</p>
+          <div class="bp-step"><em aria-hidden="true"></em><span class="tx"><b>Doğrudan</b><span>Site kendiliğinden açılıyorsa</span></span></div>
+          <div class="bp-step bp-cur"><em aria-hidden="true"></em><span class="tx"><b>Atlatmayla</b><span>Yöntem ağınıza göre seçilir</span></span></div>
+          <sc-if value="{{hasSub}}" hint-placeholder-val="{{true}}"><div class="bp-step bp-vpn"><em aria-hidden="true"></em><span class="tx"><b>VPN ile</b><span>Atlatma yetmezse</span></span></div></sc-if>
+          <sc-if value="{{noSub}}" hint-placeholder-val="{{false}}"><div class="bp-step bp-dim"><em aria-hidden="true"></em><span class="tx"><b>VPN ile</b><span>Abonelik gerekir</span></span><a class="bp-a" href="Main.dc.html">Ekle</a></div></sc-if>
+        </div>
+        <sc-if value="{{hasSub}}" hint-placeholder-val="{{true}}">
+        <div class="bp-opt">
+          <span class="tx"><b>VPN’de doğrudan siteler için atlatma</b><span>VPN açıkken ondan geçmeyen siteler de atlatmayla açılır</span></span>
+          <button class="sw {{dirC}}" role="switch" aria-checked="{{dirOn}}" aria-label="VPN’de doğrudan siteler için atlatma" onClick="{{dirTog}}"></button>
+        </div>
+        </sc-if>
+        <p class="rt-note"><span class="gl g-list" aria-hidden="true" style="width:14px;height:14px"></span>Yöntem kümesi<span>{{setV}}</span></p>
+      </section>
+
+      <section class="lcard bp-card" aria-label="Atlatmayla neler açılsın">
+        <div class="rh">
+          <div class="rh-t"><b>{{cardT}}</b></div>
+          <div class="rh-a">
+            <button class="lsb {{reCls}}" onClick="{{recheck}}"><svg class="i rf" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.57 12.66A7.6 7.6 0 1 1 17.37 6.63L19.3 8.55"/><path d="M19.3 4.75v3.8h-3.8"/></svg><span>{{reBtn}}</span></button>
+          </div>
+        </div>
+        <div class="utabs" role="tablist" aria-label="Atlatmayla neler açılsın">
+          <button class="{{tab1C}}" role="tab" aria-selected="{{isSvc}}" onClick="{{tab1}}"><span class="gl g-view-grid" aria-hidden="true"></span>Hizmetler<span class="k">{{allN}}</span></button>
+          <button class="{{tab2C}}" role="tab" aria-selected="{{isSites}}" onClick="{{tab2}}"><span class="gl g-internet" aria-hidden="true"></span>Siteler<span class="k">{{sitesN}}</span></button>
+          <button class="{{tab3C}}" role="tab" aria-selected="{{isExc}}" onClick="{{tab3}}"><span class="gl g-prohibition" aria-hidden="true"></span>İstisnalar<span class="k">{{excN}}</span></button>
+        </div>
+
+        <sc-if value="{{isSvc}}" hint-placeholder-val="{{true}}">
+          <div class="lc-row">
+            <label class="search lc-s"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="text" placeholder="Katalogda ara" aria-label="Katalogda ara"></label>
+          </div>
+          <div class="cats" role="tablist" aria-label="Kategoriler">
+            <sc-for list="{{cats}}" as="c" hint-placeholder-count="5">
+              <button class="cat {{c.cls}}" role="tab" aria-selected="{{c.on}}" onClick="{{c.pick}}"><span class="gl g-{{c.g}}" aria-hidden="true"></span>{{c.label}}</button>
+            </sc-for>
+          </div>
+          <div class="grid">
+            <sc-for list="{{tiles}}" as="t" hint-placeholder-count="15">
+              <button class="tile {{t.cls}}" aria-pressed="{{t.on}}" onClick="{{t.flip}}">
+                <span class="mono {{t.tone}}"><span class="gl g-{{t.g}}" aria-hidden="true"></span><span class="ok" aria-hidden="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg></span></span>
+                <span class="tx"><b>{{t.name}}</b><span class="tm"><em class="way {{t.wayC}}">{{t.way}}</em><span>{{t.meta}}</span></span></span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isSites}}" hint-placeholder-val="{{false}}">
+          <div class="addrow">
+            <label class="search add-in"><span class="gl g-internet" aria-hidden="true"></span><input type="text" placeholder="Site ekleyin, örneğin example.com" aria-label="Site adresi" spellcheck="false"></label>
+            <button class="addb" onClick="{{addSite}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ekle</button>
+          </div>
+          <p class="hint">Yalnızca ana adres denetlenir. Başka adreslerden gelen görseller ve videolar yüklenmeyebilir</p>
+          <p class="sec-h">Siteleriniz<span class="n">{{sitesN}}</span></p>
+          <div class="slist">
+            <sc-for list="{{sites}}" as="r" hint-placeholder-count="3">
+              <div class="site"><span class="mono {{r.tone}}"><span class="gl g-internet" aria-hidden="true"></span></span><span class="tx"><b>{{r.host}}</b><span class="tm"><em class="way {{r.wayC}}">{{r.way}}</em><span>{{r.meta}}</span></span></span><sc-if value="{{r.hasAct}}" hint-placeholder-val="{{false}}"><button class="bp-a" onClick="{{r.go}}">{{r.actT}}</button></sc-if><button class="rm" aria-label="Kaldır"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+            </sc-for>
+          </div>
+          <p class="sec-h">Doğrudan açılmayanlar<span class="n new">otomatik</span></p>
+          <div class="slist">
+            <div class="site sug"><span class="mono sand"><span class="gl g-flash" aria-hidden="true"></span></span><span class="tx"><b>news.example.com</b><span>günde 3 başarısız deneme</span></span><button class="addb sm" onClick="{{addSite}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Atlat</button></div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isExc}}" hint-placeholder-val="{{false}}">
+          <div class="addrow">
+            <label class="search add-in"><span class="gl g-search" aria-hidden="true"></span><input type="text" placeholder="Site veya uygulama" aria-label="Site veya uygulama" spellcheck="false"></label>
+            <button class="addb" onClick="{{addSite}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ekle</button>
+          </div>
+          <p class="hint">Atlatmanın engel olduğu şeyleri buraya ekleyin. Nadiren olur: hile korumalı oyunlar, bankalar</p>
+          <p class="sec-h">Atlatmanın dokunmadıkları<span class="n">{{excN}}</span></p>
+          <div class="slist">
+            <div class="site"><span class="mono neu"><span class="gl g-gamepad" aria-hidden="true"></span></span><span class="tx"><b>game.exe</b><span>Hile korumalı oyun</span></span><button class="rm" aria-label="Kaldır"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+            <div class="site"><span class="mono neu"><span class="gl g-bank" aria-hidden="true"></span></span><span class="tx"><b>bank.example.com</b><span>Her zamanki gibi açılır</span></span><button class="rm" aria-label="Kaldır"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button></div>
+            <a class="site sug bp-link" href="Routes.dc.html"><span class="mono sky"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><path d="M8.6 19H16.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h7.9"/></svg></span><span class="tx"><b class="t">“Doğrudan” kümesi</b><span>Atlatma içindekilere de dokunmaz</span></span><span class="bp-go">Aç<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{dt.open}}" hint-placeholder-val="{{false}}">
+          <div class="bp-dts" onClick="{{dt.close}}"></div>
+          <div class="bp-dt" role="dialog" aria-label="{{dt.name}}">
+            <div class="bp-dth">
+              <span class="mono {{dt.tone}}"><span class="gl g-{{dt.g}}" aria-hidden="true"></span></span>
+              <span class="nm"><b>{{dt.name}}</b><span>{{dt.when}}</span></span>
+              <sc-if value="{{dt.hasChip}}" hint-placeholder-val="{{true}}"><span class="vchip sm {{dt.chipC}}"><i></i>{{dt.chipT}}</span></sc-if>
+              <button class="icb" onClick="{{dt.close}}" aria-label="Kapat"><svg class="i s16" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+            </div>
+            <div class="bp-ps">
+              <sc-for list="{{dt.parts}}" as="p" hint-placeholder-count="2">
+                <div class="bp-p {{p.c}}"><i class="bp-d" aria-hidden="true"></i><span class="bp-pn">{{p.n}}</span><span class="bp-po">{{p.o}}</span><span class="bp-pm">{{p.m}}</span></div>
+              </sc-for>
+            </div>
+            <sc-if value="{{dt.hasNote}}" hint-placeholder-val="{{false}}"><p class="bp-note {{dt.noteC}}"><span class="gl g-{{dt.noteI}}" aria-hidden="true"></span>{{dt.noteT}}</p></sc-if>
+            <div class="bp-acts">
+              <button class="bp-a ghost" onClick="{{dt.rm}}">Atlatmadan çıkar</button>
+              <span class="bp-sp"></span>
+              <sc-if value="{{dt.hasAct}}" hint-placeholder-val="{{false}}"><button class="bp-a" onClick="{{dt.go}}">{{dt.actT}}</button></sc-if>
+              <sc-if value="{{dt.hasPri}}" hint-placeholder-val="{{false}}"><button class="bp-a pri" onClick="{{dt.pri}}">{{dt.priT}}</button></sc-if>
+            </div>
+          </div>
+        </sc-if>
+      </section>
+    </main>
+  </div>
+
+</div>
+  <div lang="en" class="dev" role="toolbar" aria-label="Prototype states">
+    <div class="dg"><span class="dl">Network</span><div class="ds"><button class="{{dv.n_home}}" onClick="{{dvSet.n_home}}">Home</button><button class="{{dv.n_slow}}" onClick="{{dvSet.n_slow}}">Throttled</button><button class="{{dv.n_deep}}" onClick="{{dvSet.n_deep}}">Deep search</button><button class="{{dv.n_mobile}}" onClick="{{dvSet.n_mobile}}">Allowlist only</button></div></div>
+    <div class="dg"><span class="dl">Subscription</span><div class="ds"><button class="{{dv.s_yes}}" onClick="{{dvSet.s_yes}}">Yes</button><button class="{{dv.s_no}}" onClick="{{dvSet.s_no}}">No</button></div></div>
+    <div class="dg"><span class="dl">Telegram</span><div class="ds"><button class="{{dv.t_no}}" onClick="{{dvSet.t_no}}">Not linked</button><button class="{{dv.t_yes}}" onClick="{{dvSet.t_yes}}">Linked</button></div></div>
+    <div class="dg"><span class="dl">Theme</span><div class="ds"><button class="{{dv.th_dark}}" onClick="{{dvSet.th_dark}}">Dark</button><button class="{{dv.th_light}}" onClick="{{dvSet.th_light}}">Light</button></div></div>
+  </div>
+</div>

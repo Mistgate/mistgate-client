@@ -67,3 +67,6 @@ html.shell-tray .ty-fly { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--
 /* About: the design's samples of the service's state and its Restart are hidden until they are real; the rows of
    links stay (live-settings points them at the project's pages) */
 .shell .sx-ab .m, .shell .sx-pg:has(> .sx-ab) > .sx-g .sx-row:has(.g-cpu) { display: none; }
+/* The VPN / Bypass switch: the Bypass screens are drawn but the service cannot bypass yet, so in the app the switch
+   would lead to a screen of sample data. Hidden until the service speaks for it. */
+.shell .bp-mode { display: none; }

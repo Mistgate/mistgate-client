@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const ui = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = join(ui, '..', 'design', 'project');
 const out = join(ui, 'src', 'screens');
-const SCREENS = ['Main', 'Routes', 'Diag', 'Settings', 'Tray', 'Setup'];
+const SCREENS = ['Main', 'Bypass', 'Routes', 'RoutesBypass', 'Diag', 'Settings', 'Tray', 'Setup'];
 const KITS = ['TrayIcons', 'Toasts', 'Brand']; // boards about the design itself: English only
 const LANGS = { en: '', ru: 'Ru', fa: 'Fa', zh: 'Zh', tr: 'Tr' };
 const blob = (s) => s.replace(/\/_blob\/([a-f0-9]{32})/g, '/blob/$1.svg');

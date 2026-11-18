@@ -3070,3 +3070,323 @@ a.det{text-decoration:none}
 /* стрелки «дальше» и «назад» смотрят в обратную сторону */
 [dir=rtl] svg:has(>path[d="m9 6 6 6-6 6"]),[dir=rtl] svg:has(>path[d="m15 6-6 6 6 6"]){scale:-1 1}
 [dir=rtl] .cats::before{transform:translateX(calc(-1*var(--px)))}
+
+/* bypass:start */
+/* Mistgate · режим «Обход» и матрица-волна на canvas. Подключается после app.css. Свои классы — с префиксом bp-. */
+
+/* матрица: точки рисует canvas, волна от кнопки смещает их и подсвечивает цветом состояния */
+.mg .mx .mxc{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mg .mx:has(.mxc) i{display:none}
+.mg .wave .wvc{position:absolute;inset:0;width:100%;height:100%;display:block;mix-blend-mode:var(--wave-blend,screen)}
+.mg .wave:has(.wvc) i{display:none}
+
+/* цвет «обход работает»: заливки берут --bp, текст — --sky (в светлой теме он тёмный и читается) */
+.mg{--bp:var(--sky);--bp-bad:var(--tone-rose);--bp-lav:var(--tone-lav);--bp-neu:color-mix(in oklab,var(--text) 60%,var(--surface))}
+.mg.t-light{--bp:#5fb2e3;--bp-bad:#e88c9a;--bp-lav:#a899f0;--bp-neu:color-mix(in oklab,var(--text) 30%,var(--surface))}
+
+/* переключатель режима в шапке окна */
+.mg .bp-mode{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:0;margin-inline:16px auto;padding:3px;border-radius:11px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair);isolation:isolate;flex:none}
+.mg .bp-mode~.bn{margin-inline-start:12px}
+.mg .bp-mode::before{content:"";position:absolute;z-index:-1;left:3px;top:3px;bottom:3px;width:calc((100% - 8px) / 2);border-radius:8px;background:var(--raise);transition:transform .42s var(--e-spring,ease)}
+.mg .bp-mode.m2::before{transform:translateX(calc(100% + 2px))}
+.mg .bp-mode a{display:flex;align-items:center;justify-content:center;gap:6px;height:26px;padding:0 12px;border-radius:8px;color:var(--muted);font:600 13px/1 var(--sans);white-space:nowrap;text-decoration:none;transition:color .2s ease}
+.mg .bp-mode a:hover{color:var(--text)}
+.mg .bp-mode a.on{color:var(--text)}
+.mg .bp-mode a .i{width:14px;height:14px}
+.mg .bp-mode a.on .i{color:var(--accent-text)}
+.mg .bp-mode.m2 a.on .i{color:var(--sky)}
+
+/* сцена: «обход работает» — небесный, как метка «напрямую»; мятный остаётся только за «подключено» */
+.mg .stage.bp-st.s-on{--st:var(--bp)}
+.mg .stage.bp-st.s-on.bp-warn{--st:var(--warning)}
+.mg .stage.bp-st.s-on.bp-dead,.mg .stage.bp-st.bp-err{--st:var(--bp-bad)}
+.mg .bp-st .pw .lay.l-on{background:radial-gradient(120% 120% at 32% 22%,color-mix(in oklab,var(--st),#fff 32%) 0%,var(--st) 46%,color-mix(in oklab,var(--st),#000 18%) 100%)}
+.mg .bp-st .ring.r-on{background:conic-gradient(from var(--spin),var(--st),color-mix(in oklab,var(--st),#fff 45%),color-mix(in oklab,var(--st) 55%,var(--tone-lav)),color-mix(in oklab,var(--st) 20%,transparent),var(--st))}
+.mg .bp-st .halo::after{box-shadow:0 0 0 1.5px color-mix(in oklab,var(--st) 55%,transparent)}
+.mg .bp-chip{background:color-mix(in oklab,var(--st) 14%,transparent);color:var(--sky);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--st) 22%,transparent)}
+.mg .bp-chip .dot{background:var(--st);box-shadow:0 0 0 3px color-mix(in oklab,var(--st) 25%,transparent)}
+.mg .bp-chip.busy .dot{animation:bp-blink 1s ease-in-out infinite}
+.mg .bp-n{margin-top:10px;font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.035em;text-align:center}
+.mg .bp-n b{font:600 30px/1 var(--mono);letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.mg .bp-n small{font-size:inherit;color:var(--muted);font-weight:600}
+.mg .bp-st .ttl.bad{color:var(--tone-rose)}
+.mg .bp-st .comet::after{background:linear-gradient(90deg,transparent,var(--st) 60%,color-mix(in oklab,var(--st) 40%,#fff));box-shadow:0 0 10px var(--st)}
+.mg .bp-st .cstep b{font:600 12.5px/1 var(--mono);color:var(--muted);margin-left:8px}
+
+/* низ сцены: строка действия и честная оговорка */
+.mg .bp-bar{display:flex;align-items:stretch;width:392px;height:60px;padding:4px;border-radius:16px;background:var(--surface-2)}
+.mg .bp-bar>*{display:flex;align-items:center;gap:10px;min-width:0;padding:0 10px;border:0;border-radius:12px;background:none;color:inherit;text-align:left;font:inherit}
+.mg .bp-bar button{flex:1;cursor:pointer;transition:background .2s ease}
+.mg .bp-bar button:hover{background:var(--raise)}
+.mg .bp-bar .bp-set{width:136px;flex:none;padding:0 12px}
+.mg .bp-bar .tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mg .bp-bar .tx b{font-size:14px;line-height:1.25;font-weight:650;white-space:nowrap}
+.mg .bp-bar .tx span{font-size:12px;line-height:1.3;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mg .bp-bar .tx .m{font-family:var(--mono);font-size:11.5px}
+.mg .bp-bar .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;background:color-mix(in oklab,var(--st) 14%,transparent);color:var(--st)}
+.mg .bp-bar .pic.neu{background:color-mix(in oklab,var(--text) 7%,transparent);color:var(--muted)}
+.mg .bp-bar .pic .i,.mg .bp-bar .pic .gl{width:16px;height:16px}
+.mg .bp-bar .busy .i{animation:mg-rot .9s linear infinite}
+.mg .bp-det{display:inline-flex;align-items:center;gap:8px;margin-top:14px;height:36px;padding:0 6px 0 12px;border:0;border-radius:18px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair);color:var(--text);font:500 13px/1 var(--sans);white-space:nowrap;cursor:pointer}
+.mg .bp-det .gl{width:16px;height:16px;color:var(--muted)}
+.mg .bp-det.warn .gl{color:var(--warning-text)}
+.mg .bp-det.bad .gl{color:var(--tone-rose)}
+.mg .bp-det b{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 4px 0 9px;border-radius:12px;font-weight:700;color:var(--accent-text)}
+.mg .bp-det:hover b{background:var(--accent-soft)}
+.mg .bp-det b .i{width:14px;height:14px}
+
+/* три факта под сценой: подпись с иконкой, значение, пояснение — без плиток, всё по сетке 4px */
+.mg .bp-plan{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;padding:16px 4px;border-radius:16px}
+.mg .bp-f{position:relative;display:grid;grid-template-rows:16px 20px 16px;row-gap:4px;align-content:center;min-width:0;padding:0 16px}
+.mg .bp-f+.bp-f::before{content:"";position:absolute;inset-inline-start:0;top:4px;bottom:4px;width:1px;background:var(--border)}
+.mg .bp-f .k{display:flex;align-items:center;gap:6px;height:16px;font-size:12px;line-height:16px;font-weight:600;color:var(--muted);white-space:nowrap}
+.mg .bp-f .k .gl{width:14px;height:14px;flex:none;opacity:.9}
+.mg .bp-f .k i{display:none;width:6px;height:6px;border-radius:50%;background:var(--warning);flex:none}
+.mg .bp-f .k i.new{display:block}
+.mg .bp-f b{height:20px;font-size:15px;line-height:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mg .bp-f .s{height:16px;font-size:12px;line-height:16px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* правая панель */
+.mg .bp-h{display:flex;align-items:center;gap:11px;padding:16px 12px 12px 16px;flex:none}
+.mg .bp-h .nm b{font-size:15.5px;font-weight:700;letter-spacing:-.015em}
+.mg .bp-h .icb{cursor:pointer}
+.mg .bp-h .icb:hover{background:var(--surface-2);color:var(--text)}
+.mg .bp-h .icb.busy .i{animation:mg-rot .9s linear infinite}
+.mg .bp-tabs{padding:0 14px 10px;flex:none}
+.mg .bp-seg{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:3px;border-radius:11px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair);isolation:isolate}
+.mg .bp-seg::before{content:"";position:absolute;z-index:-1;left:3px;top:3px;bottom:3px;width:calc((100% - 10px) / 3);border-radius:8px;background:var(--raise);transition:transform .42s var(--e-spring,ease)}
+.mg .bp-seg.t2::before{transform:translateX(calc(100% + 2px))}
+.mg .bp-seg.t3::before{transform:translateX(calc(200% + 4px))}
+.mg .bp-seg button{display:flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 8px;border:0;border-radius:8px;background:none;color:var(--muted);font:600 13px/1 var(--sans);white-space:nowrap;cursor:pointer;transition:color .2s ease}
+.mg .bp-seg button.on{color:var(--text)}
+.mg .bp-seg .k{display:inline-grid;place-items:center;min-width:18px;height:16px;padding:0 5px;border-radius:8px;background:var(--track);font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.mg .bp-list{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;display:flex;flex-direction:column;gap:8px;padding:2px 12px 16px}
+.mg .bp-list::-webkit-scrollbar{display:none}
+
+/* сводка: один сегмент на сервис */
+.mg .bp-sum{display:flex;align-items:center;gap:10px;margin:0 14px 10px;padding:0 4px;flex:none}
+.mg .bp-segs{display:flex;gap:3px;flex:none}
+.mg .bp-segs i{width:18px;height:6px;border-radius:3px;background:var(--track);transition:background .4s ease,transform .4s var(--e-spring,ease)}
+.mg .bp-segs i.sg-ok{background:var(--bp)}
+.mg .bp-segs i.sg-slow{background:var(--warning)}
+.mg .bp-segs i.sg-bad{background:var(--bp-bad)}
+.mg .bp-segs i.sg-vpn,.mg .bp-segs i.sg-deep{background:var(--bp-lav)}
+.mg .bp-segs i.sg-chk{background:linear-gradient(90deg,var(--track),color-mix(in oklab,var(--text) 40%,transparent),var(--track)) 0 0/200% 100%;animation:bp-run 1.1s linear infinite}
+.mg .bp-sumt b{font:600 12.5px/1 var(--mono);color:var(--text)}
+.mg .bp-sumt{flex:1;min-width:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* строка сервиса: свёрнута — статусы частей точками, раскрыта — подробности и действия */
+.mg .bp-list{gap:6px}
+.mg .bp-s{flex:none;border-radius:14px;background:none;box-shadow:inset 0 0 0 1px transparent;overflow:hidden;transition:background .25s ease,box-shadow .3s ease}
+.mg .bp-s:hover{background:var(--surface-2)}
+.mg .bp-s.open{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair)}
+.mg .bp-s.hit{animation:bp-hit .9s ease both}
+.mg .bp-s.dis .mono,.mg .bp-s.dis .nm{opacity:.5}
+.mg .bp-sh{display:flex;align-items:center;gap:11px;min-height:52px;padding:7px 8px 7px 10px;cursor:pointer;outline:none}
+.mg .bp-sh:focus-visible{box-shadow:inset 0 0 0 2px var(--accent-line)}
+.mg .bp-sh .nm{gap:4px}
+.mg .bp-sh .nm b{font-size:14.5px}
+.mg .bp-sh .nm>span{font-size:12px}
+.mg .bp-mini{display:flex!important;align-items:center;gap:10px;overflow:hidden}
+.mg .bp-mini em{display:inline-flex;align-items:center;gap:5px;font-style:normal;white-space:nowrap;color:var(--muted)}
+.mg .bp-mini em i{width:6px;height:6px;border-radius:50%;background:var(--pc,var(--faint));flex:none}
+.mg .bp-mini em.p-by{--pc:var(--bp)}
+.mg .bp-mini em.p-self{--pc:color-mix(in oklab,var(--text) 62%,transparent)}
+.mg .bp-mini em.p-slow{--pc:var(--warning);color:var(--warning-text)}
+.mg .bp-mini em.p-bad{--pc:var(--bp-bad);color:var(--tone-rose)}
+.mg .bp-mini em.p-deep,.mg .bp-mini em.p-vpn{--pc:var(--bp-lav)}
+.mg .bp-mini em.p-none i{background:none;box-shadow:inset 0 0 0 1.5px var(--faint)}
+.mg .bp-mini em.p-chk i,.mg .bp-mini em.p-deep i,.mg .bp-mini em.p-re i{animation:bp-blink 1s ease-in-out infinite}
+.mg .bp-mini em.p-in{animation:bp-in .5s var(--e-out,ease) both}
+.mg .bp-one{display:block}
+.mg .bp-chev{width:16px;height:16px;color:var(--faint);flex:none;transition:transform .3s var(--e-out,ease),color .2s ease}
+.mg .bp-s:hover .bp-chev{color:var(--muted)}
+.mg .bp-s.open .bp-chev{transform:rotate(180deg);color:var(--muted)}
+.mg .bp-sh .sw{flex:none}
+.mg .bp-body{animation:bp-open .32s var(--e-out,ease) both}
+.mg .bp-acts{display:flex;align-items:center;gap:6px;margin:0 10px 10px}
+.mg .bp-when{flex:1;min-width:0;padding-left:2px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mg .bp-a{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:0;border-radius:9px;background:var(--raise);color:var(--text);font:600 12.5px/1 var(--sans);white-space:nowrap;flex:none;cursor:pointer;transition:background .2s ease,transform .15s ease,filter .2s ease}
+.mg .bp-a:hover{background:color-mix(in oklab,var(--text) 14%,var(--surface-2))}
+.mg .bp-a:active{transform:scale(.97)}
+.mg .bp-a.pri{background:var(--accent);color:var(--ink)}
+.mg .bp-a.pri:hover{background:var(--accent);filter:brightness(1.07)}
+.mg .bp-a.ghost{background:none;color:var(--muted)}
+.mg .bp-a.ghost:hover{background:var(--raise);color:var(--text)}
+.mg .bp-a .i{width:14px;height:14px}
+.mg .bp-ps{display:flex;flex-direction:column;margin:0 10px 8px;border-radius:10px;background:color-mix(in oklab,var(--bg) 55%,var(--surface-2))}
+.mg .bp-p{display:grid;grid-template-columns:8px 108px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:32px;padding:0 11px;font-size:12.5px;line-height:1.3}
+.mg .bp-p+.bp-p{box-shadow:inset 0 1px 0 var(--hair)}
+.mg .bp-pn{font-weight:600;white-space:nowrap}
+.mg .bp-po{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mg .bp-pm{font:600 11.5px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mg .bp-d{width:8px;height:8px;border-radius:50%;background:var(--pc,var(--faint));box-shadow:0 0 0 3px color-mix(in oklab,var(--pc,transparent) 18%,transparent)}
+.mg .bp-p.p-by{--pc:var(--bp)}
+.mg .bp-p.p-by .bp-po{color:var(--sky)}
+.mg .bp-p.p-self{--pc:color-mix(in oklab,var(--text) 62%,transparent)}
+.mg .bp-p.p-self .bp-po{color:var(--text)}
+.mg .bp-p.p-slow{--pc:var(--warning)}
+.mg .bp-p.p-slow .bp-po,.mg .bp-p.p-slow .bp-pm{color:var(--warning-text)}
+.mg .bp-p.p-bad{--pc:var(--bp-bad)}
+.mg .bp-p.p-bad .bp-po{color:var(--tone-rose)}
+.mg .bp-p.p-deep{--pc:var(--bp-lav)}
+.mg .bp-p.p-deep .bp-po{color:var(--tone-lav)}
+.mg .bp-p.p-deep .bp-d,.mg .bp-p.p-chk .bp-d,.mg .bp-p.p-re .bp-d{animation:bp-blink 1s ease-in-out infinite}
+.mg .bp-p.p-vpn{--pc:var(--bp-lav)}
+.mg .bp-p.p-vpn .bp-po{color:var(--tone-lav)}
+.mg .bp-p.p-none .bp-d,.mg .bp-p.p-off .bp-d{background:none;box-shadow:inset 0 0 0 1.5px var(--faint)}
+.mg .bp-p.p-chk{--pc:var(--muted)}
+.mg .bp-p.p-chk .bp-po{background:linear-gradient(100deg,var(--muted) 35%,var(--text) 50%,var(--muted) 65%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:mg-shim 2.2s linear infinite}
+.mg .bp-p.p-in{animation:bp-in .5s var(--e-out,ease) both}
+.mg .bp-note{display:flex;align-items:flex-start;gap:8px;margin:0 10px 9px;padding:0 2px;font-size:12px;line-height:1.4;color:var(--muted)}
+.mg .bp-note .gl{width:14px;height:14px;margin-top:1.5px;flex:none}
+.mg .bp-note.sky{color:var(--sky)}
+.mg .bp-note.warn{color:var(--warning-text)}
+
+/* свои сайты и исключения: поле с кнопкой внутри, строки без общей рамки */
+.mg .bp-field{display:flex;align-items:center;gap:10px;height:44px;padding:0 6px 0 12px;border-radius:13px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hair);color:var(--muted);flex:none;transition:box-shadow .2s ease}
+.mg .bp-field:focus-within{box-shadow:inset 0 0 0 1.5px var(--accent-line)}
+.mg .bp-field .gl{width:16px;height:16px;flex:none}
+.mg .bp-field input{flex:1;min-width:0;height:100%;padding:0;border:0;background:none;color:var(--text);font:500 13px/1 var(--mono);outline:none}
+.mg .bp-field input::placeholder{color:var(--muted)}
+.mg .bp-field .bp-a{height:32px}
+.mg .bp-lbl{padding:8px 10px 0;font-size:12px;font-weight:600;color:var(--muted);flex:none}
+.mg .bp-r{display:flex;align-items:center;gap:11px;min-height:52px;padding:7px 8px 7px 10px;border-radius:14px;color:inherit;text-decoration:none;flex:none;transition:background .25s ease}
+.mg .bp-r:hover{background:var(--surface-2)}
+.mg .bp-r .nm{gap:3px}
+.mg .bp-r .nm b{display:block;overflow:hidden;text-overflow:ellipsis;font:600 12.5px/1.3 var(--mono);letter-spacing:-.01em}
+.mg .bp-r .nm b.t{font:650 14px/1.3 var(--sans)}
+.mg .bp-r .nm>span{display:block;font-size:12px}
+.mg .bp-r .bp-x{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:9px;background:none;color:var(--muted);cursor:pointer;opacity:0;flex:none;transition:opacity .2s ease,background .2s ease}
+.mg .bp-r:hover .bp-x,.mg .bp-r .bp-x:focus-visible{opacity:1}
+.mg .bp-r .bp-x:hover{background:var(--raise);color:var(--text)}
+.mg .bp-r .bp-x .i{width:14px;height:14px}
+.mg .bp-go{display:inline-flex;align-items:center;gap:2px;font-size:12.5px;font-weight:700;color:var(--accent-text);flex:none}
+.mg .bp-go .i{width:14px;height:14px}
+.mg .bp-foot{display:flex;align-items:flex-start;gap:8px;margin-top:6px;padding:0 10px;font-size:12px;line-height:1.45;color:var(--muted);flex:none}
+.mg .bp-foot .gl{width:14px;height:14px;margin-top:1.5px;flex:none}
+
+/* лист «Что умеет обход» */
+.mg .bp-sheet{width:440px;gap:14px;padding:22px 22px 18px}
+.mg .bp-sheet h3{margin:0;font-size:19px;line-height:1.25;font-weight:800;letter-spacing:-.025em}
+.mg .bp-sheet .bp-cmp{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mg .bp-sheet .bp-col{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:14px;background:var(--surface-2)}
+.mg .bp-sheet .bp-col>b{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:700}
+.mg .bp-sheet .bp-col>b i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.mg .bp-sheet .bp-col p{display:flex;align-items:flex-start;gap:7px;margin:0;font-size:12.5px;line-height:1.4;color:color-mix(in oklab,var(--text) 82%,transparent)}
+.mg .bp-sheet .bp-col p .i{width:14px;height:14px;margin-top:1.5px;stroke-width:2.6;flex:none}
+.mg .bp-sheet .bp-col p.y .i{color:var(--c)}
+.mg .bp-sheet .bp-col p.n{color:var(--muted)}
+.mg .bp-sheet .bp-col p.n .i{color:var(--faint)}
+.mg .bp-sheet .bp-ord{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.mg .bp-sheet .bp-ord .i{width:13px;height:13px;color:var(--faint)}
+.mg .bp-sheet .cf-a{display:grid;grid-template-columns:1fr;margin-top:2px}
+
+@keyframes bp-run{0%{background-position:200% 0}100%{background-position:0 0}}
+@keyframes bp-open{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:none}}
+@keyframes bp-blink{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes bp-in{0%{opacity:0;transform:translateX(-6px)}100%{opacity:1;transform:none}}
+@keyframes bp-hit{0%{background:color-mix(in oklab,var(--sky) 12%,transparent)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){.mg .bp-p.p-in,.mg .bp-s.hit,.mg .bp-chip.busy .dot,.mg .bp-p .bp-d{animation:none}}
+
+/* две вкладки на главной обхода */
+.mg .bp-seg.two{grid-template-columns:1fr 1fr}
+.mg .bp-seg.two::before{width:calc((100% - 8px) / 2)}
+.mg .bp-seg.two.m2::before{transform:translateX(calc(100% + 2px))}
+.mg .bp-list .bp-link{margin-top:4px;box-shadow:inset 0 0 0 1px var(--hair)}
+.mg .bp-mode a.lock{opacity:.5}
+.mg .tb:has(.tbs) .bp-mode{margin-inline-end:0}
+.mg .bp-mode~.tbs{margin-inline-start:12px}
+.mg .tbs.bp-on .tbs-d{background:var(--bp);box-shadow:0 0 0 3px color-mix(in oklab,var(--bp) 22%,transparent)}
+.mg .tbs.bp-on .tbs-p{color:var(--sky)}
+.mg .tbs.bp-bad .tbs-d{background:var(--bp-bad)}
+
+/* маршруты для обхода: слева порядок и настройка, справа каталог из «Маршрутов» */
+.mg .bp-flow{display:flex;flex-direction:column;padding:14px 14px 6px;border-radius:16px;background:var(--surface)}
+.mg .bp-flow-h{margin:0 0 10px;font-size:12px;font-weight:600;color:var(--muted)}
+.mg .bp-step{position:relative;display:flex;align-items:center;gap:12px;min-height:48px;padding-bottom:8px}
+.mg .bp-step>em{position:relative;z-index:1;width:10px;height:10px;margin:0 3px;border-radius:50%;background:var(--surface);box-shadow:inset 0 0 0 2px var(--faint);flex:none;align-self:flex-start;margin-top:5px}
+.mg .bp-step::after{content:"";position:absolute;inset-inline-start:7.5px;top:17px;bottom:-5px;width:1px;background:var(--border)}
+.mg .bp-flow>:last-child .bp-step::after,.mg .bp-flow>.bp-step:last-child::after{display:none}
+.mg .bp-step .tx{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.mg .bp-step b{font-size:14px;line-height:20px;font-weight:650}
+.mg .bp-step .tx span{font-size:12px;line-height:16px;color:var(--muted)}
+.mg .bp-step.bp-cur>em{background:var(--bp);box-shadow:0 0 0 3px color-mix(in oklab,var(--bp) 22%,transparent)}
+.mg .bp-step.bp-cur b{color:var(--sky)}
+.mg .bp-step.bp-vpn>em{box-shadow:inset 0 0 0 2px var(--bp-lav)}
+.mg .bp-step.bp-dim b{color:var(--muted)}
+.mg .bp-opt{display:flex;align-items:center;gap:12px;margin-top:8px;padding:12px 14px;border-radius:16px;background:var(--surface)}
+.mg .bp-opt .tx{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.mg .bp-opt b{font-size:14px;line-height:1.3;font-weight:650}
+.mg .bp-opt .tx span{font-size:12px;line-height:1.4;color:var(--muted)}
+.mg .bp-card{position:relative;overflow:hidden}
+.mg .bp-card .grid{grid-auto-rows:64px}
+.mg .tile .tx .way.bp-w-ok,.mg .site .way.bp-w-ok{color:var(--sky)}
+.mg .tile .tx .way.bp-w-self,.mg .site .way.bp-w-self{color:color-mix(in oklab,var(--text) 88%,transparent)}
+.mg .tile .tx .way.bp-w-slow,.mg .site .way.bp-w-slow{color:var(--warning-text)}
+.mg .tile .tx .way.bp-w-bad,.mg .site .way.bp-w-bad{color:var(--tone-rose)}
+.mg .tile .tx .way.bp-w-deep,.mg .tile .tx .way.bp-w-vpn,.mg .site .way.bp-w-vpn{color:var(--tone-lav)}
+.mg .tile .tx .way.bp-w-todo{color:var(--accent-text)}
+.mg .tile .tx .way.bp-w-chk{background:linear-gradient(100deg,var(--muted) 35%,var(--text) 50%,var(--muted) 65%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:mg-shim 2.2s linear infinite}
+.mg .tile .tx .way.hide,.mg .site .way.hide{display:none}
+.mg .tile.on[class*="bp-t-"]{--tc:var(--bp);background:color-mix(in oklab,var(--tc) 9%,transparent);box-shadow:inset 0 0 0 1.5px color-mix(in oklab,var(--tc) 38%,transparent)}
+.mg .tile.on[class*="bp-t-"] .ok{background:var(--tc);color:var(--ink)}
+.mg .tile.on.bp-t-self,.mg .tile.on.bp-t-none,.mg .tile.on.bp-t-chk{--tc:var(--bp-neu)}
+.mg .tile.on.bp-t-slow{--tc:var(--warning)}
+.mg .tile.on.bp-t-bad{--tc:var(--bp-bad)}
+.mg .tile.on.bp-t-deep,.mg .tile.on.bp-t-vpn{--tc:var(--bp-lav)}
+.mg .tile.on.bp-t-todo{--tc:var(--accent)}
+.mg .tile.bp-hit{animation:bp-pop .5s var(--e-spring,ease)}
+.mg .site .tx .tm{display:flex;align-items:center;gap:5px;min-width:0}
+.mg .site .way{flex:none;font-style:normal;font-size:12px;font-weight:700}
+.mg .site .way.sep::after{content:"·";margin-inline-start:5px;font-weight:500;color:var(--muted)}
+.mg a.site{color:inherit;text-decoration:none}
+.mg .site b.t{font:650 14px/1.2 var(--sans)}
+.mg .bp-dts{position:absolute;inset:0;z-index:7;background:color-mix(in oklab,var(--bg) 55%,transparent);animation:mg-fade .2s ease both}
+.mg .bp-dt{position:absolute;z-index:8;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;padding:6px 0 0;border-radius:16px;background:var(--surface-2);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--text) 9%,transparent),0 -24px 60px -20px rgba(0,0,0,.7);animation:bp-up .34s var(--e-out,ease) both}
+.mg .bp-dth{display:flex;align-items:center;gap:11px;padding:8px 8px 10px 12px}
+.mg .bp-dth .nm b{font-size:15.5px;font-weight:700}
+.mg .bp-dth .icb{cursor:pointer}
+.mg .bp-dt .bp-ps{background:color-mix(in oklab,var(--bg) 55%,var(--surface-2))}
+.mg .bp-dt .bp-acts{margin-top:2px}
+.mg .bp-sp{flex:1}
+@keyframes bp-up{0%{opacity:0;transform:translateY(16px)}100%{opacity:1;transform:none}}
+@keyframes bp-pop{0%{transform:scale(.96)}100%{transform:none}}
+
+/* светлая тема: плашки белые с волосяной рамкой, как на главной VPN */
+.mg.t-light .bp-bar,.mg.t-light .bp-det{background:var(--surface);box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .bp-bar button:hover{background:var(--surface-2)}
+.mg.t-light .bp-mode,.mg.t-light .bp-seg{background:color-mix(in oklab,var(--text) 6%,transparent);box-shadow:none}
+.mg.t-light .bp-mode::before,.mg.t-light .bp-seg::before{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08),0 0 0 1px var(--border)}
+.mg.t-light .bp-s:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
+.mg.t-light .bp-s.open{background:color-mix(in oklab,var(--text) 3%,transparent);box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .bp-ps{background:#fff;box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .bp-a{background:#fff;box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .bp-a.pri,.mg.t-light .bp-a.ghost{box-shadow:none}
+.mg.t-light .bp-a.ghost{background:none}
+.mg.t-light .bp-a.pri{background:var(--accent)}
+.mg.t-light .bp-r:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
+.mg.t-light .bp-list .bp-link{box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .bp-flow,.mg.t-light .bp-opt{box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .bp-dt{background:#fff;box-shadow:0 0 0 1px var(--border),0 -18px 50px -18px rgba(40,34,80,.28)}
+.mg.t-light .bp-dt .bp-ps{background:color-mix(in oklab,var(--text) 3%,transparent);box-shadow:inset 0 0 0 1px var(--border)}
+.mg.t-light .tile.on[class*="bp-t-"]{background:color-mix(in oklab,var(--tc) 10%,#fff)}
+.mg.t-light .tile.on[class*="bp-t-"] .ok{color:#fff}
+.mg.t-light .bp-dts{background:color-mix(in oklab,var(--bg) 62%,transparent)}
+.mg.t-light .bp-segs i{background:color-mix(in oklab,var(--text) 10%,transparent)}
+.mg.t-light .bp-segs i.sg-ok{background:var(--bp)}
+.mg.t-light .bp-segs i.sg-slow{background:var(--warning)}
+.mg.t-light .bp-segs i.sg-bad{background:var(--bp-bad)}
+.mg.t-light .bp-segs i.sg-vpn,.mg.t-light .bp-segs i.sg-deep{background:var(--bp-lav)}
+
+/* тумблер в светлой теме: белая ручка вместо чёрной — правило общее для всего приложения */
+.t-light .sw.on::after{background:#fff}
+
+/* справа налево */
+[dir=rtl] .mg .bp-mode::before,[dir=rtl] .mg .bp-seg::before{left:auto;right:3px}
+[dir=rtl] .mg .bp-mode.m2::before,[dir=rtl] .mg .bp-seg.t2::before{transform:translateX(calc(-100% - 2px))}
+[dir=rtl] .mg .bp-seg.t3::before{transform:translateX(calc(-200% - 4px))}
+[dir=rtl] .mg .bp-bar>*,[dir=rtl] .mg .bp-sh{text-align:right}
+[dir=rtl] .mg .bp-det b .i,[dir=rtl] .mg .bp-go .i,[dir=rtl] .mg .bp-ord .i{transform:scaleX(-1)}
+[dir=rtl] .mg .bp-field input{font-family:var(--sans)}
+/* bypass:end */

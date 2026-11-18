@@ -26,6 +26,7 @@
 
   <div class="content">
     <header class="tb">
+    <div class="bp-mode" role="tablist" aria-label="Mod"><a role="tab" class="on" aria-selected="true" href="TrMain.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/></svg>VPN</a><a role="tab" class="" aria-selected="false" href="TrBypass.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="2.2"/><path d="M3 15h2.2a6.8 6.8 0 0 1 13.6 0H21"/></svg>Atlatma</a></div>
     <sc-if value="{{bn.on}}" hint-placeholder-val="{{false}}">
     <div class="bn {{bn.tone}}" role="status">
       <a class="bn-m" href="{{bn.href}}"><span class="gl g-{{bn.icon}}" aria-hidden="true"></span><b>{{bn.t}}</b><span class="bn-s {{bn.sC}}">{{bn.s}}</span></a>
@@ -43,7 +44,7 @@
     <main class="body">
       <div class="left">
       <section class="stage s-{{phase}} {{blkCls}} {{csCls}}" aria-label="Bağlantı">
-        <div class="mx" aria-hidden="true"><i class="m0"></i><i class="m1"></i><i class="m2"></i><i class="m3"></i><i class="m4"></i><i class="m5"></i><i class="m6"></i></div>
+        <div class="mx" aria-hidden="true"><canvas class="mxc"></canvas><i class="m0"></i><i class="m1"></i><i class="m2"></i><i class="m3"></i><i class="m4"></i><i class="m5"></i><i class="m6"></i></div>
 
         <sc-if value="{{isNone}}" hint-placeholder-val="{{false}}">
           <div class="onb">
@@ -411,7 +412,7 @@
   </sc-if>
 
   <sc-if value="{{wave}}" hint-placeholder-val="{{false}}">
-    <div class="wave" aria-hidden="true"><i></i></div>
+    <div class="wave" aria-hidden="true"><canvas class="wvc"></canvas><i></i></div>
   </sc-if>
 
 </div>
@@ -431,15 +432,60 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"state":{"editor":"enum","options":["on","off","ing","sw"],"default":"on","section":"State"},"wl":{"editor":"enum","options":["none","yes","down"],"default":"none","section":"State"},"wln":{"editor":"enum","options":["1","3","5"],"default":"1","section":"State"},"wltip":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"udp":{"editor":"enum","options":["no","yes"],"default":"no","section":"State"},"prof":{"editor":"enum","options":["auto","h2","vt","awg","tt"],"default":"auto","section":"State"},"sel":{"editor":"enum","options":["auto","de","nl","ru","wl"],"default":"auto","section":"State"},"list":{"editor":"enum","options":["top","end"],"default":"top","section":"State"},"tab":{"editor":"enum","options":["vpn","telegram"],"default":"vpn","section":"State"},"pop":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"subs":{"editor":"enum","options":["closed","open"],"default":"closed","section":"State"},"sub":{"editor":"enum","options":["mine","work","family","test","expired","none"],"default":"mine","section":"State"},"srv":{"editor":"enum","options":["0","2","8","24"],"default":"8","section":"State"},"telegram":{"editor":"enum","options":["ok","missing"],"default":"ok","section":"State"},"add":{"editor":"enum","options":["none","check","confirm","consent","badlink","limit","expired","offline","drop","basic"],"default":"none","section":"State"},"banner":{"editor":"enum","options":["none","news","debug","update","newver"],"default":"none","section":"State"},"det":{"editor":"enum","options":["udp","dpi","none"],"default":"udp","section":"State"},"subst":{"editor":"enum","options":["ok","removed","stale"],"default":"ok","section":"State"},"brand":{"editor":"enum","options":["mistgate","polar","sunline","onyx"],"default":"mistgate","section":"Look"},"conn":{"editor":"enum","options":["none","rec","offline","error","ks","svc"],"default":"none","section":"State"},"why":{"editor":"enum","options":["net","sleep"],"default":"net","section":"State"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Look"},"accent":{"editor":"enum","options":["lavender","mint","sand","rose"],"default":"lavender","section":"Look"},"$preview":{"width":1160,"height":800}}'>
 class Component extends DCLogic {
-  componentDidMount() {
+  componentDidMount() { this.mxBoot();
     if (this.props.list === 'end') setTimeout(() => { const l = document.querySelector('.list'); if (l) l.scrollTop = l.scrollHeight; }, 700);
     if (this.props.wltip === 'open') setTimeout(() => this.wlTip(), 1100);
     this.tick = setInterval(() => {
       if (this.phase() === 'on') this.setState({ secs: this.secs() + 1 });
     }, 1000);
   }
-  componentWillUnmount() {
+  componentWillUnmount() { if (this._mxOff) this._mxOff();
     clearInterval(this.tick); clearTimeout(this.t1); clearTimeout(this.t2);
+  }
+  mxBoot() {
+    const S = 12, self = this; let raf = 0, cv = null, ctx = null, W = 0, H = 0, dpr = 1, pts = [], cx = 0, cy = 0, waves = [], ph = '', emitAt = 0, col = '#b8acf2', base = '255,255,255', readAt = 0, px = -9999, py = -9999, still = false, wv = null, wvT = 0;
+    try { still = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    const fit = (c) => { const w = c.offsetWidth, h = c.offsetHeight; if (!w || !h) return false; dpr = Math.min(2, window.devicePixelRatio || 1); c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); return true; };
+    const grid = () => { pts = []; const ox = ((W % S) / 2) + S / 2, oy = ((H % S) / 2) + S / 2; for (let y = oy; y < H; y += S) for (let x = ox; x < W; x += S) { const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; pts.push([x, y, (h - Math.floor(h)) * 6.283]); } };
+    const emit = (amp, w, v, a) => waves.push({ t: performance.now(), amp: amp, w: w, v: v, a: a });
+    this._mxPulse = (k) => emit(5 * (k || 1), 30, 300, .8 * (k || 1));
+    const frame = (now) => {
+      raf = requestAnimationFrame(frame);
+      const root = document.querySelector('.mg.app'), stage = root && root.querySelector('.stage'); if (!stage) return;
+      const c = stage.querySelector('.mxc'); if (!c) return;
+      if (c !== cv || c.offsetWidth !== W || c.offsetHeight !== H) { cv = c; if (!fit(c)) return; W = c.offsetWidth; H = c.offsetHeight; ctx = c.getContext('2d'); grid(); readAt = 0; }
+      if (now > readAt) { readAt = now + 240; const cs = getComputedStyle(stage), v = cs.getPropertyValue('--st').trim(); if (v) col = v; base = root.classList.contains('t-light') ? '20,20,28' : '255,255,255';
+        const o = stage.querySelector('.orb'), a = c.getBoundingClientRect(); if (o && a.width) { const b = o.getBoundingClientRect(), k = W / a.width; cx = (b.left + b.width / 2 - a.left) * k; cy = (b.top + b.height / 2 - a.top) * k; } else { cx = W / 2; cy = H / 2; } }
+      const p2 = stage.classList.contains('s-on') ? 'on' : stage.classList.contains('s-ing') ? 'ing' : 'off';
+      if (p2 !== ph) { if (p2 === 'on' && ph) { emit(11, 44, 520, 1); setTimeout(() => emit(7, 36, 430, .8), 170); setTimeout(() => emit(4, 30, 360, .55), 380); } ph = p2; emitAt = now + (p2 === 'ing' ? 80 : 1500); }
+      if (now > emitAt && !still) { if (ph === 'ing') { emit(4.5, 28, 310, .7); emitAt = now + 640; } else if (ph === 'on') { emit(4, 40, 170, .6); emitAt = now + 4200; } else { emit(2.2, 52, 96, .22); emitAt = now + 5600; } }
+      const t = now / 1000, R = Math.max(W, H) * .78; waves = waves.filter((w) => (now - w.t) / 1000 * w.v < R + 80);
+      const wr = waves.map((w) => { const r = (now - w.t) / 1000 * w.v, f = Math.max(0, 1 - r / R); return [r, w.w, w.amp * f, w.a * Math.pow(f, .8)]; });
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+      const b0 = ph === 'off' ? .06 : .075; ctx.fillStyle = 'rgba(' + base + ',' + b0 + ')'; const hot = [];
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i], dx = p[0] - cx, dy = p[1] - cy, d = Math.sqrt(dx * dx + dy * dy) || 1; let lum = 0, off = 0;
+        for (let j = 0; j < wr.length; j++) { const w = wr[j], g = (d - w[0]) / w[1]; if (g > 3 || g < -3) continue; const e = Math.exp(-g * g); lum += e * w[3]; off += -g * e * w[2] * 1.9; }
+        if (ph !== 'off') { const tw = Math.sin(t * 1.3 + p[2]); if (tw > .965) lum += (tw - .965) * 16; }
+        const qx = p[0] - px, qy = p[1] - py, q = qx * qx + qy * qy; let ox = 0, oy = 0; if (q < 22000) { const e = Math.exp(-q / 3800); lum += e * .5; const qd = Math.sqrt(q) || 1; ox = qx / qd * e * 4; oy = qy / qd * e * 4; }
+        if (lum < .045) { ctx.fillRect(p[0] - 2, p[1] - 2, 4, 4); continue; }
+        hot.push(p[0] + dx / d * off + ox, p[1] + dy / d * off + oy, lum > 1 ? 1 : lum);
+      }
+      ctx.fillStyle = col;
+      for (let i = 0; i < hot.length; i += 3) { const a = hot[i + 2], s = 4 + a * 2.6; ctx.globalAlpha = Math.min(1, .1 + a * .92); ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(hot[i] - s / 2, hot[i + 1] - s / 2, s, s, 1.1 + a); else ctx.rect(hot[i] - s / 2, hot[i + 1] - s / 2, s, s); ctx.fill(); }
+      ctx.globalAlpha = 1;
+      /* волна через всё окно: фронт из точек, а не цветная заливка */
+      const wc = root.querySelector('.wvc');
+      if (wc) { if (!wv) wvT = now; if (wc !== wv) { wv = wc; fit(wc); } const w = wc.offsetWidth, h = wc.offsetHeight, x = wc.getContext('2d'), a = wc.getBoundingClientRect(), b = c.getBoundingClientRect(), k = w / (a.width || w), ux = (b.left - a.left) * k + cx, uy = (b.top - a.top) * k + cy;
+        const u = Math.min(1, (now - wvT) / 1900), r = (1 - Math.pow(1 - u, 1.6)) * Math.hypot(w, h) * .8, fa = Math.pow(1 - u, .9); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, w, h); x.fillStyle = col;
+        if (u < 1) for (let yy = S / 2; yy < h; yy += S) for (let xx = S / 2; xx < w; xx += S) { const dx = xx - ux, dy = yy - uy, d = Math.sqrt(dx * dx + dy * dy) || 1, g = (d - r) / 58; if (g > 2.4 || g < -2.4) continue; const e = Math.exp(-g * g), o = -g * e * 16, s = 2.4 + e * 3.4; x.globalAlpha = e * fa * .85; x.fillRect(xx + dx / d * o - s / 2, yy + dy / d * o - s / 2, s, s); }
+        x.globalAlpha = 1; } else wv = null;
+    };
+    const move = (e) => { if (!cv) return; const a = cv.getBoundingClientRect(); if (!a.width) return; const k = W / a.width; px = (e.clientX - a.left) * k; py = (e.clientY - a.top) * k; };
+    const out = () => { px = py = -9999; };
+    document.addEventListener('pointermove', move, { passive: true }); document.addEventListener('pointerleave', out);
+    raf = requestAnimationFrame(frame);
+    this._mxOff = () => { cancelAnimationFrame(raf); document.removeEventListener('pointermove', move); document.removeEventListener('pointerleave', out); };
   }
   st() { return this.state || {}; }
   wlTip() { const el = document.querySelector('.r.wlr'); if (!el) return; const l = el.closest('.list'); if (l) l.scrollTop = l.scrollHeight; const r = el.getBoundingClientRect(), sv = el.closest('.servers').getBoundingClientRect(), rtl = getComputedStyle(el).direction === 'rtl'; this.setState({ tipId: 'wl', tipX: Math.round(rtl ? sv.right + 10 : sv.left - 282), tipY: Math.round(Math.max(sv.top, Math.min(r.top - 10, sv.bottom - Math.max((document.querySelector('.stip') || {}).offsetHeight || 250, 356)))) }); }
