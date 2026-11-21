@@ -125,9 +125,10 @@ all (and while a path is left); only then does it end as any first `connect` doe
 Auto's next choice (see `on_server_down`). `server_id` is the id of the server in use while connected: names repeat,
 ids do not.
 
-Auto remembers, for each network, which paths worked: a connect that came up through a path, and a failed attempt that
-ended in `no_server_answers` or `verify_failed`, are noted for the network the machine is on (`offline`,
-`auth_rejected`, `tunnel_failed`, `server_not_found`, a cancelled attempt, and the death of a live connection are not).
+Auto remembers, for each network, which paths worked: a connect that came up through a path, a failed attempt that
+ended in `verify_failed`, and a `no_server_answers` of the known path Auto went to at once are noted for the network the
+machine is on (a race nobody answered names no path, so an outage of the network sets none aside; `offline`,
+`auth_rejected`, `tunnel_failed`, `server_not_found`, a cancelled attempt, and the death of a live connection are not noted either).
 A path that failed twice in a row is left out of Auto's choice for 2 minutes, then 10, 30 and 120 for each failure
 after that; a success lifts it. When the first attempt of a round meets a path that worked in this network within the
 last 24 hours, has not failed since and is not set aside, Auto goes to it at once, with no race of handshakes (the best

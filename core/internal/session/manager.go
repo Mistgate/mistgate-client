@@ -467,9 +467,10 @@ func (m *Manager) run() {
 						state.runCancel = nil
 					}
 					code := engine.ErrorCode(request.err)
-					// only a path that did not answer or carried nothing is marked: the other codes are not its fault here
-					if code == "no_server_answers" || code == "verify_failed" {
-						// ponytail: a path an attempt never named (no ServerID) is not marked
+					// A path that answered and carried nothing is marked, and so is the known one that did not answer. A race
+					// nobody answered names no culprit (it reports its first path): an outage of the network itself would
+					// put the best paths aside for hours.
+					if id := request.info.ServerID; code == "verify_failed" || code == "no_server_answers" && id != "" && id == request.prefer {
 						m.auto.Paths.Failure(request.net, request.info.ServerID, m.auto.now())
 					}
 					// the reason is the engine's own fixed wording; any other error may name an address

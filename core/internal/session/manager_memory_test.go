@@ -164,7 +164,7 @@ func testMemoryKnownFails(t *testing.T) {
 }
 
 func testMemoryQuarantine(t *testing.T) {
-	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailCode: "verify_failed"}) // the paths answer and carry nothing
 	fake.SetProfiles(autoProfiles("p1", "p2")...)
 	fake.SetFailing("p1", "p2")
 	c, mem := newClock(), auto.Open("")
@@ -345,5 +345,21 @@ func TestAutoWithoutMemory(t *testing.T) {
 	off, err := manager.Disconnect(context.Background())
 	if err != nil || off.Auto || off.Reason != "" {
 		t.Fatalf("after a disconnect: %#v, %v", off, err)
+	}
+}
+
+// A race nobody answered blames no path: an outage of the network must not put the best paths aside.
+func TestRaceWithoutAnAnswerMarksNoPath(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetProfiles(autoProfiles("p1", "p2")...)
+	fake.SetFailing("p1", "p2")
+	c, mem := newClock(), auto.Open("")
+	manager, subscription := memoryManager(t, fake, mem, c, time.Hour)
+	for range 2 {
+		connectAuto(t, manager)
+		waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "error" })
+	}
+	if got := mem.Avoid("net", c.now()); len(got) != 0 {
+		t.Fatalf("in quarantine after an outage: %v", got)
 	}
 }
