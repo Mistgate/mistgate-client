@@ -78,6 +78,8 @@ type Engine interface {
 	Reapply()
 	Stats() Traffic
 	Received() uint64
+	// Sent is Received's counterpart: the bytes that went out to the VPN side since this tunnel came up.
+	Sent() uint64
 	Probe(ctx context.Context) error
 	// Proof downloads a little data through the tunnel that is up: "ok" (it came), "freeze" (it began and was stalled
 	// or cut) or "" (not known). Longer than a probe: it takes seconds.

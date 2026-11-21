@@ -119,7 +119,7 @@ func (failingOutbound) ListenUDP(context.Context) (packetFlow, error) { return n
 func TestBridgeProbeNeedsTheVPNToAnswer(t *testing.T) {
 	var rx atomic.Uint64
 	target := netip.MustParseAddrPort("1.1.1.1:443")
-	dead := &gvisorBridge{vpn: countedOutbound{failingOutbound{}, &rx}}
+	dead := &gvisorBridge{vpn: countedOutbound{failingOutbound{}, &rx, nil}}
 	if _, err := dead.probe(context.Background(), []netip.AddrPort{target}, time.Second); err == nil {
 		t.Fatal("a dead exit passed the check")
 	}
@@ -136,7 +136,7 @@ func (pipeOutbound) DialTCP(context.Context, netip.AddrPort) (net.Conn, error) {
 
 func TestBridgeProbeAcceptsAConnectedExit(t *testing.T) {
 	var rx atomic.Uint64
-	bridge := &gvisorBridge{vpn: countedOutbound{pipeOutbound{}, &rx}}
+	bridge := &gvisorBridge{vpn: countedOutbound{pipeOutbound{}, &rx, nil}}
 	if _, err := bridge.probe(context.Background(), []netip.AddrPort{netip.MustParseAddrPort("1.1.1.1:443")}, time.Second); err != nil {
 		t.Fatal(err)
 	}
@@ -144,14 +144,14 @@ func TestBridgeProbeAcceptsAConnectedExit(t *testing.T) {
 
 func TestBridgeProbeTargets(t *testing.T) {
 	var rx atomic.Uint64
-	plain := &gvisorBridge{vpn: countedOutbound{pipeOutbound{}, &rx}}
+	plain := &gvisorBridge{vpn: countedOutbound{pipeOutbound{}, &rx, nil}}
 	if got := plain.probeTargets("9.9.9.9:80"); len(got) != 1 || got[0].String() != "9.9.9.9:80" {
 		t.Fatalf("plain targets = %v", got)
 	}
 	if got := plain.probeTargets("example.test:443"); len(got) != 0 {
 		t.Fatalf("a host name cannot be dialed through the VPN: %v", got)
 	}
-	vless := &gvisorBridge{vpn: countedOutbound{vlessOutbound{}, &rx}}
+	vless := &gvisorBridge{vpn: countedOutbound{vlessOutbound{}, &rx, nil}}
 	if got := vless.probeTargets("9.9.9.9:80"); len(got) != 2 {
 		t.Fatalf("a VLESS check needs a TLS port, so the default targets stand in: %v", got)
 	}
@@ -171,7 +171,7 @@ func TestBridgeProbeOverVLESSNeedsTheServer(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer x.Close()
-		bridge := &gvisorBridge{vpn: countedOutbound{vlessOutbound{x: x}, &rx}}
+		bridge := &gvisorBridge{vpn: countedOutbound{vlessOutbound{x: x}, &rx, nil}}
 		_, err = bridge.probe(context.Background(), []netip.AddrPort{mask}, 5*time.Second)
 		return err
 	}

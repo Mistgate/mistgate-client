@@ -1314,20 +1314,30 @@ func (r *Real) Stats() Traffic {
 }
 
 func (r *Real) Received() uint64 {
+	rx, _ := r.counters()
+	return rx
+}
+
+func (r *Real) Sent() uint64 {
+	_, tx := r.counters()
+	return tx
+}
+
+// counters are the bytes in and out of the VPN side of this tunnel (the adapter's when there is no forwarder).
+func (r *Real) counters() (rx, tx uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.current == nil || r.current.tunnel == nil {
-		return 0
+		return 0, 0
 	}
-	if rx, forwarded := r.current.tunnel.forwardedRx(); forwarded {
-		return rx
+	if rx, tx, forwarded := r.current.tunnel.forwardedCounters(); forwarded {
+		return rx, tx
 	}
 	adapter := r.current.tunnel.adapterSnapshot()
 	if adapter == nil {
-		return 0
+		return 0, 0
 	}
-	rx, _ := adapter.Counters()
-	return rx
+	return adapter.Counters()
 }
 
 func (r *Real) Probe(ctx context.Context) error {
@@ -1515,14 +1525,15 @@ func (t *realTunnel) setAWG(awg *device.Device) bool {
 	return false
 }
 
-// forwardedRx: with the forwarder, the bytes that came from the VPN side (the adapter also carries direct answers).
-func (t *realTunnel) forwardedRx() (uint64, bool) {
+// forwardedCounters: with the forwarder, the bytes that came from the VPN side and went to it (the adapter also carries
+// direct traffic).
+func (t *realTunnel) forwardedCounters() (rx, tx uint64, forwarded bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.bridge == nil {
-		return 0, false
+		return 0, 0, false
 	}
-	return t.bridge.vpnRx.Load(), true
+	return t.bridge.vpnRx.Load(), t.bridge.vpnTx.Load(), true
 }
 
 func (t *realTunnel) adapterSnapshot() *netcfg.Adapter {

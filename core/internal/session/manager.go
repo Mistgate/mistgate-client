@@ -105,6 +105,7 @@ type attemptResult struct {
 type probeResult struct {
 	generation uint64
 	at         time.Time
+	took       time.Duration // how long Probe ran
 	received   uint64
 	err        error
 }
@@ -156,6 +157,9 @@ type actorState struct {
 	// prefer is the path that connect goes to at once.
 	nextReason, prefer string
 	proofFreezes       int // moves made for a freeze in a row: one at most
+	samples            []auto.Sample
+	counters           []counterSample // the last window or so, to tell a stall
+	stalled            bool            // the last look at the counters said stall
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -169,12 +173,17 @@ type managerTiming struct {
 	refusalPatience    time.Duration
 	// proofDelayMin and proofDelayMax: how long after a connection came up Auto checks that data goes through it.
 	proofDelayMin, proofDelayMax time.Duration
+	// trafficEvery is how often the connection's counters are read; stallFor is how long data may go out with none coming
+	// back before that is a stall.
+	trafficEvery, stallFor time.Duration
 }
 
 func defaultManagerTiming() managerTiming {
 	return managerTiming{
 		proofDelayMin: 2 * time.Second,
 		proofDelayMax: 5 * time.Second,
+		trafficEvery:  time.Second,
+		stallFor:      6 * time.Second,
 		// Measured on the dev stand under packet loss (2026-11): the 20 s window is what keeps a live AmneziaWG link from
 		// being torn down (it fails single probes, up to three in a row, with no loss at all); the period only moves
 		// how soon a real cut is noticed (27 to 37 s with these values).
@@ -230,6 +239,12 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	}
 	if timing.proofDelayMax <= 0 {
 		timing.proofDelayMax = defaults.proofDelayMax
+	}
+	if timing.trafficEvery <= 0 {
+		timing.trafficEvery = defaults.trafficEvery
+	}
+	if timing.stallFor <= 0 {
+		timing.stallFor = defaults.stallFor
 	}
 	if len(backoff) == 0 {
 		backoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 30 * time.Second}
@@ -404,7 +419,7 @@ func (m *Manager) run() {
 		state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
 		m.hub.Publish("status", state.status)
 	}
-	traffic := time.NewTicker(time.Second)
+	traffic := time.NewTicker(m.timing.trafficEvery)
 	defer traffic.Stop()
 	var healthTimer, retryTimer, proofTimer *time.Timer
 	var healthC, retryC, proofC <-chan time.Time
@@ -630,6 +645,7 @@ func (m *Manager) run() {
 					state.probeCancel()
 				}
 				state.probeCancel = nil
+				m.noteProbe(&state, request)
 				if request.err == nil {
 					resetProbeStreak(&state)
 					m.noteRTT(&state)
@@ -647,7 +663,8 @@ func (m *Manager) run() {
 				}
 				pending := state.probePending
 				state.probePending = false
-				if request.err != nil && probeIsDead(request.at, state.probeStreakStart, state.probeReceivedStart, request.received, state.lastNetworkEvent, state.probeFailures, m.probeFailureWindow, m.networkEventGrace) {
+				if request.err != nil && (probeIsDead(request.at, state.probeStreakStart, state.probeReceivedStart, request.received, state.lastNetworkEvent, state.probeFailures, m.probeFailureWindow, m.networkEventGrace) ||
+					m.diedStalled(&state, request)) {
 					clearTimer(&healthTimer, &healthC)
 					m.beginReconnect(&state, false)
 					continue
@@ -670,6 +687,7 @@ func (m *Manager) run() {
 		case <-traffic.C:
 			if state.status.State == "connected" && m.engine != nil {
 				m.hub.Publish("traffic", m.engine.Stats())
+				m.watch(&state)
 			}
 		case <-proofC:
 			proofC = nil
@@ -943,8 +961,9 @@ func (m *Manager) startProbe(state *actorState) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
+		started := time.Now()
 		err := m.engine.Probe(ctx)
-		result := probeResult{generation: generation, at: time.Now(), received: m.engine.Received(), err: err}
+		result := probeResult{generation: generation, at: time.Now(), took: time.Since(started), received: m.engine.Received(), err: err}
 		select {
 		case m.commands <- result:
 		case <-m.done:

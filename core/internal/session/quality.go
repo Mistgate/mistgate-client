@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/auto"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
 
@@ -36,6 +37,7 @@ func (m *Manager) endLive(state *actorState) {
 	}
 	state.liveID++
 	state.liveCtx, state.liveCancel, state.liveNet = nil, nil, ""
+	state.samples, state.counters, state.stalled = nil, nil, false
 }
 
 // autoOwn: the connection is Auto's own pick, on a network the memory knows, and not on the path for allowlists.
@@ -107,4 +109,73 @@ func (m *Manager) leave(state *actorState, reason, prefer string) {
 	state.roundFailures[state.status.ServerID] = 2
 	state.nextReason, state.prefer = reason, prefer
 	m.reconnectRoute(state, m.currentSettings())
+}
+
+// stallSent is how much data must go out, with none coming back, for a silence to be a stall and not an idle line.
+const stallSent = 32 << 10
+
+// counterSample is what the engine's counters said at a time.
+type counterSample struct {
+	at             time.Time
+	sent, received uint64
+}
+
+// stalled: from base to cur at least window passed, stallSent bytes went out and not one came back.
+func stalled(base, cur counterSample, window time.Duration) bool {
+	return cur.at.Sub(base.at) >= window && cur.sent >= base.sent && cur.sent-base.sent >= stallSent && cur.received == base.received
+}
+
+// stalledDead is the quick death of a connection: a probe failed (one is enough) while data goes out and none comes back,
+// so the window that probeIsDead waits out is not needed. The bytes that came since the streak began still save it.
+func stalledDead(failures int, streakStart time.Time, receivedAtStart, receivedNow uint64, stall bool) bool {
+	return stall && failures >= 1 && !streakStart.IsZero() && receivedSince(receivedAtStart, receivedNow) < receivedAliveThreshold
+}
+
+// watch is what the actor does with an Auto connection at every tick of the counters.
+func (m *Manager) watch(state *actorState) {
+	if m.autoOwn(state) {
+		m.sampleCounters(state, m.auto.now())
+	}
+}
+
+// sampleCounters reads the counters and says whether the connection is in a stall; the start of one is a sample.
+func (m *Manager) sampleCounters(state *actorState, now time.Time) {
+	cur := counterSample{at: now, sent: m.engine.Sent(), received: m.engine.Received()}
+	state.counters = append(state.counters, cur)
+	// the base is the newest sample that is a window old; what is before it is of no use
+	for i := len(state.counters) - 1; i > 0; i-- {
+		if now.Sub(state.counters[i].at) >= m.timing.stallFor {
+			state.counters = state.counters[i:]
+			break
+		}
+	}
+	stall := stalled(state.counters[0], cur, m.timing.stallFor)
+	if stall && !state.stalled {
+		state.samples = append(auto.Trim(state.samples, now), auto.Sample{At: now, Stall: true})
+	}
+	state.stalled = stall
+}
+
+// noteProbe keeps the outcome of a probe of an Auto connection.
+func (m *Manager) noteProbe(state *actorState, r probeResult) {
+	if m.autoOwn(state) {
+		now := m.auto.now()
+		state.samples = append(auto.Trim(state.samples, now), auto.Sample{At: now, Fail: r.err != nil, Took: r.took})
+	}
+}
+
+// diedStalled: a failed probe on an Auto connection that is in a stall. The path is marked as failed (an ordinary death
+// is not: a change of Wi-Fi is no fault of the server).
+func (m *Manager) diedStalled(state *actorState, r probeResult) bool {
+	if !m.autoOwn(state) {
+		return false
+	}
+	m.sampleCounters(state, m.auto.now())
+	if !stalledDead(state.probeFailures, state.probeStreakStart, state.probeReceivedStart, r.received, state.stalled) {
+		return false
+	}
+	path := state.status.ServerID
+	m.auto.Paths.Failure(state.liveNet, path, m.auto.now())
+	slog.Info("auto: dead path=" + path + " reason=stall")
+	return true
 }

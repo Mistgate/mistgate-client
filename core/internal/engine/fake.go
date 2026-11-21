@@ -40,6 +40,7 @@ type Fake struct {
 	starts        atomic.Uint64
 	probes        atomic.Uint64
 	received      atomic.Uint64
+	sent          atomic.Uint64
 	rttMS         atomic.Int64
 	proofs        map[string]string
 	current       string // the path of the last Start
@@ -66,6 +67,7 @@ func NewFake(config FakeConfig) *Fake {
 func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Info, error) {
 	f.starts.Add(1)
 	f.received.Store(0)
+	f.sent.Store(0)
 	f.mu.Lock()
 	f.targets = append(f.targets, target)
 	config, failStartCode := f.config, f.failStartCode
@@ -173,6 +175,10 @@ func (f *Fake) Stats() Traffic { return Traffic{RTTMS: f.rttMS.Load()} }
 func (f *Fake) SetRTT(ms int64) { f.rttMS.Store(ms) }
 
 func (f *Fake) Received() uint64 { return f.received.Load() }
+
+func (f *Fake) Sent() uint64 { return f.sent.Load() }
+
+func (f *Fake) SetSent(sent uint64) { f.sent.Store(sent) }
 
 func (f *Fake) Probe(ctx context.Context) error {
 	f.probes.Add(1)
