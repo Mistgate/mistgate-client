@@ -74,6 +74,12 @@ type dnsRig struct {
 // newDNSRig runs a udpFlow to 1.1.1.1:53 between a pipe (the app) and two fake exits. names gets every name asked.
 func newDNSRig(t *testing.T, names func(string) (bool, netip.AddrPort)) *dnsRig {
 	t.Helper()
+	return newDNSRigDoH(t, names, nil)
+}
+
+// newDNSRigDoH is newDNSRig with the preset's DoH resolver for the questions that go through the VPN.
+func newDNSRigDoH(t *testing.T, names func(string) (bool, netip.AddrPort), doh *dohResolver) *dnsRig {
+	t.Helper()
 	rig := &dnsRig{vpn: newScriptFlow(), direct: newScriptFlow()}
 	rig.out = &countOutbound{flow: rig.direct}
 	app, local := net.Pipe()
@@ -85,7 +91,7 @@ func newDNSRig(t *testing.T, names func(string) (bool, netip.AddrPort)) *dnsRig 
 			rig.asked.Add(1)
 			return names(name)
 		},
-		direct: rig.out, down: new(atomic.Int64),
+		direct: rig.out, down: new(atomic.Int64), doh: doh,
 	}
 	rig.flow.lastActivity.Store(time.Now().UnixNano())
 	done := make(chan struct{})

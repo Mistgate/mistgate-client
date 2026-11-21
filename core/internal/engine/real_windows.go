@@ -851,7 +851,13 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
-		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, via, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute, apps); err != nil {
+		// The preset's DoH carries the questions the VPN would get in the clear, unless the person set a DNS of their own.
+		// The adapter and the firewall keep the plain address: the bridge takes the questions before they leave.
+		var doh *dohResolver
+		if selected.PanelDoH != "" && len(customDNS) == 0 {
+			doh = newDoH(runCtx, selected.PanelDoH, selected.PanelDoHIPs, via, dns[0])
+		}
+		if err := run.tunnel.createBridge(runCtx, adapter.Device(), mtu, via, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute, apps, doh); err != nil {
 			if runCtx.Err() != nil {
 				return Info{}, runCtx.Err()
 			}
@@ -889,7 +895,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			if awgNet == nil {
 				return Info{}, failure("tunnel_failed", "AmneziaWG userspace stack is unavailable")
 			}
-			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute, apps); err != nil {
+			if err := run.tunnel.createBridge(runCtx, adapter.Device(), awgMTU, awgOutbound{net: awgNet}, directOutbound{}, shouldDirect, hasSiteRules, track, r.nameRoute, apps, nil); err != nil {
 				if runCtx.Err() != nil {
 					return Info{}, runCtx.Err()
 				}
@@ -1473,13 +1479,13 @@ func (t *realTunnel) setTT(out *ttOutbound) bool {
 	return false
 }
 
-func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) error {
+func (t *realTunnel) createBridge(ctx context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter, doh *dohResolver) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return context.Canceled
 	}
-	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track, names, apps)
+	bridge, err := newGvisorBridge(ctx, tunDevice, mtu, vpn, direct, shouldDirect, hasSiteRules, track, names, apps, doh)
 	if err != nil {
 		return err
 	}

@@ -482,7 +482,9 @@ an IP, or an IP with port 53, else the entry's `ips`), at most two, and, when `s
 entries of `geo` (lower-case letters, digits, `-`, and `!` or `@` after the first character, up to 48; at most 16 per
 entry) and the `suffixes` (lower-case ASCII labels, no leading dot, up to 253 characters, at most 256 per entry). At most
 64 entries are kept, and anything malformed is dropped without a word; an entry with no plain resolver, or naming
-nothing usable, is dropped. DoT and DoH entries and other ports are skipped. `dns.ipv4_only` true makes the profiles of
+nothing usable, is dropped. DoT and DoH entries and other ports are skipped there. From `dns.servers` the first DoH entry
+(its own `transport`, else `dns.transport`) is kept as well: an `https` URL of up to 255 characters with no credentials or
+fragment, a host of DNS characters or an IP, an optional port, and its `ips` (at most 4 valid ones). `dns.ipv4_only` true makes the profiles of
 the subscription carry no IPv6, as a path whose `ipv6_egress` is false does. `dns.block_ads` true is kept as well: the
 names of `geosite:category-ads-all` are blocked before any other rule, in every route mode (in `all` through their DNS
 questions only; see `docs/client-api.md`). A sync without `dns`, or with a status
@@ -491,7 +493,13 @@ The tunnel's DNS is the first that exists of: the user's `dns` setting, the prof
 `dns.servers`, `1.1.1.1` and `1.0.0.1`. The panel does not decide which names go direct (the route rules and the region
 do); it says where a direct name's question goes: the resolver of the first entry, in the panel's order, that has a
 suffix the name equals or ends in (`.` + suffix) or a `geosite:` list that contains the name; else the one of an entry
-whose `geo` contains the effective region; else the region table's. `routes.check` reports `dns` as `direct` for a
+whose `geo` contains the effective region; else the region table's. The questions that go through the VPN (the adapter
+and the firewall keep the plain address above) are sent to the kept DoH resolver instead when the user's `dns` setting is
+empty and the profile is not AmneziaWG: a `POST` of the same message as `application/dns-message` over TLS through the
+VPN (certificate checked against the host of the URL; the addresses are the kept `ips`, else the host if it is an IP,
+else its name is asked once of the tunnel's DNS over TCP through the VPN, and when that fails DoH stays off until the
+next start). The answer must be a 200 of that type, up to 64 KiB, within 3 s; otherwise the question goes through the
+VPN as before and DoH rests for 30 s. Nothing of it (name, URL, host, address) is logged. `routes.check` reports `dns` as `direct` for a
 name that has such a resolver. A `geosite:` list the panel names is loaded like a collection of the rules (from the
 cache, downloaded when stale) when the tunnel starts, and read from memory only: a name is matched against a list once it
 has loaded. These lists are not in `routes.lists`. All of it is read when the tunnel starts (a new `sync` applies to the next connect).

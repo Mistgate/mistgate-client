@@ -59,6 +59,8 @@ type gvisorBridge struct {
 	// directly. nil: DNS questions and TLS names are left alone.
 	names   func(name string) (block bool, resolver netip.AddrPort)
 	dnsDown atomic.Int64 // unix nanoseconds until which regional resolvers are not tried, after one was silent
+	// doh: the preset's DoH resolver for the questions that go through the VPN; nil leaves them plain.
+	doh *dohResolver
 	// noVPN6: the VPN carries no IPv6 (an AmneziaWG server that hands out an address and routes nothing, a Hysteria2
 	// server without IPv6). Asked once when the tunnel comes up. Names that go through the VPN then get no IPv6
 	// addresses and IPv6 connections are refused at once, so every app uses IPv4 instead of waiting on a dead path.
@@ -70,7 +72,7 @@ type gvisorBridge struct {
 	wg     sync.WaitGroup
 }
 
-func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter) (*gvisorBridge, error) {
+func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn, direct outbound, shouldDirect func(netip.Addr, string, []string) bool, hasSiteRules func() bool, track *geo.Tracker, names func(string) (bool, netip.AddrPort), apps *appRouter, doh *dohResolver) (*gvisorBridge, error) {
 	if vpn == nil {
 		return nil, errors.New("VPN outbound is unavailable")
 	}
@@ -111,6 +113,7 @@ func newGvisorBridge(parent context.Context, tunDevice tun.Device, mtu int, vpn,
 		apps:         apps,
 		track:        track,
 		names:        names,
+		doh:          doh,
 		dns:          &dnsMemory{entries: make(map[netip.Addr]dnsEntry)},
 		stack:        st,
 		link:         link,
@@ -515,7 +518,7 @@ func (b *gvisorBridge) serveUDP(local net.Conn, remote packetFlow, target netip.
 		dns:    b.dns,
 	}
 	if target.Port() == 53 {
-		flow.names, flow.direct, flow.down, flow.noVPN6 = b.names, b.direct, &b.dnsDown, b.noVPN6.Load
+		flow.names, flow.direct, flow.down, flow.noVPN6, flow.doh = b.names, b.direct, &b.dnsDown, b.noVPN6.Load, b.doh
 	}
 	flow.lastActivity.Store(time.Now().UnixNano())
 	b.mu.Lock()
@@ -555,7 +558,8 @@ type udpFlow struct {
 	names  func(string) (bool, netip.AddrPort)
 	direct outbound
 	down   *atomic.Int64
-	noVPN6 func() bool // port 53 only: the VPN carries no IPv6
+	noVPN6 func() bool  // port 53 only: the VPN carries no IPv6
+	doh    *dohResolver // port 53 only; nil: questions for the VPN stay plain
 
 	sendMu  sync.Mutex // the VPN flow takes one writer at a time (Hysteria2 reuses one send buffer)
 	mu      sync.Mutex // guards the fields below; never held across a send
@@ -583,7 +587,8 @@ var (
 func (f *udpFlow) dnsPacket(payload []byte) bool {
 	name, end, ok := dnsQuestion(payload)
 	if !ok {
-		return false
+		// Another kind of question (TXT, a name with "_"...) is not ours to judge, but it belongs in the DoH too.
+		return len(payload) > 12 && payload[2]&0xF8 == 0 && f.askDoH(payload)
 	}
 	block, resolver := false, netip.AddrPort{}
 	if f.names != nil {
@@ -599,7 +604,7 @@ func (f *udpFlow) dnsPacket(payload []byte) bool {
 		return true
 	}
 	if !resolver.IsValid() || f.direct == nil || time.Now().UnixNano() < f.down.Load() {
-		return false
+		return f.askDoH(payload)
 	}
 	// A name that goes direct on a machine without IPv6 beside the tunnel must not get IPv6 addresses: the app would
 	// connect to one, the flow could not leave, and the app would not fall back to IPv4.
@@ -607,7 +612,39 @@ func (f *udpFlow) dnsPacket(payload []byte) bool {
 		_, _ = f.local.Write(noData(payload, end))
 		return true
 	}
-	return f.askDirect(payload, end, resolver)
+	return f.askDirect(payload, end, resolver) || f.askDoH(payload)
+}
+
+// askDoH sends a question that goes through the VPN to the DoH resolver, when there is one and it is not resting. The
+// round runs on its own goroutine (the read loop must not wait); a failure sends the same question through the VPN.
+func (f *udpFlow) askDoH(payload []byte) bool {
+	if !f.doh.ready() {
+		return false
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				safe.Report("doh round", r)
+			}
+		}()
+		answer := f.doh.ask(f.ctx, payload)
+		if f.ctx.Err() != nil {
+			return
+		}
+		if answer == nil {
+			f.doh.rest()
+			_ = f.send(payload)
+			return
+		}
+		if f.dns != nil {
+			f.dns.remember(answer)
+		}
+		f.lastActivity.Store(time.Now().UnixNano())
+		if _, err := f.local.Write(answer); err != nil {
+			f.close()
+		}
+	}()
+	return true
 }
 
 func (f *udpFlow) askDirect(payload []byte, end int, resolver netip.AddrPort) bool {
@@ -753,7 +790,7 @@ func (f *udpFlow) run() {
 			}
 			f.lastActivity.Store(time.Now().UnixNano())
 			payload := append([]byte(nil), buf[:n]...)
-			if (f.names != nil || f.noVPN6 != nil) && f.dnsPacket(payload) {
+			if (f.names != nil || f.noVPN6 != nil || f.doh != nil) && f.dnsPacket(payload) {
 				continue
 			}
 			if err := f.send(payload); err != nil {
@@ -852,6 +889,7 @@ func (b *gvisorBridge) Close() {
 	b.mu.Unlock()
 
 	b.cancel()
+	b.doh.close()
 	for _, flow := range flows {
 		flow.close()
 	}

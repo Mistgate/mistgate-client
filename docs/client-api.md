@@ -173,9 +173,12 @@ The body (stable key order; the client ignores fields it does not know):
   part of the ETag and is not on a `304`.
 - `dns` is one object for the whole subscription. Server addresses: plain `ip` or `ip:port`, DoT `host[:port]`, DoH a
   URL; `ips` are absent when unknown. `split` is empty unless `split_direct`; a rule names domain `suffixes` (lower-case
-  punycode, no leading dot) and `geo` (country codes and `geosite:<name>` lists). The client uses only the plain
-  resolvers: a rule sends the questions of the names it names, when they go direct, to its resolver; it does not make
-  a name direct. `ipv4_only` makes the client keep IPv6 off the paths. `block_ads` true makes the client drop the names of
+  punycode, no leading dot) and `geo` (country codes and `geosite:<name>` lists). A rule sends the questions of the
+  names it names, when they go direct, to its plain resolver; it does not make a name direct. The tunnel's own
+  questions go to the first DoH server of `servers` (its `transport`, else the preset's), when the person has set no DNS
+  of their own and the path is not AmneziaWG: over TLS through the VPN, an https URL with no credentials, to the
+  addresses in `ips` (else the host, if it is an IP, else its name asked once of the tunnel's DNS). When that resolver
+  fails, the question goes through the VPN as before and the resolver rests for 30 s. DoT is not used. `ipv4_only` makes the client keep IPv6 off the paths. `block_ads` true makes the client drop the names of
   `geosite:category-ads-all` (loaded like any list, from the cache, downloaded when stale) before every other rule and in
   every route mode: their DNS questions are answered with no address; in `smart` and `selected` the name inside a
   flow is read as well. In `all` only the DNS questions are checked, so a program that does not ask the system's DNS

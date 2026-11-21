@@ -114,6 +114,47 @@ func TestPanelDNSFromTheSyncObject(t *testing.T) {
 	}
 }
 
+func TestPanelDoH(t *testing.T) {
+	doh := func(address string, ips ...string) syncResolver {
+		return syncResolver{Transport: "doh", Address: address, IPs: ips}
+	}
+	tests := []struct {
+		name string
+		dns  syncDNS
+		url  string
+		ips  []netip.Addr
+	}{
+		{"a good one", syncDNS{Servers: []syncResolver{doh("https://dns.example/dns-query", "203.0.113.1", "2001:db8::1")}}, "https://dns.example/dns-query", addrs("203.0.113.1", "2001:db8::1")},
+		{"no ips", syncDNS{Servers: []syncResolver{doh("https://dns.example/q")}}, "https://dns.example/q", nil},
+		{"an IP literal and a port", syncDNS{Servers: []syncResolver{doh("https://198.51.100.5:8443/dns-query")}}, "https://198.51.100.5:8443/dns-query", nil},
+		{"an IPv6 literal", syncDNS{Servers: []syncResolver{doh("https://[2001:db8::53]/q")}}, "https://[2001:db8::53]/q", nil},
+		{"the first usable one", syncDNS{Servers: []syncResolver{{Transport: "plain", Address: "1.1.1.1"}, doh("http://dns.example/q"), doh("https://second.example/q")}}, "https://second.example/q", nil},
+		{"the preset's transport stands for a server with none", syncDNS{Transport: "doh", Servers: []syncResolver{{Address: "https://dns.example/q"}}}, "https://dns.example/q", nil},
+		{"a server's own transport beats the preset's", syncDNS{Transport: "doh", Servers: []syncResolver{{Transport: "plain", Address: "https://dns.example/q"}}}, "", nil},
+		{"junk ips are dropped, four are kept, repeats once", syncDNS{Servers: []syncResolver{doh("https://dns.example/q", "x", "", "203.0.113.1", "203.0.113.1", "fe80::1%eth0", "203.0.113.2", "::ffff:203.0.113.3", "203.0.113.4", "203.0.113.5")}}, "https://dns.example/q", addrs("203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4")},
+		{"http", syncDNS{Servers: []syncResolver{doh("http://dns.example/q")}}, "", nil},
+		{"user info", syncDNS{Servers: []syncResolver{doh("https://user:pass@dns.example/q"), doh("https://user@dns.example/q")}}, "", nil},
+		{"a fragment", syncDNS{Servers: []syncResolver{doh("https://dns.example/q#x"), doh("https://dns.example/q#")}}, "", nil},
+		{"a bad host", syncDNS{Servers: []syncResolver{doh("https://bad_host.example/q"), doh("https:///q"), doh("https://-a.example/q"), doh("https://a..example/q"), doh("https://[fe80::1%25eth0]/q"), doh("https://dns.example./q")}}, "", nil},
+		{"a bad port", syncDNS{Servers: []syncResolver{doh("https://dns.example:0/q"), doh("https://dns.example:70000/q"), doh("https://dns.example:x/q")}}, "", nil},
+		{"not a URL", syncDNS{Servers: []syncResolver{doh(""), doh("dns.example"), doh("https:dns.example"), doh("1.1.1.1"), doh("https://dns.example/a b")}}, "", nil},
+		{"DoT only", syncDNS{Servers: []syncResolver{{Transport: "dot", Address: "dns.example:853"}}}, "", nil},
+		{"too long", syncDNS{Servers: []syncResolver{doh("https://dns.example/" + strings.Repeat("a", 240))}}, "", nil},
+	}
+	for _, test := range tests {
+		url, ips := panelDoH(&test.dns)
+		if url != test.url || !reflect.DeepEqual(ips, test.ips) {
+			t.Errorf("%s: got %q %v; want %q %v", test.name, url, ips, test.url, test.ips)
+		}
+	}
+	if url, ips := panelDoH(nil); url != "" || ips != nil {
+		t.Error("an absent dns gave a resolver")
+	}
+	if !validDoHURL("https://dns.example/" + strings.Repeat("a", 230)) {
+		t.Error("a URL of 250 characters is refused")
+	}
+}
+
 func TestOldStoredSplitStillReads(t *testing.T) {
 	var st apiState
 	if err := json.Unmarshal([]byte(`{"dns":["9.9.9.9"],"dns_split":[{"geo":["cn"],"servers":["223.5.5.5"]}]}`), &st); err != nil {
@@ -143,7 +184,7 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	plain := func(address string) map[string]any { return map[string]any{"transport": "plain", "address": address} }
 	panel.set(func() {
 		panel.syncBody = withDNS(map[string]any{
-			"transport": "plain", "servers": []any{plain("9.9.9.9"), map[string]any{"transport": "doh", "address": "https://d.example/q"}},
+			"transport": "plain", "servers": []any{plain("9.9.9.9"), map[string]any{"transport": "doh", "address": "https://d.example/q", "ips": []string{"203.0.113.7", "bogus"}}},
 			"split": []any{
 				map[string]any{"suffixes": []string{"ru"}, "geo": []string{"cn"}, "servers": []any{plain("223.5.5.5")}},
 				map[string]any{"suffixes": []string{"example.org"}, "geo": []string{"geosite:category-ru"}, "servers": []any{plain("77.88.8.8")}},
@@ -166,13 +207,16 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	if !reflect.DeepEqual(p.PanelDNS, addrs("9.9.9.9")) || !reflect.DeepEqual(p.PanelSplit, wantSplit) || !p.NoIPv6 || !p.PanelBlockAds {
 		t.Fatalf("profile DNS = %v, %+v, no IPv6 %t, block ads %t", p.PanelDNS, p.PanelSplit, p.NoIPv6, p.PanelBlockAds)
 	}
+	if p.PanelDoH != "https://d.example/q" || !reflect.DeepEqual(p.PanelDoHIPs, addrs("203.0.113.7")) {
+		t.Fatalf("profile DoH = %q, %v", p.PanelDoH, p.PanelDoHIPs)
+	}
 
 	// kept with the subscription across a restart
 	reopened, err := openStore(store.dir, identityProtection, identityProtection, func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again, err := reopened.Profiles(); err != nil || len(again) != 1 || !reflect.DeepEqual(again[0].PanelDNS, p.PanelDNS) || !reflect.DeepEqual(again[0].PanelSplit, p.PanelSplit) || !again[0].NoIPv6 || !again[0].PanelBlockAds {
+	if again, err := reopened.Profiles(); err != nil || len(again) != 1 || !reflect.DeepEqual(again[0].PanelDNS, p.PanelDNS) || !reflect.DeepEqual(again[0].PanelSplit, p.PanelSplit) || !again[0].NoIPv6 || !again[0].PanelBlockAds || again[0].PanelDoH != p.PanelDoH || !reflect.DeepEqual(again[0].PanelDoHIPs, p.PanelDoHIPs) {
 		t.Fatalf("after a restart: %v, %+v, %v", again, p.PanelSplit, err)
 	}
 
@@ -189,7 +233,7 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	if _, err := store.Refresh(ctx, sub.ID); err != nil {
 		t.Fatal(err)
 	}
-	if profiles, _ = store.Profiles(); len(profiles[0].PanelDNS) != 0 || len(profiles[0].PanelSplit) != 0 || profiles[0].NoIPv6 || profiles[0].PanelBlockAds {
+	if profiles, _ = store.Profiles(); len(profiles[0].PanelDNS) != 0 || len(profiles[0].PanelSplit) != 0 || profiles[0].NoIPv6 || profiles[0].PanelBlockAds || profiles[0].PanelDoH != "" || profiles[0].PanelDoHIPs != nil {
 		t.Fatalf("old DNS survived: %v, %+v, no IPv6 %t, block ads %t", profiles[0].PanelDNS, profiles[0].PanelSplit, profiles[0].NoIPv6, profiles[0].PanelBlockAds)
 	}
 
@@ -207,7 +251,7 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	if _, err := store.Refresh(ctx, sub.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.state.Subscriptions[0]; len(got.DNS) != 0 || len(got.DNSSplit) != 0 || got.DNSIPv4Only || got.DNSBlockAds {
+	if got := store.state.Subscriptions[0]; len(got.DNS) != 0 || len(got.DNSSplit) != 0 || got.DNSIPv4Only || got.DNSBlockAds || got.DNSDoH != "" || got.DNSDoHIPs != nil {
 		t.Fatalf("an inactive subscription kept resolvers: %v %+v %t %t", got.DNS, got.DNSSplit, got.DNSIPv4Only, got.DNSBlockAds)
 	}
 }

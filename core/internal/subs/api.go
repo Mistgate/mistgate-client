@@ -67,6 +67,9 @@ type apiState struct {
 	DNSIPv4Only bool `json:"dns_ipv4_only,omitempty"`
 	// The preset blocks the names of geosite:category-ads-all, before any other rule and in every route mode.
 	DNSBlockAds bool `json:"dns_block_ads,omitempty"`
+	// The preset's DoH resolver (its URL, and the addresses the panel gave for its host), for the tunnel's questions.
+	DNSDoH    string       `json:"dns_doh,omitempty"`
+	DNSDoHIPs []netip.Addr `json:"dns_doh_ips,omitempty"`
 	// The ASN of this device's network as the panel saw it; only a block report uses it, the window never gets it.
 	ASN uint32 `json:"asn,omitempty"`
 }
@@ -187,8 +190,9 @@ func telegramLink(link string) bool {
 }
 
 type syncDNS struct {
-	Servers []syncResolver `json:"servers"`
-	Split   []struct {
+	Transport string         `json:"transport"` // of a server that names none
+	Servers   []syncResolver `json:"servers"`
+	Split     []struct {
 		Suffixes []string       `json:"suffixes"`
 		Geo      []string       `json:"geo"`
 		Servers  []syncResolver `json:"servers"`
@@ -280,6 +284,56 @@ func panelDNS(dns *syncDNS) ([]netip.Addr, []profile.DNSSplit, bool) {
 		}
 	}
 	return plainResolvers(dns.Servers), split, dns.IPv4Only
+}
+
+// panelDoH is the first usable DoH server of the preset (a server's own transport, else the preset's) and the addresses
+// the panel gave for its host: at most 4 valid ones, bad ones dropped. DoT is not used. ponytail: the first only; the
+// tunnel has no second resolver to fall to, the plain path is the fallback.
+func panelDoH(dns *syncDNS) (string, []netip.Addr) {
+	if dns == nil {
+		return "", nil
+	}
+	for _, server := range dns.Servers {
+		transport := server.Transport
+		if transport == "" {
+			transport = dns.Transport
+		}
+		if transport != "doh" || !validDoHURL(server.Address) {
+			continue
+		}
+		var ips []netip.Addr
+		for _, text := range server.IPs {
+			if address, err := netip.ParseAddr(text); err == nil && address.Zone() == "" {
+				if address = address.Unmap(); len(ips) < 4 && !slices.Contains(ips, address) {
+					ips = append(ips, address)
+				}
+			}
+		}
+		return server.Address, ips
+	}
+	return "", nil
+}
+
+// validDoHURL is the trust boundary of a DoH address from the panel: https, no credentials or fragment, a host of DNS
+// characters or an IP literal, a port that is a number or none, up to 255 characters.
+func validDoHURL(text string) bool {
+	if len(text) > 255 || strings.ContainsFunc(text, func(r rune) bool { return r <= 0x20 || r == 0x7f || r == '#' }) {
+		return false
+	}
+	u, err := url.Parse(text)
+	if err != nil || u.Scheme != "https" || u.Opaque != "" || u.User != nil || u.Fragment != "" || u.Host == "" {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return false
+		}
+	}
+	host := u.Hostname()
+	if address, err := netip.ParseAddr(host); err == nil {
+		return address.Zone() == ""
+	}
+	return validSuffix(strings.ToLower(host))
 }
 
 // validGeositeName is the form of a list name the panel sends: lower-case letters, digits and "-", and "!" or "@" after
@@ -568,6 +622,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.Notice = shortTextN(b.Notice.Text, maxNotice)
 	st.DNS, st.DNSSplit, st.DNSIPv4Only = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
 	st.DNSBlockAds = b.DNS != nil && b.DNS.BlockAds
+	st.DNSDoH, st.DNSDoHIPs = panelDoH(b.DNS)
 	st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds = []Server{}, nil, 0, nil
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
 	st.Debug = panelDebug(b.Debug)

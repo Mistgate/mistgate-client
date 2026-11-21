@@ -88,7 +88,7 @@ func (o *hangingOutbound) ListenUDP(context.Context) (packetFlow, error) {
 func TestSlowUDPOutboundDoesNotStopThePacketPump(t *testing.T) {
 	device := newPacketTun()
 	vpn := &hangingOutbound{release: make(chan struct{})}
-	bridge, err := newGvisorBridge(context.Background(), device, 1500, vpn, nil, nil, nil, nil, nil, nil)
+	bridge, err := newGvisorBridge(context.Background(), device, 1500, vpn, nil, nil, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

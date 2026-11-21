@@ -35,6 +35,9 @@ type Profile struct {
 	PanelSplit []DNSSplit
 	// The panel's preset blocks the ad names of geosite:category-ads-all.
 	PanelBlockAds bool
+	// The preset's DoH resolver: its https URL and the addresses of its host (maybe none); empty URL for none.
+	PanelDoH    string
+	PanelDoHIPs []netip.Addr
 	// The panel said no IPv6 leaves through this path (ipv6_egress false): the engine takes its word and does not probe.
 	NoIPv6 bool
 }
