@@ -21,6 +21,9 @@ type interfaceInfo struct {
 // ponytail: non-Windows checks return offline; upgrade = add the platform's physical-route socket binding.
 func physicalNetwork() (interfaceInfo, error) { return interfaceInfo{}, errors.New("offline") }
 
+// NetworkKey: see network_windows.go. ponytail: no network key off Windows, so Auto remembers nothing there.
+func NetworkKey([]byte) (key, kind string) { return "", "" }
+
 func interfaceFor(_ netip.Addr, fallback interfaceInfo) interfaceInfo { return fallback }
 
 func listenPacketBound(context.Context, interfaceInfo) (net.PacketConn, error) {

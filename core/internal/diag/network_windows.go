@@ -55,15 +55,7 @@ func physicalNetwork() (interfaceInfo, error) {
 		if adapter.IfIndex != index {
 			continue
 		}
-		kind := "other"
-		switch adapter.IfType {
-		case 71:
-			kind = "wifi"
-		case 6:
-			kind = "ethernet"
-		case 243, 244:
-			kind = "mobile"
-		}
+		kind := interfaceKind(adapter.IfType)
 		dns, _ := adapter.LUID.DNS()
 		ipv4 := dns[:0]
 		for _, server := range dns {
@@ -74,6 +66,49 @@ func physicalNetwork() (interfaceInfo, error) {
 		return interfaceInfo{Index: index, Kind: kind, DNS: ipv4}, nil
 	}
 	return interfaceInfo{}, errors.New("offline")
+}
+
+func interfaceKind(ifType winipcfg.IfType) string {
+	switch ifType {
+	case 71:
+		return "wifi"
+	case 6:
+		return "ethernet"
+	case 243, 244:
+		return "mobile"
+	}
+	return "other"
+}
+
+// NetworkKey names the network the machine is on without saying which: the hash of the salt, the kind of the physical
+// interface that has the default route and its IPv4 gateway. kind is wifi, ethernet, mobile or other. key is "" when
+// there is no network (or no gateway to tell it by); nothing of what went into the hash leaves this function. It reads
+// the routing table and the adapter list and asks the network for nothing.
+// ponytail: the adapter's NetworkGUID was meant to be the id, but here it is one value for every adapter of the machine
+// (loopback included); the gateway's address tells apart networks of one kind unless two use the same one (192.168.1.1).
+// Upgrade = the gateway's MAC from the neighbour table.
+func NetworkKey(salt []byte) (key, kind string) {
+	index, err := netcfg.PhysicalInterfaceIndex4()
+	if err != nil || index == 0 {
+		return "", ""
+	}
+	addresses, err := winipcfg.GetAdaptersAddresses(windows.AF_INET, winipcfg.GAAFlagIncludeGateways)
+	if err != nil {
+		return "", ""
+	}
+	for _, adapter := range addresses {
+		if adapter.IfIndex != index {
+			continue
+		}
+		kind = interfaceKind(adapter.IfType)
+		for gateway := adapter.FirstGatewayAddress; gateway != nil; gateway = gateway.Next {
+			if address, ok := netip.AddrFromSlice(gateway.Address.IP().To4()); ok {
+				return networkKey(salt, kind, address), kind
+			}
+		}
+		return "", kind
+	}
+	return "", ""
 }
 
 func interfaceFor(destination netip.Addr, fallback interfaceInfo) interfaceInfo {
