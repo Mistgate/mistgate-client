@@ -43,6 +43,8 @@ type SiteRules struct {
 	HasDirect bool
 	HasVPN    bool
 	HasBlock  bool
+	// The lists the panel's DNS split names, by collection id; only InPanelSite reads them.
+	Panel map[string]*SiteSet
 	// Programs by normalised path. Only the direct set counts in smart and only the VPN set in selected.
 	DirectApps map[string]struct{}
 	VPNApps    map[string]struct{}
@@ -106,9 +108,17 @@ func (s *Store) SetRules(rules Rules) (Rules, bool, error) {
 		return current, false, errors.New("cannot save route rules")
 	}
 	s.rules = normalized
-	// a list the rules no longer name is let go: it can be megabytes
+	s.releaseSites()
+	s.mu.Unlock()
+	s.rebuildSiteRules()
+	s.signalChange()
+	return cloneRules(normalized), true, nil
+}
+
+// releaseSites lets go of a list neither the rules nor the panel name: it can be megabytes. s.mu is held.
+func (s *Store) releaseSites() {
 	named := make(map[string]bool)
-	for _, collection := range ruleCollections(normalized) {
+	for _, collection := range slices.Concat(ruleCollections(s.rules), s.panelSites) {
 		named[collection] = true
 	}
 	for collection := range s.siteSets {
@@ -118,10 +128,40 @@ func (s *Store) SetRules(rules Rules) (Rules, bool, error) {
 			delete(s.errs, collection)
 		}
 	}
+}
+
+const maxPanelSites = 16
+
+// SetPanelSites names the geosite lists the panel's DNS split points at (what the profile just started carries): they
+// are loaded from the cache and downloaded when stale, as the rules' lists are, and InPanelSite reads them. A list the
+// rules also name is shared. ponytail: refreshed whenever the profile starts or a download lands, not on a timer.
+func (s *Store) SetPanelSites(collections []string) {
+	if s == nil {
+		return
+	}
+	var named []string
+	for _, collection := range collections {
+		if _, _, ok := siteCachePath(s.dir, collection); ok && strings.HasPrefix(collection, "geosite:") && !slices.Contains(named, collection) && len(named) < maxPanelSites {
+			named = append(named, collection)
+		}
+	}
+	s.mu.Lock()
+	changed := !slices.Equal(s.panelSites, named)
+	s.panelSites = named
+	s.releaseSites()
 	s.mu.Unlock()
-	s.rebuildSiteRules()
-	s.signalChange()
-	return cloneRules(normalized), true, nil
+	for _, collection := range named {
+		_, _ = s.Sites(collection) // reads the cache, starts a download when it is stale
+	}
+	if changed {
+		s.rebuildSiteRules()
+		s.signalChange()
+	}
+}
+
+// InPanelSite says whether a lower-case name is in a list the panel named and the store has loaded. It only reads.
+func (r *SiteRules) InPanelSite(collection, name string) bool {
+	return r != nil && r.Panel[collection].Match(name)
 }
 
 func (s *Store) ActiveSiteRules() *SiteRules {
@@ -153,7 +193,17 @@ func (s *Store) rebuildSiteRules() {
 	add(direct, rules.Direct)
 	add(vpn, rules.VPN)
 	add(block, rules.Block)
+	s.mu.Lock()
+	panelNames := slices.Clone(s.panelSites)
+	s.mu.Unlock()
+	panel := make(map[string]*SiteSet, len(panelNames))
+	for _, collection := range panelNames {
+		if set, ok := s.Sites(collection); ok {
+			panel[collection] = set
+		}
+	}
 	s.siteRules.Store(&SiteRules{
+		Panel:      panel,
 		Direct:     direct,
 		VPN:        vpn,
 		Block:      block,

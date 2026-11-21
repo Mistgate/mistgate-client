@@ -172,7 +172,10 @@ The body (stable key order; the client ignores fields it does not know):
 - `asn` comes only with `X-Mistgate-Direct: 1`, on the VPS edition, when known. It is not stored by the panel, is not
   part of the ETag and is not on a `304`.
 - `dns` is one object for the whole subscription. Server addresses: plain `ip` or `ip:port`, DoT `host[:port]`, DoH a
-  URL; `ips` are absent when unknown. `split` is empty unless `split_direct`. `dns` is absent when the status is not
+  URL; `ips` are absent when unknown. `split` is empty unless `split_direct`; a rule names domain `suffixes` (lower-case
+  punycode, no leading dot) and `geo` (country codes and `geosite:<name>` lists). The client uses only the plain
+  resolvers: a rule sends the questions of the names it names, when they go direct, to its resolver; it does not make
+  a name direct. `ipv4_only` makes the client keep IPv6 off the paths. `dns` is absent when the status is not
   `active` or the panel has no usable preset.
 - `servers` is `[]` unless the status is `active`. With another status the answer is still `200`, with the status,
   plan, brand, notice, probe and debug.

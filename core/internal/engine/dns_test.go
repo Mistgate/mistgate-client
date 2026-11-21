@@ -2,6 +2,7 @@ package engine
 
 import (
 	"net/netip"
+	"slices"
 	"testing"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
@@ -208,6 +209,44 @@ func TestRegionResolver(t *testing.T) {
 		if test.want == "" && got.IsValid() || test.want != "" && got != netip.MustParseAddrPort(test.want) {
 			t.Errorf("regionResolver(%q) = %v; want %q", test.region, got, test.want)
 		}
+	}
+}
+
+func TestNameResolver(t *testing.T) {
+	ip := func(text string) []netip.Addr { return []netip.Addr{netip.MustParseAddr(text)} }
+	split := []profile.DNSSplit{
+		{Suffixes: []string{"nores.example"}}, // no resolver: skipped
+		{Suffixes: []string{"first.example"}, Sites: []string{"geosite:media"}, Servers: ip("9.9.9.1")},
+		{Suffixes: []string{"first.example", "second.example"}, Sites: []string{"geosite:news"}, Servers: ip("9.9.9.2")},
+		{Geo: []string{"cn"}, Servers: ip("9.9.9.3")},
+	}
+	lists := map[string][]string{"geosite:media": {"tube.example"}, "geosite:news": {"tube.example", "daily.example"}}
+	tests := []struct {
+		name, region string
+		want         string // empty: none
+	}{
+		{"first.example", "", "9.9.9.1:53"},     // the suffix itself
+		{"a.b.first.example", "", "9.9.9.1:53"}, // a subdomain; the first rule wins over the second
+		{"second.example", "", "9.9.9.2:53"},
+		{"notfirst.example", "", ""},       // a longer label is not the suffix
+		{"first.example.com", "", ""},      // the suffix must end the name
+		{"nores.example", "", ""},          // a rule with no resolver gives nothing
+		{"tube.example", "", "9.9.9.1:53"}, // in a list; the first rule that has it wins
+		{"daily.example", "", "9.9.9.2:53"},
+		{"other.example", "", ""},
+		{"other.example", "cn", "9.9.9.3:53"},   // the region is the fallback
+		{"other.example", "ru", "77.88.8.8:53"}, // and so is the table
+		{"first.example", "cn", "9.9.9.1:53"},   // a name rule beats the region
+	}
+	for _, test := range tests {
+		inList := func(collection string) bool { return slices.Contains(lists[collection], test.name) }
+		got := nameResolver(test.name, test.region, split, inList)
+		if test.want == "" && got.IsValid() || test.want != "" && got != netip.MustParseAddrPort(test.want) {
+			t.Errorf("nameResolver(%q, %q) = %v; want %q", test.name, test.region, got, test.want)
+		}
+	}
+	if got := panelSites(split); !slices.Equal(got, []string{"geosite:media", "geosite:news"}) {
+		t.Errorf("panelSites = %v", got)
 	}
 }
 

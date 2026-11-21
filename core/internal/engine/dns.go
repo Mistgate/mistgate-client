@@ -3,6 +3,7 @@ package engine
 import (
 	"net/netip"
 	"slices"
+	"strings"
 
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
@@ -108,6 +109,37 @@ func regionResolver(region string, split []profile.DNSSplit) netip.AddrPort {
 		return netip.AddrPortFrom(table[0], 53)
 	}
 	return netip.AddrPort{}
+}
+
+// nameResolver is where a direct question about a name goes: the first panel rule that names it (a suffix it ends in,
+// or a list that has it: inList says so for a "geosite:<name>" id), else the region's resolver. The zero value says there
+// is none, and the question goes through the VPN. The panel does not say whether a name goes direct, only where.
+func nameResolver(name, region string, split []profile.DNSSplit, inList func(collection string) bool) netip.AddrPort {
+	for _, entry := range split {
+		if len(entry.Servers) == 0 {
+			continue
+		}
+		for _, suffix := range entry.Suffixes {
+			if name == suffix || strings.HasSuffix(name, "."+suffix) {
+				return netip.AddrPortFrom(entry.Servers[0], 53)
+			}
+		}
+		for _, collection := range entry.Sites {
+			if inList(collection) {
+				return netip.AddrPortFrom(entry.Servers[0], 53)
+			}
+		}
+	}
+	return regionResolver(region, split)
+}
+
+// panelSites are the geosite lists a split names, for the geo store to load.
+func panelSites(split []profile.DNSSplit) []string {
+	var out []string
+	for _, entry := range split {
+		out = append(out, entry.Sites...)
+	}
+	return out
 }
 
 var defaultTunnelDNS = []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}

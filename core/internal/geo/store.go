@@ -185,6 +185,7 @@ type Store struct {
 	siteLoaded      map[string]bool
 	siteRefreshing  map[string]bool
 	rules           Rules
+	panelSites      []string // "geosite:<name>" lists the panel's DNS split names; kept beside the rules' own
 	rulesCompileMu  sync.Mutex
 	siteRules       atomic.Pointer[SiteRules]
 	suggest         *Tracker

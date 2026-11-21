@@ -356,23 +356,24 @@ func (r *Real) nameRoute(name string) (block bool, resolver netip.AddrPort) {
 		if configured.RouteMode == "selected" && appsListed("selected", rules) {
 			return false, netip.AddrPort{}
 		}
-		return false, r.regionResolver(region)
+		return false, r.directResolver(name, region, rules)
 	}
 	return false, netip.AddrPort{}
 }
 
-func (r *Real) regionResolver(region string) netip.AddrPort {
+// directResolver is nameResolver over the panel's split of the profile last started and the lists loaded so far.
+func (r *Real) directResolver(name, region string, rules *geo.SiteRules) netip.AddrPort {
 	var split []profile.DNSSplit
 	if p := r.panelSplit.Load(); p != nil {
 		split = *p
 	}
-	return regionResolver(region, split)
+	return nameResolver(name, region, split, func(collection string) bool { return rules.InPanelSite(collection, name) })
 }
 
 // CheckSite is routes.check: where the forwarder would send a site now, by the code the flows use.
 func (r *Real) CheckSite(configured settings.Settings, name string) geo.Check {
 	region := r.routeRegion(configured)
-	return r.geo.CheckName(configured.RouteMode, region, name, r.regionResolver(region).IsValid())
+	return r.geo.CheckName(configured.RouteMode, region, name, r.directResolver(name, region, r.geo.ActiveSiteRules()).IsValid())
 }
 
 func (r *Real) Routes(configured settings.Settings) geo.Routes {
@@ -576,6 +577,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	}
 	split := selected.PanelSplit
 	r.panelSplit.Store(&split)
+	r.geo.SetPanelSites(panelSites(split))
 	run.tunnel.mu.Lock()
 	run.tunnel.noIPv6 = selected.NoIPv6 || selected.TT != nil && !selected.TT.HasIPv6
 	run.tunnel.mu.Unlock()

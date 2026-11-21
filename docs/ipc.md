@@ -464,7 +464,7 @@ answer is not logged. Programs that are installed but not running are not listed
 as a flow (no lookup, no network): `route` is `direct`, `vpn` or `block`; `by` is `mode` (the `all` mode; always
 `vpn`), `site` (an entry of the matching selection, named in `rule`), `collection` (the collection id in `rule`),
 `region` (the name is under the effective region's own top-level domain; `rule` is empty) or `default`; `dns` says
-where the question goes: `direct` when `route` is `direct` and a regional resolver is known, otherwise `vpn` (a
+where the question goes: `direct` when `route` is `direct` and a regional or panel resolver is known, otherwise `vpn` (a
 blocked name's question is answered by the service and reported as `vpn`). In `smart`, `vpn` with `default`
 means that no rule names the site: the address of the flow still decides, so it may go direct. A name under a
 region's top-level domain is `direct` by `region` here because its question goes direct; the flow itself still follows
@@ -476,11 +476,21 @@ The answer is not logged.
 For a managed subscription each `sync` carries a `dns` object (`docs/client-api.md`). The service keeps, with the
 subscription, the plain resolvers only: from `dns.servers` the entries with transport `plain` (the `address` when it is
 an IP, or an IP with port 53, else the entry's `ips`), at most two, and, when `split_direct` is true, for every entry of
-`dns.split` its `geo` codes and its plain resolvers (at most two). DoT and DoH entries and other ports are skipped. A
-sync without `dns`, or with a status other than `active`, clears them. They are not part of the `Subscription` object.
+`dns.split` what it names and its plain resolvers (at most two): the country codes of `geo`, the `geosite:<name>`
+entries of `geo` (lower-case letters, digits, `-`, and `!` or `@` after the first character, up to 48; at most 16 per
+entry) and the `suffixes` (lower-case ASCII labels, no leading dot, up to 253 characters, at most 256 per entry). At most
+64 entries are kept, and anything malformed is dropped without a word; an entry with no plain resolver, or naming
+nothing usable, is dropped. DoT and DoH entries and other ports are skipped. `dns.ipv4_only` true makes the profiles of
+the subscription carry no IPv6, as a path whose `ipv6_egress` is false does. A sync without `dns`, or with a status
+other than `active`, clears all of it. None of it is part of the `Subscription` object.
 The tunnel's DNS is the first that exists of: the user's `dns` setting, the profile's own servers (AmneziaWG), the panel's
-`dns.servers`, `1.1.1.1` and `1.0.0.1`. A split entry whose `geo` contains the effective region gives that region's
-resolver in place of the table's. Both are read when the tunnel starts (a new `sync` applies to the next connect).
+`dns.servers`, `1.1.1.1` and `1.0.0.1`. The panel does not decide which names go direct (the route rules and the region
+do); it says where a direct name's question goes: the resolver of the first entry, in the panel's order, that has a
+suffix the name equals or ends in (`.` + suffix) or a `geosite:` list that contains the name; else the one of an entry
+whose `geo` contains the effective region; else the region table's. `routes.check` reports `dns` as `direct` for a
+name that has such a resolver. A `geosite:` list the panel names is loaded like a collection of the rules (from the
+cache, downloaded when stale) when the tunnel starts, and read from memory only: a name is matched against a list once it
+has loaded. These lists are not in `routes.lists`. All of it is read when the tunnel starts (a new `sync` applies to the next connect).
 
 Each selection accepts at most 200 collections and 500 sites. A collection is `geosite:<name>` (lower-case letters,
 digits, `!`, `@`, and `-`, up to 48 characters) or `list:<https URL>` (up to 512 URL characters, HTTPS only, no

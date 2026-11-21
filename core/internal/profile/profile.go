@@ -39,10 +39,13 @@ type Profile struct {
 
 const PurposeWhitelist = "whitelist"
 
-// DNSSplit is a panel's resolver list for the regions in Geo (lower-case country codes).
+// DNSSplit is a panel's resolver list for the regions in Geo (lower-case country codes), for the names under Suffixes
+// (domain suffix bodies) and for the names in Sites ("geosite:<name>" collections).
 type DNSSplit struct {
-	Geo     []string     `json:"geo"`
-	Servers []netip.Addr `json:"servers"`
+	Geo      []string     `json:"geo,omitempty"`
+	Suffixes []string     `json:"suffixes,omitempty"`
+	Sites    []string     `json:"sites,omitempty"`
+	Servers  []netip.Addr `json:"servers"`
 }
 
 type Hy2 struct {

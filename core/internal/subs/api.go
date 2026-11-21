@@ -63,6 +63,8 @@ type apiState struct {
 	// The panel's plain resolvers: the tunnel's DNS, and per region the ones its own people use. Not secret.
 	DNS      []netip.Addr       `json:"dns,omitempty"`
 	DNSSplit []profile.DNSSplit `json:"dns_split,omitempty"`
+	// The panel's preset is IPv4 only: the profiles of the subscription carry no IPv6.
+	DNSIPv4Only bool `json:"dns_ipv4_only,omitempty"`
 	// The ASN of this device's network as the panel saw it; only a block report uses it, the window never gets it.
 	ASN uint32 `json:"asn,omitempty"`
 }
@@ -185,10 +187,12 @@ func telegramLink(link string) bool {
 type syncDNS struct {
 	Servers []syncResolver `json:"servers"`
 	Split   []struct {
-		Geo     []string       `json:"geo"`
-		Servers []syncResolver `json:"servers"`
+		Suffixes []string       `json:"suffixes"`
+		Geo      []string       `json:"geo"`
+		Servers  []syncResolver `json:"servers"`
 	} `json:"split"`
 	SplitDirect bool `json:"split_direct"`
+	IPv4Only    bool `json:"ipv4_only"`
 }
 
 type syncResolver struct {
@@ -235,27 +239,77 @@ func (r syncResolver) addresses() []string {
 	return r.IPs
 }
 
+// What a panel's split can name: rules, and per rule suffixes and geosite lists (each list is a download).
+const (
+	maxSplitRules    = 64
+	maxSplitSuffixes = 256
+	maxSplitSites    = 16
+)
+
 // panelDNS keeps what the engine can use: the resolvers for the tunnel and, when the panel splits direct, those of
-// each region it names.
-func panelDNS(dns *syncDNS) ([]netip.Addr, []profile.DNSSplit) {
+// each region, domain suffix and geosite list it names; and whether the preset is IPv4 only. Anything malformed in a
+// rule is dropped; a rule with no plain resolver or nothing it names goes whole.
+func panelDNS(dns *syncDNS) ([]netip.Addr, []profile.DNSSplit, bool) {
 	if dns == nil {
-		return nil, nil
+		return nil, nil, false
 	}
 	var split []profile.DNSSplit
 	if dns.SplitDirect {
 		for _, entry := range dns.Split {
-			var codes []string
+			rule := profile.DNSSplit{Servers: plainResolvers(entry.Servers)}
 			for _, code := range entry.Geo {
-				if code = strings.ToLower(code); len(code) == 2 && code[0] >= 'a' && code[0] <= 'z' && code[1] >= 'a' && code[1] <= 'z' {
-					codes = append(codes, code)
+				if name, ok := strings.CutPrefix(code, "geosite:"); ok {
+					if validGeositeName(name) && len(rule.Sites) < maxSplitSites && !slices.Contains(rule.Sites, code) {
+						rule.Sites = append(rule.Sites, code)
+					}
+				} else if code = strings.ToLower(code); len(code) == 2 && code[0] >= 'a' && code[0] <= 'z' && code[1] >= 'a' && code[1] <= 'z' {
+					rule.Geo = append(rule.Geo, code)
 				}
 			}
-			if servers := plainResolvers(entry.Servers); len(codes) != 0 && len(servers) != 0 {
-				split = append(split, profile.DNSSplit{Geo: codes, Servers: servers})
+			for _, suffix := range entry.Suffixes {
+				if validSuffix(suffix) && len(rule.Suffixes) < maxSplitSuffixes && !slices.Contains(rule.Suffixes, suffix) {
+					rule.Suffixes = append(rule.Suffixes, suffix)
+				}
+			}
+			if len(rule.Servers) != 0 && len(rule.Geo)+len(rule.Suffixes)+len(rule.Sites) != 0 && len(split) < maxSplitRules {
+				split = append(split, rule)
 			}
 		}
 	}
-	return plainResolvers(dns.Servers), split
+	return plainResolvers(dns.Servers), split, dns.IPv4Only
+}
+
+// validGeositeName is the form of a list name the panel sends: lower-case letters, digits and "-", and "!" or "@" after
+// the first character; up to 48, the longest the geo store takes.
+func validGeositeName(name string) bool {
+	if name == "" || len(name) > 48 {
+		return false
+	}
+	for i, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || i > 0 && (r == '-' || r == '!' || r == '@')) {
+			return false
+		}
+	}
+	return true
+}
+
+// validSuffix is a domain suffix body as the panel sends it: lower-case ASCII labels (punycode) of letters, digits and
+// hyphens, no leading dot.
+func validSuffix(text string) bool {
+	if text == "" || len(text) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(text, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range []byte(label) {
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type syncPath struct {
@@ -509,7 +563,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	}
 	st.ExpireUnix, st.TotalBytes, st.UsedBytes = b.Plan.ExpiresUnix, b.Plan.QuotaBytes, b.Plan.UsedBytes
 	st.Notice = shortTextN(b.Notice.Text, maxNotice)
-	st.DNS, st.DNSSplit = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
+	st.DNS, st.DNSSplit, st.DNSIPv4Only = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
 	st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds = []Server{}, nil, 0, nil
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
 	st.Debug = panelDebug(b.Debug)

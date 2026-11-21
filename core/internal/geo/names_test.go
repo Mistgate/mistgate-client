@@ -129,6 +129,47 @@ func TestCheckNameSaysWhyAndWhere(t *testing.T) {
 	}
 }
 
+func TestPanelSitesAreLoadedFromTheCacheAndLetGo(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"site-media.list": "+.tube.example\n", "site-news.list": "daily.example\n"} {
+		if err := os.WriteFile(filepath.Join(dir, "geo", name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// only geosite lists with a good name count; the rest is dropped without a word
+	store.SetPanelSites([]string{"geosite:media", "geosite:media", "list:https://lists.example/x", "geosite:Bad Name", "geosite:news"})
+	rules := store.ActiveSiteRules()
+	if !rules.InPanelSite("geosite:media", "a.tube.example") || rules.InPanelSite("geosite:news", "a.tube.example") || rules.InPanelSite("geosite:other", "a.tube.example") {
+		t.Error("a name is not matched by its own list alone")
+	}
+	if !rules.InPanelSite("geosite:news", "daily.example") || rules.InPanelSite("geosite:news", "daily.example.org") {
+		t.Error("geosite:news does not match as a suffix list")
+	}
+	if len(rules.Panel) != 2 || rules.Direct.Match("tube.example") || len(store.Lists().Lists) != 0 {
+		t.Error("panel lists reached the user's rules or the window's lists")
+	}
+	// a list the rules name too stays when the panel lets it go
+	if _, _, err := store.SetRules(Rules{Direct: Selection{Collections: []string{"geosite:news"}}}); err != nil {
+		t.Fatal(err)
+	}
+	store.SetPanelSites(nil)
+	rules = store.ActiveSiteRules()
+	if rules.InPanelSite("geosite:media", "tube.example") || !rules.Direct.Match("daily.example") {
+		t.Error("lists not let go as they should")
+	}
+	if _, ok := store.siteSet("geosite:media"); ok {
+		t.Error("an unnamed list stayed in memory")
+	}
+	var none *SiteRules
+	if none.InPanelSite("geosite:media", "tube.example") {
+		t.Error("nil rules matched")
+	}
+}
+
 func TestBlockRulesAreStoredValidatedAndReported(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)

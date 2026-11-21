@@ -454,7 +454,7 @@ func (s *Store) Profiles() ([]profile.Profile, error) {
 	for _, sub := range s.state.Subscriptions {
 		for _, entry := range sub.Entries {
 			p := profile.Profile{ID: entry.Server.ID, Name: entry.Server.Name, Protocol: entry.Server.Protocol, Sub: sub.ID, Via: entry.Server.Via, Purpose: entry.Server.Purpose, PanelDNS: sub.DNS, PanelSplit: sub.DNSSplit,
-				NoIPv6: entry.Server.IPv6Egress != nil && !*entry.Server.IPv6Egress}
+				NoIPv6: entry.Server.IPv6Egress != nil && !*entry.Server.IPv6Egress || sub.DNSIPv4Only}
 			var err error
 			switch {
 			case strings.HasPrefix(entry.Raw, "{"):
