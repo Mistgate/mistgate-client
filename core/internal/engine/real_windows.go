@@ -1352,6 +1352,9 @@ func (r *Real) Probe(ctx context.Context) error {
 	return nil
 }
 
+// Proof fetches a little data through the tunnel's own way out (DialVPN), outside the route rules.
+func (r *Real) Proof(ctx context.Context) string { return diag.Proof(ctx, r.DialVPN) }
+
 func (r *Real) resolveServer(ctx context.Context, run *realRun, host string, hold bool) (netip.Addr, error) {
 	key := strings.ToLower(strings.TrimSuffix(host, "."))
 	if address, err := netip.ParseAddr(host); err == nil {

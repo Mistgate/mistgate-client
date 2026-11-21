@@ -22,6 +22,7 @@ const (
 	freshFor     = 24 * time.Hour // a success older than this is not "known"
 	staleAfter   = 6 * time.Hour  // a success older than this costs staleCost in the score
 	staleCost    = 60
+	frozenCost   = 400 // a path that let a connection start and carried nothing, for a day
 	unknownRTT   = 300 // ms: the score of a path whose round trip was never seen
 	saveEvery    = time.Minute
 	failWeight   = 0.3 // how much one outcome moves Fail
@@ -42,6 +43,8 @@ type Stat struct {
 	RTT    int     `json:"rtt,omitempty"`    // ms of the last success; 0 when not known
 	Streak int     `json:"streak,omitempty"` // failures in a row
 	Until  int64   `json:"until,omitempty"`  // the end of the quarantine
+	Proved int64   `json:"proved,omitempty"` // the last time data was seen to go through the path (the session's own download)
+	Froze  int64   `json:"froze,omitempty"`  // the last time a connection through it started and then carried nothing
 }
 
 type network struct {
@@ -142,6 +145,33 @@ func (m *Memory) Failure(net, id string, now time.Time) {
 	})
 }
 
+// Prove notes that data went through the path; it ends a freeze mark.
+func (m *Memory) Prove(net, id string, now time.Time) {
+	m.record(net, id, now, func(s *Stat) { s.Proved, s.Froze = now.Unix(), 0 })
+}
+
+// Freeze notes that a connection through the path started and then carried nothing: a failure of the path, and a mark
+// that costs it frozenCost in Score for a day.
+func (m *Memory) Freeze(net, id string, now time.Time) {
+	m.Failure(net, id, now)
+	m.record(net, id, now, func(s *Stat) { s.Froze, s.Proved = now.Unix(), 0 })
+}
+
+// Proved says whether data was seen to go through the path in this network within a day.
+func (m *Memory) Proved(net, id string, now time.Time) bool {
+	if m == nil || net == "" {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := m.nets[net]
+	if n == nil {
+		return false
+	}
+	s := n.Paths[id]
+	return s.Proved != 0 && now.Sub(time.Unix(s.Proved, 0)) < freshFor
+}
+
 func (m *Memory) record(net, id string, now time.Time, update func(*Stat)) {
 	if m == nil || net == "" || id == "" {
 		return
@@ -211,7 +241,7 @@ func (m *Memory) Known(net string, candidates []Path, now time.Time) (id string,
 }
 
 // Score is how bad a path looks (lower is better): its round trip, worse the more it failed, plus what a relay or a
-// WARP exit costs over a direct path and a penalty for a success that is not recent.
+// WARP exit costs over a direct path, a penalty for a success that is not recent and one for a freeze within a day.
 // ponytail: a round trip never seen counts as 300 ms; the engine hands over none for most protocols yet.
 func Score(s Stat, via string, now time.Time) float64 {
 	rtt := float64(s.RTT)
@@ -227,6 +257,9 @@ func Score(s Stat, via string, now time.Time) float64 {
 	}
 	if s.OK == 0 || now.Sub(time.Unix(s.OK, 0)) > staleAfter {
 		score += staleCost
+	}
+	if s.Froze != 0 && now.Sub(time.Unix(s.Froze, 0)) < freshFor {
+		score += frozenCost
 	}
 	return score
 }

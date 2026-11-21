@@ -32,6 +32,7 @@ func (*Real) Reapply()                                {}
 func (*Real) Stats() Traffic                          { return Traffic{} }
 func (*Real) Received() uint64                        { return 0 }
 func (*Real) Probe(context.Context) error             { return errors.New("real engine requires Windows") }
+func (*Real) Proof(context.Context) string            { return "" }
 func (*Real) Changed() <-chan struct{}                { return nil }
 func (*Real) Next(Target, string) (string, bool)      { return "", false }
 func (*Real) Select(Target) (Selection, bool)         { return Selection{}, false }

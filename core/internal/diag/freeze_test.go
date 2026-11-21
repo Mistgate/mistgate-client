@@ -2,6 +2,8 @@ package diag
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,5 +77,67 @@ func TestFetchMeasuresStallAndCompletion(t *testing.T) {
 	server.Close()
 	if got := get("/full"); transferVerdict(got) != "blocked" {
 		t.Errorf("closed server = %+v", got)
+	}
+}
+
+// Proof against a local server: the first target that completes is enough, a freeze counts only when no target completed.
+func TestProofOf(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/full", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(make([]byte, freezeBytes)) })
+	mux.HandleFunc("/stall", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(make([]byte, 16<<10))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	mux.HandleFunc("/cut", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "131072")
+		_, _ = w.Write(make([]byte, 9000)) // shorter than it said: the connection is closed on it
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	cases := []struct {
+		name  string
+		paths []string
+		want  string
+	}{
+		{"first completes", []string{"/full", "/stall"}, "ok"},
+		{"second completes after a stall", []string{"/stall", "/full"}, "ok"},
+		{"both stall", []string{"/stall", "/stall"}, "freeze"},
+		{"a cut and nothing reached", []string{"/cut", "/missing"}, "freeze"},
+		{"nothing began", []string{"/missing", "/missing"}, ""},
+		{"nothing listens", []string{"/gone"}, ""},
+	}
+	for _, c := range cases {
+		urls := make([]string, len(c.paths))
+		for i, p := range c.paths {
+			urls[i] = server.URL + p
+			if p == "/gone" {
+				urls[i] = "http://127.0.0.1:1/"
+			}
+		}
+		if got := proofOf(context.Background(), server.Client(), urls, time.Second, 150*time.Millisecond); got != c.want {
+			t.Errorf("%s: proof = %q, want %q", c.name, got, c.want)
+		}
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := proofOf(cancelled, server.Client(), []string{server.URL + "/stall"}, time.Second, time.Second); got != "" {
+		t.Errorf("a stopped caller got %q, want none", got)
+	}
+}
+
+// The way out is the one handed in, with the host and the port of the URL.
+func TestProofDialsThroughTheGivenWay(t *testing.T) {
+	var host string
+	var port uint16
+	dial := func(_ context.Context, h string, p uint16) (net.Conn, error) {
+		host, port = h, p
+		return nil, errors.New("no way out")
+	}
+	if got := Proof(context.Background(), dial); got != "" {
+		t.Fatalf("proof with no way out = %q, want none", got)
+	}
+	if host == "" || port != 443 {
+		t.Fatalf("dialled %q:%d, want a host on 443", host, port)
 	}
 }

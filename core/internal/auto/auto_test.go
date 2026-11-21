@@ -28,11 +28,48 @@ func TestScore(t *testing.T) {
 		{"unknown round trip is 300", Stat{OK: t0.Unix()}, "", 300},
 		{"old success", Stat{OK: t0.Add(-7 * time.Hour).Unix(), RTT: 50}, "", 110},
 		{"success at the edge is not old", Stat{OK: t0.Add(-6 * time.Hour).Unix(), RTT: 50}, "", 50},
+		{"a fresh freeze costs 400", Stat{OK: t0.Unix(), RTT: 50, Froze: t0.Add(-time.Hour).Unix()}, "", 450},
+		{"a freeze a little under a day old still costs", Stat{OK: t0.Unix(), RTT: 50, Froze: t0.Add(-23 * time.Hour).Unix()}, "", 450},
+		{"a freeze a day old costs nothing", Stat{OK: t0.Unix(), RTT: 50, Froze: t0.Add(-24 * time.Hour).Unix()}, "", 50},
 	}
 	for _, test := range tests {
 		if got := Score(test.stat, test.via, t0); math.Abs(got-test.want) > 1e-6 {
 			t.Errorf("%s: score = %v, want %v", test.name, got, test.want)
 		}
+	}
+}
+
+func TestFreezeAndProve(t *testing.T) {
+	m := Open("")
+	if m.Proved("n", "a", t0) {
+		t.Fatal("proved with nothing known")
+	}
+	m.Success("n", "a", 50, t0)
+	m.Prove("n", "a", t0)
+	if !m.Proved("n", "a", t0.Add(23*time.Hour)) || m.Proved("n", "a", t0.Add(24*time.Hour)) || m.Proved("other", "a", t0) {
+		t.Fatal("the mark of data is not a day of one network")
+	}
+	m.Freeze("n", "a", t0.Add(time.Minute))
+	stat := m.nets["n"].Paths["a"]
+	if stat.Froze != t0.Add(time.Minute).Unix() || stat.Streak != 1 || stat.Proved != 0 || m.Proved("n", "a", t0.Add(time.Minute)) {
+		t.Fatalf("after a freeze: %+v", stat)
+	}
+	if _, ok := m.Known("n", []Path{{ID: "a"}}, t0.Add(time.Minute)); ok {
+		t.Fatal("a frozen path is still known")
+	}
+	m.Success("n", "a", 50, t0.Add(2*time.Minute)) // it connects again, which proves nothing about data
+	if stat = m.nets["n"].Paths["a"]; stat.Froze == 0 || Score(stat, "", t0.Add(2*time.Minute)) < frozenCost {
+		t.Fatalf("a connect lifted the freeze: %+v", stat)
+	}
+	m.Prove("n", "a", t0.Add(3*time.Minute))
+	if stat = m.nets["n"].Paths["a"]; stat.Froze != 0 {
+		t.Fatalf("data did not lift the freeze: %+v", stat)
+	}
+	var nilMemory *Memory
+	nilMemory.Prove("n", "a", t0)
+	nilMemory.Freeze("n", "a", t0)
+	if nilMemory.Proved("n", "a", t0) {
+		t.Fatal("a nil memory proved something")
 	}
 }
 

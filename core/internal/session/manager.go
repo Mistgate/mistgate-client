@@ -65,6 +65,7 @@ type Manager struct {
 	networkEventGrace  time.Duration
 	longSleepThreshold time.Duration
 	refusalPatience    time.Duration
+	timing             managerTiming // the timings of the watch of Auto's connection (quality.go)
 	backoff            []time.Duration
 }
 
@@ -146,6 +147,15 @@ type actorState struct {
 	deadPath string
 	// autoNet and autoPath: the network and path of the last success that has not had its round trip noted yet.
 	autoNet, autoPath string
+	// The watch of the connection that is up (quality.go).
+	liveID     uint64
+	liveCtx    context.Context
+	liveCancel context.CancelFunc
+	liveNet    string // the memory's key of the network; "" when Auto has no memory, then nothing is watched
+	// nextReason is what the status says (freeze, degraded) of the connect that follows a move the session made by itself;
+	// prefer is the path that connect goes to at once.
+	nextReason, prefer string
+	proofFreezes       int // moves made for a freeze in a row: one at most
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -157,10 +167,14 @@ type managerTiming struct {
 	networkEventGrace  time.Duration
 	longSleepThreshold time.Duration
 	refusalPatience    time.Duration
+	// proofDelayMin and proofDelayMax: how long after a connection came up Auto checks that data goes through it.
+	proofDelayMin, proofDelayMax time.Duration
 }
 
 func defaultManagerTiming() managerTiming {
 	return managerTiming{
+		proofDelayMin: 2 * time.Second,
+		proofDelayMax: 5 * time.Second,
 		// Measured on the dev stand under packet loss (2026-11): the 20 s window is what keeps a live AmneziaWG link from
 		// being torn down (it fails single probes, up to three in a row, with no loss at all); the period only moves
 		// how soon a real cut is noticed (27 to 37 s with these values).
@@ -211,10 +225,17 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	if timing.longSleepThreshold <= 0 {
 		timing.longSleepThreshold = defaults.longSleepThreshold
 	}
+	if timing.proofDelayMin <= 0 {
+		timing.proofDelayMin = defaults.proofDelayMin
+	}
+	if timing.proofDelayMax <= 0 {
+		timing.proofDelayMax = defaults.proofDelayMax
+	}
 	if len(backoff) == 0 {
 		backoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 30 * time.Second}
 	}
 	m := &Manager{
+		timing:             timing,
 		engine:             eng,
 		getSettings:        getSettings,
 		hub:                NewHub(DefaultEventQueue),
@@ -385,8 +406,8 @@ func (m *Manager) run() {
 	}
 	traffic := time.NewTicker(time.Second)
 	defer traffic.Stop()
-	var healthTimer, retryTimer *time.Timer
-	var healthC, retryC <-chan time.Time
+	var healthTimer, retryTimer, proofTimer *time.Timer
+	var healthC, retryC, proofC <-chan time.Time
 	changed := (<-chan struct{})(nil)
 	if m.engine != nil {
 		changed = m.engine.Changed()
@@ -416,6 +437,7 @@ func (m *Manager) run() {
 	}
 	defer clearTimer(&healthTimer, &healthC)
 	defer clearTimer(&retryTimer, &retryC)
+	defer clearTimer(&proofTimer, &proofC)
 
 	for {
 		select {
@@ -591,8 +613,15 @@ func (m *Manager) run() {
 					state.runCancel = nil
 					m.hub.Publish("status", state.status)
 					resetTimer(&healthTimer, &healthC, m.probeInterval)
+					if m.autoLive(&state) && !m.currentSettings().Game {
+						resetTimer(&proofTimer, &proofC, m.proofDelay())
+					} else {
+						clearTimer(&proofTimer, &proofC)
+					}
 				}
 				m.publishRoutes(&state)
+			case proofResult:
+				m.proofDone(&state, request)
 			case probeResult:
 				if request.generation != state.generation || state.status.State != "connected" {
 					continue
@@ -642,6 +671,9 @@ func (m *Manager) run() {
 			if state.status.State == "connected" && m.engine != nil {
 				m.hub.Publish("traffic", m.engine.Stats())
 			}
+		case <-proofC:
+			proofC = nil
+			m.startProof(&state)
 		case <-healthC:
 			healthC = nil
 			if state.status.State == "connected" && state.probeCancel == nil {
@@ -696,6 +728,8 @@ func (m *Manager) connect(state *actorState, target engine.Target, atStart bool)
 		return state.status, &CodeError{Code: "no_subscription"}
 	}
 	m.setChoice(state, target)
+	m.endLive(state)
+	state.nextReason, state.prefer, state.proofFreezes = "", "", 0
 	state.bootConnect = atStart
 	state.connectAttempts, state.connectStarted = 0, time.Now()
 
@@ -843,6 +877,7 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	ctx, cancel := context.WithCancel(context.Background())
 	state.runCancel = cancel
 	target.Avoid = avoidedPaths(state.roundFailures) // only Auto looks at it
+	target.Prefer, state.prefer = state.prefer, ""   // set by a move of the session; the memory may name one in its place
 	// the memory may name a path to go to at once, but only before this round has failed once
 	var known []auto.Path
 	if m.auto.Paths != nil && len(state.roundFailures) == 0 {
@@ -963,6 +998,7 @@ func (m *Manager) beginReconnect(state *actorState, hold bool) {
 	}
 	state.probePending = false
 	resetProbeStreak(state)
+	m.endLive(state)
 	if state.status.State == "connected" {
 		state.deadPath = state.status.ServerID
 	}
@@ -1016,6 +1052,8 @@ func (m *Manager) stop(state *actorState) {
 		state.probeCancel = nil
 	}
 	held := m.engine != nil && m.currentSettings().KillSwitch == "always" && m.engine.Hold()
+	m.endLive(state)
+	state.nextReason, state.prefer = "", ""
 	state.generation++
 	if held {
 		state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
@@ -1126,6 +1164,7 @@ func (m *Manager) reconnectRoute(state *actorState, configured settings.Settings
 		state.probeCancel()
 		state.probeCancel = nil
 	}
+	m.endLive(state)
 	if wasConnected {
 		state.status.State = "reconnecting"
 		state.status.SinceUnix = time.Now().Unix()

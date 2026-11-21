@@ -54,6 +54,7 @@ func (a AutoMemory) consult(target *engine.Target, candidates []auto.Path) (key,
 // actor calls it; the memory only takes its own lock, and the file is written from another goroutine.
 func (m *Manager) pathUp(state *actorState, r attemptResult) {
 	path := r.info.ServerID
+	m.beginLive(state, r.net)
 	var rtt int64
 	if r.net != "" && path != "" && m.engine != nil {
 		// ponytail: the engine knows the round trip of a path only for AmneziaWG at this point; the others are noted
@@ -67,9 +68,12 @@ func (m *Manager) pathUp(state *actorState, r attemptResult) {
 		failover := len(state.roundFailures) > 0 || state.deadPath != "" && state.deadPath != path
 		state.status.Auto = true
 		state.status.Reason = autoReason(r.prefer, path, len(state.selection.Order), failover)
+		if state.nextReason != "" {
+			state.status.Reason = state.nextReason
+		}
 		logPick(path, state.status.Reason, rtt, r.kind)
 	}
-	state.deadPath = ""
+	state.nextReason, state.deadPath = "", ""
 }
 
 // noteRTT: the first good probe of a connection that came up, by when the engine has measured the path's round trip.
@@ -83,7 +87,7 @@ func (m *Manager) noteRTT(state *actorState) {
 	state.autoNet, state.autoPath = "", ""
 }
 
-// autoReason says why Auto took the path: "known" (the memory named it), "only" (the one candidate), "failover" (another
+// autoReason says why Auto took the path (the session's own moves say it themselves, see nextReason): "known" (the memory named it), "only" (the one candidate), "failover" (another
 // path failed in this round, or the connection died on another path), else "fastest" (the race).
 func autoReason(prefer, path string, candidates int, failover bool) string {
 	switch {

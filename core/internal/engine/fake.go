@@ -41,6 +41,9 @@ type Fake struct {
 	probes        atomic.Uint64
 	received      atomic.Uint64
 	rttMS         atomic.Int64
+	proofs        map[string]string
+	current       string // the path of the last Start
+	proofCalls    atomic.Uint64
 	holds         atomic.Uint64
 	stops         atomic.Uint64
 	reapplies     atomic.Uint64
@@ -78,6 +81,9 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 		info.Home = f.pickAuto(target, info)
 		used = info.Home.ServerID
 	}
+	f.mu.Lock()
+	f.current = used
+	f.mu.Unlock()
 	f.mu.RLock()
 	failing := slices.Contains(f.failing, used)
 	f.mu.RUnlock()
@@ -182,6 +188,32 @@ func (f *Fake) Probe(ctx context.Context) error {
 	f.mu.Unlock()
 	return err
 }
+
+// SetProof is what Proof answers while the path (a server id) is the one in use; "" as the path is the answer for any
+// other. Without it Proof knows nothing ("").
+func (f *Fake) SetProof(path, answer string) {
+	f.mu.Lock()
+	if f.proofs == nil {
+		f.proofs = map[string]string{}
+	}
+	f.proofs[path] = answer
+	f.mu.Unlock()
+}
+
+func (f *Fake) Proof(ctx context.Context) string {
+	f.proofCalls.Add(1)
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if ctx.Err() != nil {
+		return ""
+	}
+	if answer, ok := f.proofs[f.current]; ok {
+		return answer
+	}
+	return f.proofs[""]
+}
+
+func (f *Fake) ProofCount() uint64 { return f.proofCalls.Load() }
 
 func (f *Fake) Changed() <-chan struct{} { return f.changed }
 

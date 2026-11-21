@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -178,4 +179,54 @@ func checkFreeze(ctx context.Context, client *http.Client) (overall string, targ
 		facts += fmt.Sprintf(" %dB/%dms", t.Bytes, t.Idle.Milliseconds())
 	}
 	return overall, targets, facts
+}
+
+// Proof is the session's own check that data goes through a tunnel it has just built: the first 128 KiB of the first
+// target, else of the second, fetched through dial (the tunnel's own way out, not the physical interface). "ok": one
+// download completed. "freeze": none did and one began and was stalled or cut. "": not known (nothing could be
+// reached, a slow link, or the caller stopped).
+func Proof(ctx context.Context, dial func(ctx context.Context, host string, port uint16) (net.Conn, error)) string {
+	client := &http.Client{Transport: &http.Transport{
+		Proxy:               nil,
+		DisableKeepAlives:   true,
+		DisableCompression:  true,
+		TLSHandshakeTimeout: freezeConnect,
+		DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			number, err := strconv.ParseUint(port, 10, 16)
+			if err != nil {
+				return nil, err
+			}
+			return dial(ctx, host, uint16(number))
+		},
+	}}
+	urls := make([]string, len(freezeTargets))
+	for i, t := range freezeTargets {
+		urls[i] = t.url
+	}
+	// ponytail: a tunnel's round trip is longer than the bare network's, so the connect gets twice the time
+	return proofOf(ctx, client, urls, 2*freezeConnect, freezeIdle)
+}
+
+func proofOf(ctx context.Context, client *http.Client, urls []string, connect, idle time.Duration) string {
+	froze := false
+	for _, url := range urls {
+		t := fetch(ctx, client, url, freezeBytes, connect, idle)
+		if ctx.Err() != nil {
+			return ""
+		}
+		switch {
+		case t.Done:
+			return "ok"
+		case transferVerdict(t) == "freeze", t.Bytes > 0 && !t.Stalled: // a stall in the window, or a cut after it began
+			froze = true
+		}
+	}
+	if froze {
+		return "freeze"
+	}
+	return ""
 }
