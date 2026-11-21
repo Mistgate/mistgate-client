@@ -167,6 +167,7 @@ const UNREAD: Record<string, (n: number, kinds: string) => string> = {
   tr: (n, kinds) => `${n} tane daha eklenmedi: uygulama ${kinds} kullanamıyor`,
 };
 const KIND: Record<string, string> = { trojan: 'Trojan', ss: 'Shadowsocks', ssr: 'ShadowsocksR', vmess: 'VMess', tuic: 'TUIC', wireguard: 'WireGuard', hysteria: 'Hysteria 1', socks5: 'SOCKS5', http: 'HTTP', other: '…' };
+const kindList = (kinds?: Record<string, number>) => Object.keys(kinds ?? {}).map((k) => KIND[k] ?? k.replace(/^vless/, 'VLESS')).join(', ');
 const BACK: Record<string, string> = { en: 'Cancel', ru: 'Отмена', zh: '取消', fa: 'لغو', tr: 'İptal' };
 const PINGS: Record<string, number> = {};
 // The one path that is measured for a node's number: the row shows a round trip to the node, and every path of it
@@ -202,7 +203,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     subsList: Sub[] | null = null; // null until the service has answered
     pending: { text: string; sub: Sub } | null = null; // the subscription on the confirm sheet
     lastText = '';
-    refusal = ''; // the panel's own words when it refuses a subscription (device limit, expired, switched off…)
+    refusal = ''; // why the add sheet's link failed, in words: the panel's own when it refuses (device limit, expired…), else ours
     offered = ''; // a link from a mistgate:// link, waiting to be put into the link field
     pasted = ''; // what was pasted into the link field, with its line breaks (the field itself drops them)
     onPaste = (e: ClipboardEvent) => {
@@ -474,11 +475,19 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         (sub) => { if (stale()) return; this.pending = { text, sub }; this.setState({ add: 'basic' }); },
         (err) => {
           if (stale()) return;
-          this.refusal = err?.code === 'refused' ? String(err.message ?? '') : '';
-          // no answer from the service is not a bad link either
-          this.setState({ add: ['offline', 'fetch_failed', 'service_down', 'timeout'].includes(err?.code) ? 'offline' : 'badlink' });
+          this.addFailed(err);
         },
       );
+    }
+    // The sheet for a link that failed. No answer from the service or the provider is not a bad link: it gets the
+    // "try again" sheet. The words, when there are any, replace the design's text, which would only guess.
+    addFailed(err: any) {
+      const w = words(), code = String(err?.code ?? '');
+      const kinds = kindList(err?.unsupported_kinds);
+      this.refusal = code === 'refused' ? String(err.message ?? '')
+        : code === 'no_servers' ? (kinds && kinds !== KIND.other ? w.onlyKinds(kinds) : w.addErr.no_servers)
+        : w.addErr[code] ?? w.subErr[code] ?? '';
+      this.setState({ add: ['offline', 'fetch_failed', 'service_down', 'timeout'].includes(code) ? 'offline' : 'badlink' });
     }
     // One more subscription: the design's own first-subscription form, in place of the stage, with a way back.
     // (It used to read the clipboard at once and call whatever was there a bad link.)
@@ -506,8 +515,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       const sub = this.st().add === 'basic' || this.st().add === 'confirm' ? this.pending?.sub : null;
       const old = facts?.parentElement?.querySelector('.mg-unread');
       if (!facts || !sub?.unsupported) return void old?.remove();
-      const kinds = Object.keys(sub.unsupported_kinds ?? {}).map((k) => KIND[k] ?? k.replace(/^vless/, 'VLESS')).join(', ');
-      const text = (UNREAD[document.documentElement.lang] ?? UNREAD.en)(sub.unsupported, kinds || '…');
+      const text = (UNREAD[document.documentElement.lang] ?? UNREAD.en)(sub.unsupported, kindList(sub.unsupported_kinds) || '…');
       if (old) { if (old.lastChild?.textContent !== text) old.lastChild!.textContent = text; return; }
       const note = Object.assign(document.createElement('p'), { className: 'ad-note mg-unread' });
       note.append(Object.assign(document.createElement('span'), { className: 'gl g-info-circle' }), text);
@@ -523,6 +531,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
       alt.append(document.createElement('i'), back);
     }
     fromClipboard() {
+      this.refusal = '';
       invoke<string>('clipboard_text').then((t) => (t.trim() ? this.startAdd(t) : this.setState({ add: 'badlink', subsPop: false })),
         () => this.setState({ add: 'badlink', subsPop: false }));
     }
@@ -535,7 +544,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
     addFromFile() {
       const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.conf,.txt,text/plain' });
       // a subscription is small; anything else was picked by mistake
-      input.onchange = () => { const f = input.files?.[0]; if (f && f.size <= 1 << 20) void f.text().then((t) => this.startAdd(t)); else if (f) this.setState({ add: 'badlink', subsPop: false }); };
+      input.onchange = () => { this.refusal = ''; const f = input.files?.[0]; if (f && f.size <= 1 << 20) void f.text().then((t) => this.startAdd(t)); else if (f) this.setState({ add: 'badlink', subsPop: false }); };
       input.click();
     }
 
@@ -627,7 +636,7 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
         return {
           name: u.name, ini: (u.name.trim()[0] ?? '?').toUpperCase(), tone: 'lav', host: u.host, st, stCls: tone,
           // a stopped subscription says why (a panel that is inactive puts its status, or its own text, in the notice)
-          meta: u.error ? w.subErr[u.error === 'inactive' ? u.notice ?? '' : u.error] || (u.error === 'inactive' && u.notice) || w.stale(w.time(u.updated_unix)) : `${w.servers(nodesOf(u.servers).length)} · ${forever ? w.noEnd : ended ? w.expiredMeta(w.date(u.expire_unix)) : w.left(w.days(daysLeft))}`,
+          meta: u.error ? w.subErr[u.error === 'inactive' ? u.notice ?? '' : u.error] || (u.error === 'inactive' && u.notice) || w.stale(w.time(u.updated_unix), w.keep[u.error]) : `${w.servers(nodesOf(u.servers).length)} · ${forever ? w.noEnd : ended ? w.expiredMeta(w.date(u.expire_unix)) : w.left(w.days(daysLeft))}`,
           metaC: u.error ? 'stale' : '',
           tV: forever ? w.lifetime : ended ? w.expired : w.days(daysLeft), tS: forever ? w.noEnd : ended ? w.expiredOn(w.date(u.expire_unix)) : w.until(w.date(u.expire_unix)),
           tP: forever ? '100%' : `${Math.max(0, Math.min(100, Math.round((daysLeft / 30) * 100)))}%`, tG: forever ? 'inf' : tone, tN: 1, tInf: forever, tFin: !forever,
@@ -816,14 +825,14 @@ export function liveHome(Base: typeof DCLogic): typeof DCLogic {
                 // with the list asked again: this answer can come before the list that has the new subscription
                 this.setState({ add: 'none', liveSub: added.id, sel: 'auto' }, () => rpc<{ subs: Sub[] }>('subs.list').then((r) => this.applySubs(r.subs), () => {}));
               },
-              () => this.setState({ add: 'badlink' }),
+              (err) => this.addFailed(err),
             );
           },
         });
         if (p.sub.expire_unix) Object.assign(v.ad, { f3: w.date(p.sub.expire_unix), f3s: w.validUntil });
       }
       if (v.ad.isErr) {
-        if (this.refusal) v.ad.ep = this.refusal; // the panel says why; the design's text would only guess
+        if (this.refusal) v.ad.ep = this.refusal;
         const retry = this.st().add === 'offline';
         // "Paste another link" leads to the form, where a link can be typed, pasted or taken from a file
         v.ad.b1Go = () => (retry ? this.startAdd(this.lastText) : this.st().add === 'badlink' ? this.addMode(true) : this.setState({ add: 'none' }));

@@ -3,7 +3,10 @@ package subs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -150,6 +153,44 @@ func TestUnsupportedKindsReachTheWindow(t *testing.T) {
 	data, _ = json.Marshal(clean)
 	if err != nil || strings.Contains(string(data), "unsupported_kinds") {
 		t.Errorf("clean json = %s, %v", data, err)
+	}
+}
+
+// A subscription of nothing but unsupported protocols is refused with its breakdown, from every kind of source: the
+// window then says what the link has, not that it is a bad link.
+func TestNoServersErrorCarriesTheKinds(t *testing.T) {
+	want := map[string]int{"trojan": 2, "vmess": 1}
+	check := func(name string, err error) {
+		t.Helper()
+		var coded *Error
+		if !errors.As(err, &coded) || coded.Code != "no_servers" || coded.Unsupported != 3 || !reflect.DeepEqual(coded.Kinds, want) {
+			t.Errorf("%s: err = %#v", name, err)
+		}
+	}
+	links := "trojan://secret@a.example:443#One\nvmess://eyJhZGQiOiJmLmV4YW1wbGUifQ==#Two\ntrojan://secret@b.example:443#Three"
+	store := openTestStore(t, t.TempDir(), nil)
+	_, err := store.Preview(context.Background(), links)
+	check("pasted links", err)
+
+	body := links
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+	defer server.Close()
+	store = openTestStore(t, t.TempDir(), server)
+	_, err = store.Preview(context.Background(), server.URL+"/sub")
+	check("a link list from a panel", err)
+	_, err = store.Add(context.Background(), server.URL+"/sub")
+	check("add", err)
+
+	body = "proxies:\n  - {name: A, type: trojan, server: a.example, port: 443, password: secret}\n  - {name: B, type: Trojan, server: b.example, port: 443, password: secret}\n  - {name: C, type: vmess, server: c.example, port: 443}\n"
+	_, err = store.Preview(context.Background(), server.URL+"/sub")
+	check("a profile", err)
+
+	// the other refusals have nothing to add
+	body = `{"outbounds": []}`
+	_, err = store.Preview(context.Background(), server.URL+"/sub")
+	var coded *Error
+	if !errors.As(err, &coded) || coded.Code != "unsupported_format" || coded.Unsupported != 0 || coded.Kinds != nil {
+		t.Errorf("json: err = %#v", err)
 	}
 }
 

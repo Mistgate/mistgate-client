@@ -41,6 +41,14 @@ var noRetryCodes = map[string]bool{
 	"user_inactive": true, "app_disabled": true, "client_api_off": true,
 }
 
+// Of those, the ones that may pass without the person doing anything: the owner can switch the subscription or the app
+// back on. They are asked once a day (retryAfterRefusal) while the ordinary refresh stays stopped; the other refusals
+// wait for a refresh by hand, since asking again changes nothing (a device that is blocked or over the limit) or costs
+// a device slot.
+var retryCodes = map[string]bool{"user_inactive": true, "app_disabled": true, "client_api_off": true}
+
+const retryAfterRefusal = 24 * time.Hour
+
 // apiState is what a subscription keeps once the panel has enrolled this device (Key set).
 type apiState struct {
 	Base      string `json:"base,omitempty"`
@@ -49,6 +57,9 @@ type apiState struct {
 	SyncEvery int64  `json:"sync_every_s,omitempty"`
 	NextUnix  int64  `json:"next_unix,omitempty"` // no automatic sync before this
 	Halt      bool   `json:"halt,omitempty"`      // no automatic refresh at all
+
+	// With Halt: the one automatic attempt that is still made, after a refusal the owner can undo (retryCodes).
+	RetryUnix int64 `json:"retry_unix,omitempty"`
 	// The panel's plain resolvers: the tunnel's DNS, and per region the ones its own people use. Not secret.
 	DNS      []netip.Addr       `json:"dns,omitempty"`
 	DNSSplit []profile.DNSSplit `json:"dns_split,omitempty"`
@@ -392,6 +403,9 @@ func (s *Store) manage(ctx context.Context, plain storedSubscription) storedSubs
 		plain.Error = errorCode(err)
 		if noRetryCodes[plain.Error] {
 			plain.Halt = true
+			if retryCodes[plain.Error] {
+				plain.RetryUnix = s.now().Add(retryAfterRefusal).Unix()
+			}
 			_ = s.remember(func(d *diskState) { delete(d.Pending, link) })
 		}
 		return plain

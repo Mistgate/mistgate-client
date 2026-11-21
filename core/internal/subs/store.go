@@ -108,6 +108,10 @@ type Server struct {
 type Error struct {
 	Code   string
 	Notice string
+	// For "no_servers": how many links or proxies were left out and of what kinds (Subscription.UnsupportedKinds), so
+	// the window can say what the subscription has instead of calling it a bad link.
+	Unsupported int
+	Kinds       map[string]int
 }
 
 func (e *Error) Error() string { return e.Code }
@@ -397,9 +401,9 @@ func (s *Store) refresh(ctx context.Context, id string) (Subscription, error) {
 		candidate := cloneState(s.state)
 		for i := range candidate.Subscriptions {
 			if candidate.Subscriptions[i].ID == id {
-				if candidate.Subscriptions[i].Error != code || next.Notice != "" && candidate.Subscriptions[i].Notice != next.Notice || candidate.Subscriptions[i].Halt != next.Halt {
+				if candidate.Subscriptions[i].Error != code || next.Notice != "" && candidate.Subscriptions[i].Notice != next.Notice || candidate.Subscriptions[i].Halt != next.Halt || candidate.Subscriptions[i].RetryUnix != next.RetryUnix {
 					candidate.Subscriptions[i].Error = code
-					candidate.Subscriptions[i].Halt = next.Halt
+					candidate.Subscriptions[i].Halt, candidate.Subscriptions[i].RetryUnix = next.Halt, next.RetryUnix
 					if next.Notice != "" {
 						candidate.Subscriptions[i].Notice = next.Notice
 					}
@@ -510,13 +514,13 @@ func (s *Store) Run(ctx context.Context) {
 }
 
 // due lists the URL subscriptions whose automatic refresh is due. Subscriptions stopped by the panel's answer wait for
-// a refresh by hand.
+// a refresh by hand, except those with a RetryUnix, which come due once when it passes.
 func (s *Store) due(now int64) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var ids []string
 	for _, sub := range s.state.Subscriptions {
-		if sub.Kind != "url" || sub.Halt {
+		if sub.Kind != "url" || sub.Halt && (sub.RetryUnix == 0 || now < sub.RetryUnix) {
 			continue
 		}
 		hours := sub.IntervalHours
@@ -631,7 +635,7 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 		if managed.Key != "" || err == nil {
 			return managed, nil
 		}
-		plain.Halt = managed.Halt // the plain answer is a placeholder; enrol said not to try again
+		plain.Halt, plain.RetryUnix = managed.Halt, managed.RetryUnix // the plain answer is a placeholder; enrol said not to try again
 	}
 	return plain, err
 }
@@ -721,7 +725,7 @@ func parseEntries(text, id string) ([]Server, []storedEntry, int, kindCounts, er
 		return nil, nil, unsupported, kinds, &Error{Code: "bad_link"}
 	}
 	if len(entries) == 0 {
-		return nil, nil, unsupported, kinds, &Error{Code: "no_servers"}
+		return nil, nil, unsupported, kinds, &Error{Code: "no_servers", Unsupported: unsupported, Kinds: kinds}
 	}
 	return servers, entries, unsupported, kinds, nil
 }

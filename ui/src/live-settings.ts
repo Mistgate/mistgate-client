@@ -229,7 +229,7 @@ export function liveSettings(Base: typeof DCLogic): typeof DCLogic {
       const busy = !!this.state?.syncing;
       Object.assign(v, {
         subDim: '', devGrp: 'hide', renaming: false, basicGrp: u.managed ? 'hide' : '', syncGrp: u.kind === 'url' ? '' : 'hide',
-        syncT: busy ? v.syncT : stale ? w.stale(w.time(u.updated_unix)) : w.synced(w.time(u.updated_unix)), syncS: '', syncCls: stale ? 'warn' : '',
+        syncT: busy ? v.syncT : stale ? w.stale(w.time(u.updated_unix), w.keep[u.error]) : w.synced(w.time(u.updated_unix)), syncS: '', syncCls: stale ? 'warn' : '',
         syncNow: () => {
           if (busy) return;
           this.setState({ syncing: true });

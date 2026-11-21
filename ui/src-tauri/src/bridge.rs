@@ -15,10 +15,15 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MIN_BACKOFF: Duration = Duration::from_millis(200);
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RpcError {
     pub code: String,
     pub message: String,
+    // Only on a subscription answer of "no_servers": what the link had that this build cannot use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsupported: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsupported_kinds: Option<HashMap<String, u32>>,
 }
 
 #[derive(Clone)]
@@ -78,6 +83,7 @@ impl BridgeState {
             Err(_) => Err(RpcError {
                 code: "timeout".into(),
                 message: "The service did not answer in time.".into(),
+                ..Default::default()
             }),
         }
     }
@@ -152,6 +158,7 @@ impl LineDecoder {
                 return Err(RpcError {
                     code: "protocol_error".into(),
                     message: "The service sent an oversized line.".into(),
+                    ..Default::default()
                 });
             }
             self.current.push(*byte);
@@ -176,6 +183,7 @@ fn service_down() -> RpcError {
     RpcError {
         code: "service_down".into(),
         message: "The Mistgate service is not available.".into(),
+        ..Default::default()
     }
 }
 
@@ -184,11 +192,13 @@ fn encode_request_line(id: u64, method: &str, params: Value) -> Result<Vec<u8>, 
         .map_err(|_| RpcError {
             code: "bad_params".into(),
             message: "The request could not be encoded.".into(),
+            ..Default::default()
         })?;
     if line.len() > MAX_LINE_BYTES {
         return Err(RpcError {
             code: "bad_params".into(),
             message: "The request is too large.".into(),
+            ..Default::default()
         });
     }
     line.push(b'\n');
@@ -363,6 +373,7 @@ fn decode_rpc_response(message: &Value) -> Result<Value, RpcError> {
         Err(serde_json::from_value(error.clone()).unwrap_or(RpcError {
             code: "protocol_error".into(),
             message: "The service returned an invalid error.".into(),
+            ..Default::default()
         }))
     } else if let Some(result) = message.get("result") {
         Ok(result.clone())
@@ -370,6 +381,7 @@ fn decode_rpc_response(message: &Value) -> Result<Value, RpcError> {
         Err(RpcError {
             code: "protocol_error".into(),
             message: "The service returned an invalid response.".into(),
+            ..Default::default()
         })
     }
 }

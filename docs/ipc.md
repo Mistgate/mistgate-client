@@ -520,7 +520,14 @@ trip in whole milliseconds (at least 1). A server that does not answer within 3 
 is left out of `rtt`; the whole call stops after 20 seconds. An unknown `sub` answers `unknown_subscription`.
 
 Subscription errors use `bad_link`, `insecure_link`, `no_servers`, `unsupported_format`, `refused`, `offline`,
-`fetch_failed`, `unknown_subscription`, and `no_link` (`subs.link` only); managed subscriptions add the codes below. `connect` returns `no_subscription` if the selected subscription or
+`fetch_failed`, `service_error`, `unknown_subscription`, and `no_link` (`subs.link` only); `subs.add` can also answer with
+the enrol codes below (a link that moves a subscription to a rotated link). `too_many_requests` is never a subscription's
+`error`: a `429` from the panel's sync or enrol is `fetch_failed` (its `Retry-After` moves the next sync), and the code
+itself comes only from `debug.send` and `report.send`. `no_servers` carries two more optional fields in the RPC error,
+so that the window can say what the link holds instead of calling it a bad link: `unsupported` (how many links or proxies
+were left out) and `unsupported_kinds` (kind -> count, the same as `Subscription.unsupported_kinds`; see there). The
+other errors have neither. `insecure_link` (an `http://` link) and `unsupported_format` (a JSON body, or a profile with
+no `proxies` list) have no more fields: the code says it. Managed subscriptions add the codes below. `connect` returns `no_subscription` if the selected subscription or
 server is no longer present. Removing a subscription does not stop an active tunnel; a later reconnect or connect
 must select a server that still exists.
 
@@ -620,10 +627,15 @@ A managed subscription reports its state in `error`; `subs.refresh` also returns
 | `link_changed` | true | kept | stopped | The panel's link has changed; add the new link (same panel) to keep this one |
 | `device_blocked` | true | none | stopped | This device is blocked by the owner |
 | `device_removed` | false | none | stopped | This device was removed; refresh to enrol again |
-| `device_exists`, `device_limit`, `device_blocked`, `user_inactive`, `app_disabled`, `client_api_off` | false | the plain ones | stopped | The panel did not accept this device (the code says why); refresh by hand to try again |
+| `device_exists`, `device_limit`, `device_blocked` | false | the plain ones | stopped | The panel did not accept this device (the code says why); refresh by hand to try again |
+| `user_inactive`, `app_disabled`, `client_api_off` | false | the plain ones | stopped, one attempt a day | The panel did not accept this device, and the owner can undo it by switching the subscription or the app back on; the service asks again 24 hours after each refusal, and a refresh by hand works at any time |
 
-The last row is an enrol that the panel refused: the subscription stays in basic mode with the servers of the plain
-answer. Any other enrol or first-sync failure also leaves basic mode with `fetch_failed` or `offline` in `error`, and
+The last two rows are an enrol that the panel refused: the subscription stays in basic mode with the servers of the plain
+answer. After `user_inactive`, `app_disabled` and `client_api_off` the ordinary schedule stays stopped, but one automatic
+attempt is made 24 hours after the refusal; if the panel refuses again the next one is 24 hours after that, and when it
+accepts the device the subscription is managed and on the usual schedule again (the attempt is kept in the service's
+store only, `Subscription` does not show it). The other refusals wait for the person: asking again would change nothing,
+or would use up a device slot. Any other enrol or first-sync failure also leaves basic mode with `fetch_failed` or `offline` in `error`, and
 is repeated with the same device key at the next refresh. Adding a link of the same panel while a subscription is in
 `link_changed` moves that subscription to the new link (one subscription, not two). Adding a link that is already
 managed refreshes it. `unreachable` in the contract is `offline` or `fetch_failed` here.

@@ -3,6 +3,7 @@ package ipc
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
+	"github.com/mistgate/mistgate-client/core/internal/subs"
 )
 
 func TestReadLineFramingAndLimit(t *testing.T) {
@@ -277,5 +279,17 @@ func TestSlowClientIsDroppedWhenWriteQueueFills(t *testing.T) {
 	case <-writeDone:
 	case <-time.After(time.Second):
 		t.Fatal("client writer stayed blocked after server dropped the connection")
+	}
+}
+
+func TestSubscriptionRPCErrorCarriesTheKinds(t *testing.T) {
+	err := subscriptionRPCError(&subs.Error{Code: "no_servers", Unsupported: 3, Kinds: map[string]int{"trojan": 2, "vmess": 1}})
+	data, _ := json.Marshal(err)
+	if string(data) != `{"code":"no_servers","message":"subscription request failed","unsupported":3,"unsupported_kinds":{"trojan":2,"vmess":1}}` {
+		t.Errorf("no_servers = %s", data)
+	}
+	data, _ = json.Marshal(subscriptionRPCError(&subs.Error{Code: "insecure_link"}))
+	if string(data) != `{"code":"insecure_link","message":"subscription request failed"}` {
+		t.Errorf("insecure_link = %s", data)
 	}
 }

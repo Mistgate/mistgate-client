@@ -725,7 +725,7 @@ func subscriptionRPCError(err error) *RPCError {
 		if coded.Notice != "" {
 			message = coded.Notice
 		}
-		return &RPCError{Code: coded.Code, Message: message}
+		return &RPCError{Code: coded.Code, Message: message, Unsupported: coded.Unsupported, UnsupportedKinds: coded.Kinds}
 	}
 	return &RPCError{Code: "service_error", Message: "subscription request failed"}
 }

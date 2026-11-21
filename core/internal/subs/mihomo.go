@@ -81,7 +81,7 @@ func parseMihomoProfile(body, subscriptionID string) ([]Server, []storedEntry, i
 		entries = append(entries, storedEntry{Server: server, Raw: string(raw)})
 	}
 	if len(entries) == 0 {
-		return nil, nil, unsupported, kinds, &Error{Code: "no_servers"}
+		return nil, nil, unsupported, kinds, &Error{Code: "no_servers", Unsupported: unsupported, Kinds: kinds}
 	}
 	return servers, entries, unsupported, kinds, nil
 }

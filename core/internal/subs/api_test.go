@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -611,6 +612,75 @@ func TestClientAPIEnrolDoNotRetry(t *testing.T) {
 	got, err := store.Refresh(ctx, added.ID)
 	if err != nil || !got.Managed || got.Error != "" || len(panel.enrolKeys) != 2 || panel.enrolKeys[1] == panel.enrolKeys[0] {
 		t.Fatalf("refresh by hand = %#v, %v, keys %v", got, err, panel.enrolKeys)
+	}
+}
+
+// A refusal the owner can undo (the user or the app switched off) is asked again once a day, and only then; the others
+// wait for the person.
+func TestClientAPIRefusalIsAskedOnceADay(t *testing.T) {
+	ctx := context.Background()
+	panel := newPanel(t, true)
+	store := panel.openStore(t)
+	start := time.Unix(1_800_000_000, 0)
+	now := start
+	store.clock = func() time.Time { return now }
+	day := int64(24 * 3600)
+	for _, code := range []string{"user_inactive", "app_disabled", "client_api_off"} {
+		panel.set(func() { panel.enrolCode = code })
+		added, err := store.Add(ctx, panel.link(code))
+		if err != nil || added.Error != code || !store.state.Subscriptions[len(store.state.Subscriptions)-1].Halt {
+			t.Fatalf("%s = %#v, %v", code, added, err)
+		}
+		if err = store.Remove(added.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	panel.set(func() { panel.enrolCode = "user_inactive" })
+	added, err := store.Add(ctx, panel.link("tok"))
+	if err != nil || added.Error != "user_inactive" {
+		t.Fatalf("add = %#v, %v", added, err)
+	}
+	if st := store.state.Subscriptions[0]; !st.Halt || st.RetryUnix != start.Unix()+day {
+		t.Fatalf("retry at %d, want %d (halt %v)", st.RetryUnix, start.Unix()+day, st.Halt)
+	}
+	enrols := len(panel.enrolKeys)
+	if len(store.due(start.Unix()+day-1)) != 0 || len(store.due(start.Unix()+day)) != 1 {
+		t.Fatalf("due before and at the day: %v %v", store.due(start.Unix()+day-1), store.due(start.Unix()+day))
+	}
+
+	// still refused: the next attempt is a day after this one, not at the next tick
+	now = start.Add(25 * time.Hour)
+	if _, err = store.Refresh(ctx, added.ID); err != nil || len(panel.enrolKeys) != enrols+1 {
+		t.Fatalf("retry = %v, enrols %d -> %d", err, enrols, len(panel.enrolKeys))
+	}
+	if st := store.state.Subscriptions[0]; !st.Halt || st.Error != "user_inactive" || st.RetryUnix != now.Unix()+day || len(store.due(now.Unix()+day-1)) != 0 {
+		t.Fatalf("after a second refusal: halt %v, error %q, retry %d", st.Halt, st.Error, st.RetryUnix)
+	}
+
+	// switched on again: the next attempt takes the subscription and lifts the stop
+	panel.set(func() { panel.enrolCode = "" })
+	now = now.Add(time.Duration(day) * time.Second)
+	for _, id := range store.due(now.Unix()) {
+		if _, err = store.Refresh(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := store.state.Subscriptions[0]; !st.Managed || st.Halt || st.RetryUnix != 0 || st.Error != "" || st.Key == "" {
+		t.Fatalf("after the owner switched it on: %#v", st.Subscription)
+	}
+	if len(store.due(time.Now().Unix())) != 0 || len(store.due(time.Now().Unix()+3600+400)) != 1 { // a sync is stamped by the real clock
+		t.Errorf("the usual schedule must be back")
+	}
+
+	// a refusal nothing but the person can undo gets no attempt of its own
+	panel.set(func() { panel.enrolCode = "device_limit" })
+	other, err := store.Add(ctx, panel.link("other"))
+	if err != nil || other.Error != "device_limit" {
+		t.Fatalf("device_limit = %#v, %v", other, err)
+	}
+	if st := store.state.Subscriptions[1]; !st.Halt || st.RetryUnix != 0 || slices.Contains(store.due(now.Unix()+365*day), other.ID) {
+		t.Errorf("device_limit must wait for a refresh by hand: %#v", st.apiState)
 	}
 }
 

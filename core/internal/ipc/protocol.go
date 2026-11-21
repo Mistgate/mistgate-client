@@ -55,6 +55,9 @@ type Request struct {
 type RPCError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Only on a subscription answer of "no_servers": what the link had that this build cannot use (see Subscription).
+	Unsupported      int            `json:"unsupported,omitempty"`
+	UnsupportedKinds map[string]int `json:"unsupported_kinds,omitempty"`
 }
 
 type Response struct {

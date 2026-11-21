@@ -1,6 +1,8 @@
 // The words Home needs around real numbers and dates. The wording is the design's (its sample subscriptions in each
 // language); here it is turned into patterns. ponytail: tr, zh and fa follow the design's samples but were not read
 // by a native speaker.
+type KeepCode = 'offline' | 'fetch_failed' | 'unsupported_format';
+type AddCode = 'offline' | 'service_down' | 'timeout' | 'insecure_link' | 'no_servers' | 'unsupported_format' | 'service_error';
 type Words = {
   locale: string;
   days: (n: number) => string;
@@ -23,7 +25,7 @@ type Words = {
   renew: string;
   link: string;
   file: string;
-  stale: (time: string) => string;
+  stale: (time: string, why?: string) => string; // why: the service's code in words (keep); none: a generic failure
   validUntil: string;
   add: (servers: string) => string;
   dnsReplaced: string;
@@ -31,6 +33,11 @@ type Words = {
   foreignCut: string;
   // why a subscription has stopped, by the service's code (inactive: by the panel's status)
   subErr: Record<string, string>;
+  // why the last update failed while the saved copy goes on, by the service's code (the head of the "stale" line)
+  keep: Record<KeepCode, string>;
+  // the add sheet, for a link that failed with no words of the panel's own (they win), by the service's code
+  addErr: Record<AddCode, string>;
+  onlyKinds: (kinds: string) => string; // the add sheet, "no_servers": what the subscription holds instead
   // other VPNs and DPI-bypass tools running on this machine (the design has no row for them yet)
   neighbours: [name: string, verdict: string, meta: string];
   throttled: string; // the speed through the VPN falls after the first seconds
@@ -58,9 +65,12 @@ const WORDS: Record<string, Words> = {
     lifetime: 'Lifetime', noEnd: 'no end date', noEndCap: 'No end date', expired: 'Expired', expiredOn: (d) => `on ${d}`,
     expiredMeta: (d) => `expired ${d}`, servers: (n) => `${n} ${enForm(n, 'server', 'servers')}`, gb: 'GB',
     leftOf: (t) => `left of ${t}`, used: 'used · no cap', renew: 'renew to use', link: 'Link', file: 'File',
-    stale: (t) => `Couldn’t update · using the copy from ${t}`, validUntil: 'valid until', add: (s) => `Add ${s}`,
+    stale: (t, why = 'Couldn’t update') => `${why} · using the copy from ${t}`, validUntil: 'valid until', add: (s) => `Add ${s}`,
     dnsReplaced: "Some site addresses are replaced on this network", dnsReplacedLine: (n, m) => `${n} of ${m} test sites got a replaced address`, foreignCut: "Some foreign sites are cut off on this network",
-    subErr: {"device_removed":"This device was removed from the subscription · add the link again","device_blocked":"This device is blocked by the provider","link_changed":"The link was replaced · paste the new one","device_limit":"Device limit reached · remove a device on the subscription page","device_exists":"This device is already registered · remove it on the subscription page","app_disabled":"The app is switched off for this account · ask your provider","disabled":"The subscription is turned off by the provider","expired":"The subscription has expired","limited":"The traffic is used up"},
+    subErr: {"device_removed":"This device was removed from the subscription · add the link again","device_blocked":"This device is blocked by the provider","link_changed":"The link was replaced · paste the new one","device_limit":"Device limit reached · remove a device on the subscription page","device_exists":"This device is already registered · remove it on the subscription page","app_disabled":"The app is switched off for this account · ask your provider","disabled":"The subscription is turned off by the provider","expired":"The subscription has expired","limited":"The traffic is used up","client_api_off":"This provider doesn’t allow the app for this subscription · ask your provider","user_inactive":"The subscription isn’t active · ask your provider","too_many_requests":"Too many requests · wait a few minutes and try again"},
+    keep: {"offline":"No internet","fetch_failed":"The provider’s server didn’t answer","unsupported_format":"Update the app to read this subscription"},
+    addErr: {"offline":"No internet connection. Connect to a network and try again","service_down":"Mistgate’s background service isn’t answering. Wait a moment and try again","timeout":"No answer in time. Try again in a minute","insecure_link":"A link without encryption (http) isn’t accepted. Ask for a link that starts with https","no_servers":"This subscription has no servers the app can use","unsupported_format":"The app can’t read this kind of subscription. Update the app or ask your provider for another link","service_error":"The app couldn’t add this. Try again, and restart Mistgate if it repeats"},
+    onlyKinds: (k) => `The subscription has only protocols the app doesn’t support: ${k}`,
     neighbours: ["Other VPN programs","Found","They can break the connection: close them while Mistgate is on"],
     throttled: "Speed through the VPN falls after the first seconds",
     diagFail: { no_subscription: ["Nothing to check yet", "Add a subscription first: the check tests its servers"], offline: ["No internet", "Connect to a network and run the check again"] },
@@ -78,9 +88,12 @@ const WORDS: Record<string, Words> = {
     lifetime: 'Бессрочно', noEnd: 'бессрочно', noEndCap: 'Бессрочно', expired: 'Истекла', expiredOn: (d) => d,
     expiredMeta: (d) => `истекла ${d}`, servers: (n) => `${n} ${ruForm(n, 'сервер', 'сервера', 'серверов')}`, gb: 'ГБ',
     leftOf: (t) => `осталось из ${t}`, used: 'израсходовано · без лимита', renew: 'продлите, чтобы пользоваться', link: 'Ссылка', file: 'Файл',
-    stale: (t) => `Не удалось обновить · используется копия от ${t}`, validUntil: 'действует до', add: (s) => `Добавить ${s}`,
+    stale: (t, why = 'Не удалось обновить') => `${why} · используется копия от ${t}`, validUntil: 'действует до', add: (s) => `Добавить ${s}`,
     dnsReplaced: "В этой сети подменяют адреса некоторых сайтов", dnsReplacedLine: (n, m) => `Подменён адрес у ${n} из ${m} проверенных сайтов`, foreignCut: "Часть зарубежных сайтов в этой сети недоступна",
-    subErr: {"device_removed":"Это устройство удалено из подписки · добавьте ссылку заново","device_blocked":"Это устройство заблокировано провайдером","link_changed":"Ссылку заменили · вставьте новую","device_limit":"Достигнут лимит устройств · удалите одно на странице подписки","device_exists":"Это устройство уже зарегистрировано · удалите его на странице подписки","app_disabled":"Приложение отключено для этого аккаунта · обратитесь к провайдеру","disabled":"Подписка отключена провайдером","expired":"Срок подписки истёк","limited":"Трафик израсходован"},
+    subErr: {"device_removed":"Это устройство удалено из подписки · добавьте ссылку заново","device_blocked":"Это устройство заблокировано провайдером","link_changed":"Ссылку заменили · вставьте новую","device_limit":"Достигнут лимит устройств · удалите одно на странице подписки","device_exists":"Это устройство уже зарегистрировано · удалите его на странице подписки","app_disabled":"Приложение отключено для этого аккаунта · обратитесь к провайдеру","disabled":"Подписка отключена провайдером","expired":"Срок подписки истёк","limited":"Трафик израсходован","client_api_off":"Провайдер не разрешает приложение для этой подписки · обратитесь к нему","user_inactive":"Подписка не активна · обратитесь к провайдеру","too_many_requests":"Слишком много запросов · подождите несколько минут и повторите"},
+    keep: {"offline":"Нет интернета","fetch_failed":"Сервер провайдера не ответил","unsupported_format":"Обновите приложение, чтобы читать эту подписку"},
+    addErr: {"offline":"Нет интернета. Подключитесь к сети и повторите","service_down":"Служба Mistgate не отвечает. Подождите немного и повторите","timeout":"Ответ не пришёл вовремя. Повторите через минуту","insecure_link":"Ссылка без шифрования (http) не принимается. Попросите ссылку, которая начинается с https","no_servers":"В подписке нет серверов, которые приложение умеет использовать","unsupported_format":"Приложение не умеет читать такую подписку. Обновите приложение или попросите у провайдера другую ссылку","service_error":"Приложению не удалось это добавить. Повторите; если не помогает, перезапустите Mistgate"},
+    onlyKinds: (k) => `В подписке только протоколы, которые приложение не поддерживает: ${k}`,
     neighbours: ["Другие VPN-программы","Найдены","Они могут мешать соединению: закройте их, пока включён Mistgate"],
     throttled: "Скорость через VPN падает после первых секунд",
     diagFail: { no_subscription: ["Пока нечего проверять", "Сначала добавьте подписку: проверка тестирует её серверы"], offline: ["Нет интернета", "Подключитесь к сети и запустите проверку снова"] },
@@ -98,9 +111,12 @@ const WORDS: Record<string, Words> = {
     lifetime: 'Süresiz', noEnd: 'süresiz', noEndCap: 'Süresiz', expired: 'Süresi doldu', expiredOn: (d) => d,
     expiredMeta: (d) => `${d} tarihinde bitti`, servers: (n) => `${n} sunucu`, gb: 'GB',
     leftOf: (t) => `kalan / ${t}`, used: 'kullanıldı · sınırsız', renew: 'kullanmak için yenileyin', link: 'Bağlantı', file: 'Dosya',
-    stale: (t) => `Güncellenemedi · ${t} kopyası kullanılıyor`, validUntil: 'bitiş tarihi', add: (s) => `${s} ekle`,
+    stale: (t, why = 'Güncellenemedi') => `${why} · ${t} kopyası kullanılıyor`, validUntil: 'bitiş tarihi', add: (s) => `${s} ekle`,
     dnsReplaced: "Bu ağda bazı site adresleri değiştiriliyor", dnsReplacedLine: (n, m) => `${m} test sitesinden ${n} tanesinin adresi değiştirilmiş`, foreignCut: "Bu ağda bazı yabancı siteler kesiliyor",
-    subErr: {"device_removed":"Bu cihaz abonelikten kaldırıldı · bağlantıyı yeniden ekleyin","device_blocked":"Bu cihaz sağlayıcı tarafından engellendi","link_changed":"Bağlantı değiştirildi · yenisini yapıştırın","device_limit":"Cihaz sınırına ulaşıldı · abonelik sayfasında bir cihazı kaldırın","device_exists":"Bu cihaz zaten kayıtlı · abonelik sayfasında kaldırın","app_disabled":"Uygulama bu hesap için kapatıldı · sağlayıcınıza başvurun","disabled":"Abonelik sağlayıcı tarafından kapatıldı","expired":"Aboneliğin süresi doldu","limited":"Trafik tükendi"},
+    subErr: {"device_removed":"Bu cihaz abonelikten kaldırıldı · bağlantıyı yeniden ekleyin","device_blocked":"Bu cihaz sağlayıcı tarafından engellendi","link_changed":"Bağlantı değiştirildi · yenisini yapıştırın","device_limit":"Cihaz sınırına ulaşıldı · abonelik sayfasında bir cihazı kaldırın","device_exists":"Bu cihaz zaten kayıtlı · abonelik sayfasında kaldırın","app_disabled":"Uygulama bu hesap için kapatıldı · sağlayıcınıza başvurun","disabled":"Abonelik sağlayıcı tarafından kapatıldı","expired":"Aboneliğin süresi doldu","limited":"Trafik tükendi","client_api_off":"Sağlayıcı bu abonelikte uygulamaya izin vermiyor · sağlayıcınıza başvurun","user_inactive":"Abonelik etkin değil · sağlayıcınıza başvurun","too_many_requests":"Çok fazla istek · birkaç dakika bekleyip tekrar deneyin"},
+    keep: {"offline":"İnternet yok","fetch_failed":"Sağlayıcının sunucusu yanıt vermedi","unsupported_format":"Bu aboneliği okumak için uygulamayı güncelleyin"},
+    addErr: {"offline":"İnternet bağlantısı yok. Bir ağa bağlanıp tekrar deneyin","service_down":"Mistgate hizmeti yanıt vermiyor. Biraz bekleyip tekrar deneyin","timeout":"Zamanında yanıt gelmedi. Bir dakika sonra tekrar deneyin","insecure_link":"Şifrelenmemiş (http) bağlantı kabul edilmez. https ile başlayan bir bağlantı isteyin","no_servers":"Bu abonelikte uygulamanın kullanabileceği sunucu yok","unsupported_format":"Uygulama bu tür aboneliği okuyamıyor. Uygulamayı güncelleyin ya da sağlayıcınızdan başka bir bağlantı isteyin","service_error":"Uygulama bunu ekleyemedi. Tekrar deneyin; sürerse Mistgate’i yeniden başlatın"},
+    onlyKinds: (k) => `Abonelikte yalnızca uygulamanın desteklemediği protokoller var: ${k}`,
     neighbours: ["Diğer VPN programları","Bulundu","Bağlantıyı bozabilirler: Mistgate açıkken onları kapatın"],
     throttled: "VPN üzerinden hız ilk saniyelerden sonra düşüyor",
     diagFail: { no_subscription: ["Henüz kontrol edilecek bir şey yok", "Önce bir abonelik ekleyin: kontrol onun sunucularını test eder"], offline: ["İnternet yok", "Bir ağa bağlanın ve kontrolü yeniden başlatın"] },
@@ -118,9 +134,12 @@ const WORDS: Record<string, Words> = {
     lifetime: '永久', noEnd: '无到期日', noEndCap: '无到期日', expired: '已到期', expiredOn: (d) => d,
     expiredMeta: (d) => `已于 ${d}到期`, servers: (n) => `${n} 个服务器`, gb: 'GB',
     leftOf: (t) => `剩余 / 共 ${t}`, used: '已用 · 无上限', renew: '续订后可用', link: '链接', file: '文件',
-    stale: (t) => `更新失败 · 正在使用 ${t} 的副本`, validUntil: '有效期至', add: (s) => `添加 ${s}`,
+    stale: (t, why = '更新失败') => `${why} · 正在使用 ${t} 的副本`, validUntil: '有效期至', add: (s) => `添加 ${s}`,
     dnsReplaced: "此网络会替换部分网站的地址", dnsReplacedLine: (n, m) => `${m} 个测试网站中有 ${n} 个的地址被替换`, foreignCut: "此网络屏蔽了部分境外网站",
-    subErr: {"device_removed":"此设备已从订阅中移除 · 请重新添加链接","device_blocked":"此设备已被服务商封禁","link_changed":"链接已更换 · 请粘贴新链接","device_limit":"设备数已达上限 · 请在订阅页面移除一台设备","device_exists":"此设备已注册 · 请在订阅页面将其移除","app_disabled":"此账户已停用本应用 · 请联系服务商","disabled":"订阅已被服务商停用","expired":"订阅已到期","limited":"流量已用完"},
+    subErr: {"device_removed":"此设备已从订阅中移除 · 请重新添加链接","device_blocked":"此设备已被服务商封禁","link_changed":"链接已更换 · 请粘贴新链接","device_limit":"设备数已达上限 · 请在订阅页面移除一台设备","device_exists":"此设备已注册 · 请在订阅页面将其移除","app_disabled":"此账户已停用本应用 · 请联系服务商","disabled":"订阅已被服务商停用","expired":"订阅已到期","limited":"流量已用完","client_api_off":"服务商不允许此订阅使用本应用 · 请联系服务商","user_inactive":"订阅未生效 · 请联系服务商","too_many_requests":"请求过于频繁 · 请等几分钟再试"},
+    keep: {"offline":"无网络","fetch_failed":"服务商的服务器没有响应","unsupported_format":"请更新应用以读取此订阅"},
+    addErr: {"offline":"没有网络连接。请连接网络后重试","service_down":"Mistgate 服务没有响应。请稍等后重试","timeout":"等待响应超时。请一分钟后重试","insecure_link":"不接受未加密（http）的链接。请索取以 https 开头的链接","no_servers":"此订阅中没有应用可用的服务器","unsupported_format":"应用无法读取这种订阅。请更新应用，或向服务商索取其他链接","service_error":"应用无法添加此订阅。请重试；若仍失败，请重启 Mistgate"},
+    onlyKinds: (k) => `订阅中只有应用不支持的协议：${k}`,
     neighbours: ["其他 VPN 程序","已发现","它们可能干扰连接：使用 Mistgate 时请关闭它们"],
     throttled: "通过 VPN 的速度在最初几秒后下降",
     diagFail: { no_subscription: ["暂无可检查的内容", "请先添加订阅：检查会测试其中的服务器"], offline: ["无网络连接", "请连接网络后重新检查"] },
@@ -138,9 +157,12 @@ const WORDS: Record<string, Words> = {
     lifetime: 'مادام‌العمر', noEnd: 'بدون تاریخ پایان', noEndCap: 'بدون تاریخ پایان', expired: 'منقضی‌شده', expiredOn: (d) => d,
     expiredMeta: (d) => `انقضا در ${d}`, servers: (n) => `${n} سرور`, gb: 'گیگابایت',
     leftOf: (t) => `مانده از ${t}`, used: 'مصرف‌شده · بدون سقف', renew: 'برای استفاده تمدید کنید', link: 'لینک', file: 'فایل',
-    stale: (t) => `به‌روزرسانی نشد · نسخهٔ ${t} استفاده می‌شود`, validUntil: 'معتبر تا', add: (s) => `افزودن ${s}`,
+    stale: (t, why = 'به‌روزرسانی نشد') => `${why} · نسخهٔ ${t} استفاده می‌شود`, validUntil: 'معتبر تا', add: (s) => `افزودن ${s}`,
     dnsReplaced: "در این شبکه نشانی برخی سایت‌ها جایگزین می‌شود", dnsReplacedLine: (n, m) => `نشانی ${n} سایت از ${m} سایت آزمایشی جایگزین شده است`, foreignCut: "برخی سایت‌های خارجی در این شبکه قطع هستند",
-    subErr: {"device_removed":"این دستگاه از اشتراک حذف شده است · لینک را دوباره اضافه کنید","device_blocked":"این دستگاه توسط ارائه‌دهنده مسدود شده است","link_changed":"لینک عوض شده است · لینک جدید را وارد کنید","device_limit":"به سقف دستگاه‌ها رسیده‌اید · یک دستگاه را در صفحهٔ اشتراک حذف کنید","device_exists":"این دستگاه قبلاً ثبت شده است · آن را در صفحهٔ اشتراک حذف کنید","app_disabled":"برنامه برای این حساب خاموش شده است · با ارائه‌دهنده تماس بگیرید","disabled":"اشتراک توسط ارائه‌دهنده غیرفعال شده است","expired":"مهلت اشتراک تمام شده است","limited":"ترافیک تمام شده است"},
+    subErr: {"device_removed":"این دستگاه از اشتراک حذف شده است · لینک را دوباره اضافه کنید","device_blocked":"این دستگاه توسط ارائه‌دهنده مسدود شده است","link_changed":"لینک عوض شده است · لینک جدید را وارد کنید","device_limit":"به سقف دستگاه‌ها رسیده‌اید · یک دستگاه را در صفحهٔ اشتراک حذف کنید","device_exists":"این دستگاه قبلاً ثبت شده است · آن را در صفحهٔ اشتراک حذف کنید","app_disabled":"برنامه برای این حساب خاموش شده است · با ارائه‌دهنده تماس بگیرید","disabled":"اشتراک توسط ارائه‌دهنده غیرفعال شده است","expired":"مهلت اشتراک تمام شده است","limited":"ترافیک تمام شده است","client_api_off":"ارائه‌دهنده استفاده از برنامه را برای این اشتراک مجاز نکرده است · با ارائه‌دهنده تماس بگیرید","user_inactive":"اشتراک فعال نیست · با ارائه‌دهنده تماس بگیرید","too_many_requests":"درخواست‌ها بیش از حد است · چند دقیقه صبر کنید و دوباره امتحان کنید"},
+    keep: {"offline":"اینترنت قطع است","fetch_failed":"سرور ارائه‌دهنده پاسخ نداد","unsupported_format":"برای خواندن این اشتراک برنامه را به‌روز کنید"},
+    addErr: {"offline":"اتصال اینترنت وجود ندارد. به شبکه وصل شوید و دوباره امتحان کنید","service_down":"سرویس Mistgate پاسخ نمی‌دهد. کمی صبر کنید و دوباره امتحان کنید","timeout":"پاسخ به‌موقع نرسید. یک دقیقه بعد دوباره امتحان کنید","insecure_link":"لینک بدون رمزگذاری (http) پذیرفته نمی‌شود. لینکی بخواهید که با https شروع شود","no_servers":"در این اشتراک سروری که برنامه بتواند استفاده کند نیست","unsupported_format":"برنامه این نوع اشتراک را نمی‌خواند. برنامه را به‌روز کنید یا از ارائه‌دهنده لینک دیگری بخواهید","service_error":"برنامه نتوانست این را اضافه کند. دوباره امتحان کنید؛ اگر تکرار شد، Mistgate را دوباره راه‌اندازی کنید"},
+    onlyKinds: (k) => `در اشتراک فقط پروتکل‌هایی است که برنامه پشتیبانی نمی‌کند: ${k}`,
     neighbours: ["برنامه‌های VPN دیگر","پیدا شد","ممکن است اتصال را مختل کنند: هنگام روشن بودن Mistgate آن‌ها را ببندید"],
     throttled: "سرعت از طریق VPN پس از چند ثانیهٔ اول افت می‌کند",
     diagFail: { no_subscription: ["هنوز چیزی برای بررسی نیست", "ابتدا یک اشتراک اضافه کنید: بررسی، سرورهای آن را می‌آزماید"], offline: ["اینترنت در دسترس نیست", "به یک شبکه وصل شوید و بررسی را دوباره اجرا کنید"] },
@@ -170,6 +192,9 @@ function build() {
   const clock = new Intl.DateTimeFormat(w.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   return {
     ...w,
+    // looked up by the service's code, which is any string
+    keep: w.keep as Record<string, string>,
+    addErr: w.addErr as Record<string, string>,
     date: (unix: number) => day.format(unix * 1000),
     time: (unix: number) => clock.format(unix * 1000),
     size: (bytes: number) => `${number.format(bytes / 2 ** 30)} ${w.gb}`,
