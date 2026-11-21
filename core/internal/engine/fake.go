@@ -40,6 +40,7 @@ type Fake struct {
 	starts        atomic.Uint64
 	probes        atomic.Uint64
 	received      atomic.Uint64
+	rttMS         atomic.Int64
 	holds         atomic.Uint64
 	stops         atomic.Uint64
 	reapplies     atomic.Uint64
@@ -115,13 +116,18 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 	return info.Home, ctx.Err()
 }
 
-// pickAuto is the path Auto takes: the first of the order that is not to be avoided, the first when all are.
+// pickAuto is the path Auto takes: the one asked for (Target.Prefer), else the first of the order that is not to be
+// avoided, the first when all are. The fake does no race: a test sees one in Target.Prefer being empty.
 func (f *Fake) pickAuto(target Target, selection Selection) Info {
 	pick := selection.Order[0]
-	for _, id := range selection.Order {
-		if !slices.Contains(target.Avoid, id) {
-			pick = id
-			break
+	if i := slices.IndexFunc(selection.Order, target.takes); i >= 0 {
+		pick = selection.Order[i]
+	} else {
+		for _, id := range selection.Order {
+			if !slices.Contains(target.Avoid, id) {
+				pick = id
+				break
+			}
 		}
 	}
 	if pick == selection.Home.ServerID {
@@ -155,7 +161,10 @@ func (f *Fake) Hold() bool {
 
 func (f *Fake) Reapply() { f.reapplies.Add(1) }
 
-func (*Fake) Stats() Traffic { return Traffic{} }
+func (f *Fake) Stats() Traffic { return Traffic{RTTMS: f.rttMS.Load()} }
+
+// SetRTT is the round trip, in ms, that Stats reports.
+func (f *Fake) SetRTT(ms int64) { f.rttMS.Store(ms) }
 
 func (f *Fake) Received() uint64 { return f.received.Load() }
 
@@ -235,7 +244,7 @@ func (f *Fake) Select(target Target) (Selection, bool) {
 		}
 		selection := Selection{Home: Info{Server: name, ServerID: home.ID, Protocol: home.Protocol, Purpose: home.Purpose}, Order: make([]string, 0, len(ring))}
 		for _, p := range ring {
-			selection.Order = append(selection.Order, p.ID)
+			selection.add(p)
 		}
 		for _, p := range profiles {
 			if p.Sub == home.Sub && p.Purpose == profile.PurposeWhitelist {

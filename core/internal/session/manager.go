@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/auto"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
@@ -27,6 +28,9 @@ type Status struct {
 	Purpose         string `json:"purpose,omitempty"`
 	WhitelistByRule bool   `json:"whitelist_by_rule,omitempty"`
 	WhitelistHint   bool   `json:"whitelist_hint,omitempty"`
+	// Auto: the path in use was picked by Auto (not named by the person). Reason is why: known, only, failover or fastest.
+	Auto   bool   `json:"auto,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type RouteState struct {
@@ -34,6 +38,8 @@ type RouteState struct {
 	Path      func(settings.Settings, engine.Target, string) string
 	Snapshot  func() geo.Routes
 	Refresh   func(func())
+	// Auto is the memory of the paths that worked in this network; the zero value is no memory.
+	Auto AutoMemory
 }
 
 type CodeError struct {
@@ -46,6 +52,7 @@ type Manager struct {
 	engine             engine.Engine
 	getSettings        func() settings.Settings
 	routes             RouteState
+	auto               AutoMemory
 	lastRoutes         geo.Routes
 	hasRoutes          bool
 	hub                *Hub
@@ -91,6 +98,8 @@ type attemptResult struct {
 	info       engine.Info
 	err        error
 	server     string // the server the attempt picked for itself ("fastest"), "" if it did not
+	// what the memory of Auto was asked: the network's key and kind, and the path the attempt was told to go to
+	net, kind, prefer string
 }
 type probeResult struct {
 	generation uint64
@@ -133,6 +142,10 @@ type actorState struct {
 	// connectAttempts and connectStarted bound how long a first connect of Auto goes from path to path (see nextPath).
 	connectAttempts int
 	connectStarted  time.Time
+	// deadPath is the path of the connection that died and was not replaced yet: another one is a failover.
+	deadPath string
+	// autoNet and autoPath: the network and path of the last success that has not had its round trip noted yet.
+	autoNet, autoPath string
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -217,6 +230,7 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	}
 	if len(routes) != 0 {
 		m.routes = routes[0]
+		m.auto = routes[0].Auto
 	}
 	go m.run()
 	return m
@@ -453,6 +467,11 @@ func (m *Manager) run() {
 						state.runCancel = nil
 					}
 					code := engine.ErrorCode(request.err)
+					// only a path that did not answer or carried nothing is marked: the other codes are not its fault here
+					if code == "no_server_answers" || code == "verify_failed" {
+						// ponytail: a path an attempt never named (no ServerID) is not marked
+						m.auto.Paths.Failure(request.net, request.info.ServerID, m.auto.now())
+					}
 					// the reason is the engine's own fixed wording; any other error may name an address
 					var failed *engine.Failure
 					reason := ""
@@ -555,6 +574,7 @@ func (m *Manager) run() {
 					state.status.Route = request.info.Route
 					state.status.Purpose = request.info.Purpose
 					state.status.WhitelistHint = false
+					m.pathUp(&state, request)
 					if state.status.Route == "" && m.routes.Effective != nil {
 						state.status.Route = m.routes.Effective(m.currentSettings())
 					}
@@ -582,6 +602,7 @@ func (m *Manager) run() {
 				state.probeCancel = nil
 				if request.err == nil {
 					resetProbeStreak(&state)
+					m.noteRTT(&state)
 				} else {
 					received := state.probeFailures > 0 && receivedSince(state.probeReceivedStart, request.received) >= receivedAliveThreshold
 					if received {
@@ -775,6 +796,7 @@ func (m *Manager) setChoice(state *actorState, target engine.Target) {
 		}
 	}
 	state.roundFailures = make(map[string]int)
+	state.deadPath = ""
 	state.whitelistManual = target.Server != "" && target.Server != "auto" && state.selection.Home.Purpose == profile.PurposeWhitelist
 	state.status.Purpose = state.selection.Home.Purpose
 	state.status.WhitelistByRule = false
@@ -804,6 +826,10 @@ func (m *Manager) subscriptionsChanged(state *actorState) {
 	if hadHint {
 		m.hub.Publish("status", state.status)
 	}
+	if m.auto.Paths != nil && m.auto.PathIDs != nil {
+		// the ids come from the subscriptions' parsed profiles: not work for the actor
+		go func() { m.auto.Paths.Keep(m.auto.PathIDs()) }()
+	}
 	if state.status.State == "connected" && m.engine != nil && m.engine.Stale() {
 		m.reconnectRoute(state, m.currentSettings()) // the path this tunnel runs on is another one now, or gone
 	}
@@ -816,6 +842,13 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	ctx, cancel := context.WithCancel(context.Background())
 	state.runCancel = cancel
 	target.Avoid = avoidedPaths(state.roundFailures) // only Auto looks at it
+	// the memory may name a path to go to at once, but only before this round has failed once
+	var known []auto.Path
+	if m.auto.Paths != nil && len(state.roundFailures) == 0 {
+		for _, id := range state.selection.Order {
+			known = append(known, auto.Path{ID: id, Via: state.selection.Via[id]})
+		}
+	}
 	state.connectAttempts++
 	state.target = target
 	state.routeSettings = m.currentSettings()
@@ -833,6 +866,7 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 		if previousDone != nil {
 			<-previousDone
 		}
+		netKey, netKind := m.auto.consult(&target, known)
 		// the pick takes up to a few seconds of handshakes, which the actor must not wait for
 		var picked string
 		if pick {
@@ -851,7 +885,7 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 			}
 		})
 		select {
-		case m.commands <- attemptResult{generation: generation, info: info, err: err, server: picked}:
+		case m.commands <- attemptResult{generation: generation, info: info, err: err, server: picked, net: netKey, kind: netKind, prefer: target.Prefer}:
 		case <-m.done:
 		}
 	}()
@@ -928,9 +962,13 @@ func (m *Manager) beginReconnect(state *actorState, hold bool) {
 	}
 	state.probePending = false
 	resetProbeStreak(state)
+	if state.status.State == "connected" {
+		state.deadPath = state.status.ServerID
+	}
 	state.status.State = "reconnecting"
 	state.status.Step = ""
 	state.status.Route = ""
+	state.status.Auto, state.status.Reason = false, ""
 	state.status.Error = ""
 	state.status.SinceUnix = time.Now().Unix()
 	state.retryIndex = 0
@@ -1093,6 +1131,7 @@ func (m *Manager) reconnectRoute(state *actorState, configured settings.Settings
 		state.status.Error = ""
 		state.status.Step = ""
 		state.status.Route = ""
+		state.status.Auto, state.status.Reason = false, ""
 		m.hub.Publish("status", state.status)
 	}
 	state.retryIndex = 0

@@ -550,6 +550,9 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		}
 		waves := profile.AutoWaves(candidates, target.Avoid)
 		answered := false
+		if i := slices.IndexFunc(candidates, func(p profile.Profile) bool { return target.takes(p.ID) }); i >= 0 {
+			selected, answered, waves = candidates[i], true, nil // the path that worked lately here: no race
+		}
 		if !hasDefaultRoute() {
 			waves = waves[:min(len(waves), 1)] // no network: nothing will answer, and three waves are ten seconds of waiting
 		}
@@ -1019,7 +1022,7 @@ func (r *Real) Select(target Target) (Selection, bool) {
 		Order: make([]string, 0, len(ring)),
 	}
 	for _, p := range ring {
-		selection.Order = append(selection.Order, p.ID)
+		selection.add(p)
 	}
 	for _, p := range profiles {
 		if p.Sub == home.Sub && p.Purpose == profile.PurposeWhitelist {

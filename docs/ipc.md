@@ -125,6 +125,24 @@ all (and while a path is left); only then does it end as any first `connect` doe
 Auto's next choice (see `on_server_down`). `server_id` is the id of the server in use while connected: names repeat,
 ids do not.
 
+Auto remembers, for each network, which paths worked: a connect that came up through a path, and a failed attempt that
+ended in `no_server_answers` or `verify_failed`, are noted for the network the machine is on (`offline`,
+`auth_rejected`, `tunnel_failed`, `server_not_found`, a cancelled attempt, and the death of a live connection are not).
+A path that failed twice in a row is left out of Auto's choice for 2 minutes, then 10, 30 and 120 for each failure
+after that; a success lifts it. When the first attempt of a round meets a path that worked in this network within the
+last 24 hours, has not failed since and is not set aside, Auto goes to it at once, with no race of handshakes (the best
+by round trip, failure share and kind of path if there are several); if that fails, the next attempt is a race as above.
+A network is told by the kind of the interface that has the default route and its IPv4 gateway, hashed with a random
+salt of the install; the file `<data directory>\auto.json` holds the salt, those hashes and the ids of paths with the
+times, a failure share, a round trip and a quarantine end for each, for at most 16 networks and 128 paths each. It has
+no addresses, no names of networks, hosts or paths, and no account names; a missing or broken file is an empty memory,
+and a path that is gone from the subscriptions is dropped from it.
+
+`auto: true` in the status says that Auto picked the path in use (a server the person named leaves it out), and `reason`
+why: `known` (the memory's path, at once), `only` (it is the one candidate), `failover` (another path failed in this
+round, or the connection died on another path) or else `fastest` (the race). Both keys are absent when they do not apply
+and while the session is not connected.
+
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
 protocol that are actually in use (`hysteria2`, `awg`, `vless` or `trusttunnel`; a window that only knows the first two must show an
 unknown value as plain text, not guess).

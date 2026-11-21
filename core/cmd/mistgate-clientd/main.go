@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mistgate/mistgate-client/core/internal/auto"
 	"github.com/mistgate/mistgate-client/core/internal/diag"
 	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/geo"
@@ -289,6 +290,20 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	apps := func() []engine.AppInfo {
 		rules := geoStore.GetRules()
 		return engine.ListApps(slices.Concat(rules.Direct.Apps, rules.VPN.Apps))
+	}
+	memory := auto.Open(dataDir)
+	defer memory.Flush() // runs after the manager has closed: its last outcomes are in
+	routeState.Auto = session.AutoMemory{
+		Paths:      memory,
+		NetworkKey: func() (string, string) { return diag.NetworkKey(memory.Salt()) },
+		PathIDs: func() []string {
+			profiles, _ := store.Profiles()
+			ids := make([]string, 0, len(profiles))
+			for _, p := range profiles {
+				ids = append(ids, p.ID)
+			}
+			return ids
+		},
 	}
 	manager := session.NewManager(eng, settingsStore.Get, routeState)
 	defer manager.Close()

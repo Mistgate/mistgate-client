@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
@@ -24,6 +25,15 @@ type Target struct {
 	Hold     bool // Keep the network closed during this attempt and if it fails.
 	// Avoid are the paths Auto should not pick now (they failed lately); a named server ignores it.
 	Avoid []string
+	// Prefer is the path Auto goes to at once, with no race of handshakes, as if it had been named: the one that
+	// worked lately in this network. It is used only when it is among the candidates and not in Avoid; a named server
+	// ignores it.
+	Prefer string
+}
+
+// takes: Auto goes straight to the path with this id.
+func (t Target) takes(id string) bool {
+	return t.Prefer != "" && id == t.Prefer && !slices.Contains(t.Avoid, id)
 }
 
 type Info struct {
@@ -39,6 +49,19 @@ type Selection struct {
 	Home      Info
 	Order     []string
 	Whitelist string
+	// Via is how a path of Order reaches its server (relay, warp) where that is known; a path that is not here is direct.
+	Via map[string]string
+}
+
+// add puts p at the end of the order.
+func (s *Selection) add(p profile.Profile) {
+	s.Order = append(s.Order, p.ID)
+	if p.Via != "" {
+		if s.Via == nil {
+			s.Via = map[string]string{}
+		}
+		s.Via[p.ID] = p.Via
+	}
 }
 
 type Traffic struct {
