@@ -89,7 +89,7 @@ func Build(res *diag.Result, profiles []profile.Profile, asn uint32) Body {
 		if !ok || v == "" || s.ID == res.Live || p.Via == "relay" || p.Purpose == profile.PurposeWhitelist {
 			continue
 		}
-		host, port, err := diag.Endpoint(p)
+		host, port, err := p.Endpoint()
 		if err != nil {
 			continue
 		}

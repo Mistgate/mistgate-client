@@ -35,6 +35,7 @@ func (*Real) Probe(context.Context) error             { return errors.New("real 
 func (*Real) Changed() <-chan struct{}                { return nil }
 func (*Real) Next(Target, string) (string, bool)      { return "", false }
 func (*Real) Select(Target) (Selection, bool)         { return Selection{}, false }
+func (*Real) Stale() bool                             { return false }
 func (*Real) EffectiveRoute(settings.Settings) string { return "all" }
 func (r *Real) Routes(configured settings.Settings) geo.Routes {
 	return r.geo.Routes(configured.RouteMode, configured.RouteRegion, "")

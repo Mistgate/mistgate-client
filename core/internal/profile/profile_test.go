@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -322,6 +323,58 @@ func TestParseUintRange(t *testing.T) {
 	for _, input := range []string{"", "8-2", "1-2-3", "65536", "x-y"} {
 		if _, err := parseUintRange(input, 16); err == nil {
 			t.Errorf("parseUintRange(%q) should fail", input)
+		}
+	}
+}
+
+func TestAutoWaves(t *testing.T) {
+	path := func(id, protocol, host, via string) Profile {
+		p := Profile{ID: id, Protocol: protocol, Via: via}
+		switch protocol {
+		case "hysteria2":
+			p.Hy2 = &Hy2{Host: host, Port: 443}
+		case "awg":
+			p.AWG = &AWG{EndpointHost: host, EndpointPort: 51820}
+		case "vless":
+			p.VLESS = &VLESS{Host: host, Port: 443}
+		case "trusttunnel":
+			p.TT = &TrustTunnel{Addresses: []string{host + ":443"}}
+		}
+		return p
+	}
+	same := func(id, via string) Profile { return path(id, "hysteria2", "h"+id+".example", via) }
+	var many []Profile
+	for i := range 11 {
+		many = append(many, same("d"+strconv.Itoa(i), ""))
+	}
+	tests := []struct {
+		name       string
+		candidates []Profile
+		avoid      []string
+		want       string
+	}{
+		{"direct first", []Profile{same("r1", "relay"), same("d1", ""), same("d2", "direct")}, nil, "d1,d2|r1"},
+		{"relays follow in the second wave", []Profile{path("d1", "hysteria2", "a", ""), path("d2", "vless", "b", ""), path("d3", "awg", "c", ""), same("r1", "warp"), same("r2", "relay")}, nil, "d1,d2,d3|r1,r2"},
+		{"UDP and TCP alternate", []Profile{path("u1", "hysteria2", "a", ""), path("u2", "awg", "b", ""), path("t1", "vless", "c", ""), path("t2", "trusttunnel", "d", "")}, nil, "u1,t1,u2|t2"},
+		{"a host is not twice in a wave", []Profile{path("a1", "hysteria2", "x", ""), path("a2", "vless", "x", ""), path("a3", "vless", "y", "")}, nil, "a1,a3,a2"},
+		{"avoided paths are left out", []Profile{same("d1", ""), same("d2", ""), same("d3", "")}, []string{"d1"}, "d2,d3"},
+		{"all avoided: all of them", []Profile{same("d1", ""), same("d2", "")}, []string{"d1", "d2"}, "d1,d2"},
+		{"one path", []Profile{same("d1", "")}, nil, "d1"},
+		{"relays only", []Profile{same("r1", "relay"), same("r2", "warp"), same("r3", "relay"), same("r4", "relay")}, nil, "r1,r2,r3|r4"},
+		{"three waves at most", many, nil, "d0,d1,d2|d3,d4,d5|d6,d7,d8"},
+		{"nothing to try", nil, nil, ""},
+	}
+	for _, test := range tests {
+		var waves []string
+		for _, wave := range AutoWaves(test.candidates, test.avoid) {
+			ids := make([]string, len(wave))
+			for i, p := range wave {
+				ids[i] = p.ID
+			}
+			waves = append(waves, strings.Join(ids, ","))
+		}
+		if got := strings.Join(waves, "|"); got != test.want {
+			t.Errorf("%s: waves = %q, want %q", test.name, got, test.want)
 		}
 	}
 }

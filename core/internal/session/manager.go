@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -116,11 +117,11 @@ type actorState struct {
 	probePending       bool
 	retryIndex         int
 	refusedSince       time.Time // the first refusal of the key in this run of reconnects; zero when there was none
-	// userServer is what the user asked for; state.target.Server moves off it when on_server_down is "next".
+	// userServer is what the user asked for; for a named server state.target.Server moves off it when on_server_down is "next".
 	userServer string
 	// failures counts failed reconnect attempts in a row on state.target.Server.
 	failures int
-	// fastest: the next attempt picks the quickest server itself (on_server_down "fastest" after two failures).
+	// fastest: the next attempt picks the quickest server itself (on_server_down "fastest" after two failures; not for Auto).
 	fastest   bool
 	selection engine.Selection
 	// A round is complete after each ordinary path in the selected failover order has failed twice.
@@ -129,6 +130,9 @@ type actorState struct {
 	// bootConnect: the connect is the service's own, made at boot (the network may not be there yet). It is a first
 	// connect that keeps trying, so it never holds the network and never moves to another server.
 	bootConnect bool
+	// connectAttempts and connectStarted bound how long a first connect of Auto goes from path to path (see nextPath).
+	connectAttempts int
+	connectStarted  time.Time
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -457,6 +461,9 @@ func (m *Manager) run() {
 					}
 					// in the message itself: the log ring keeps the message only
 					slog.Warn("connect failed: " + code + " (" + state.status.Protocol + "; " + reason + ")")
+					if m.nextPath(&state, code, request.info.ServerID) {
+						continue
+					}
 					always := m.currentSettings().KillSwitch == "always"
 					retry := false
 					switch {
@@ -488,6 +495,8 @@ func (m *Manager) run() {
 							m.offerWhitelist(&state)
 						}
 					case state.bootConnect:
+						// no serverDown here, so nothing would end the round that the paths of a first connect were marked in
+						state.roundFailures = make(map[string]int)
 						if bootRetryCode(code) {
 							retry = true
 						} else {
@@ -526,7 +535,7 @@ func (m *Manager) run() {
 							if failedServer == "" {
 								failedServer = state.target.Server
 							}
-							m.serverDown(&state, failedServer)
+							m.serverDown(&state, failedServer, code)
 						}
 						delay := m.backoffAt(state.retryIndex)
 						if state.retryIndex < len(m.backoff)-1 {
@@ -666,6 +675,7 @@ func (m *Manager) connect(state *actorState, target engine.Target, atStart bool)
 	}
 	m.setChoice(state, target)
 	state.bootConnect = atStart
+	state.connectAttempts, state.connectStarted = 0, time.Now()
 
 	if reconnecting {
 		if state.runCancel != nil {
@@ -794,6 +804,9 @@ func (m *Manager) subscriptionsChanged(state *actorState) {
 	if hadHint {
 		m.hub.Publish("status", state.status)
 	}
+	if state.status.State == "connected" && m.engine != nil && m.engine.Stale() {
+		m.reconnectRoute(state, m.currentSettings()) // the path this tunnel runs on is another one now, or gone
+	}
 }
 
 func (m *Manager) startAttempt(state *actorState, target engine.Target) {
@@ -802,6 +815,8 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	generation := state.generation
 	ctx, cancel := context.WithCancel(context.Background())
 	state.runCancel = cancel
+	target.Avoid = avoidedPaths(state.roundFailures) // only Auto looks at it
+	state.connectAttempts++
 	state.target = target
 	state.routeSettings = m.currentSettings()
 	state.attemptPath = m.routePath(state.routeSettings, target, "")
@@ -1086,8 +1101,10 @@ func (m *Manager) reconnectRoute(state *actorState, configured settings.Settings
 }
 
 // serverDown counts a failed reconnect attempt. After two failures, "next" walks the round and "fastest" checks its
-// other paths. The backoff goes on as it was.
-func (m *Manager) serverDown(state *actorState, failedServer string) {
+// other paths. The backoff goes on as it was. Auto does neither: it picks its path itself at every attempt, away from
+// the paths that failed twice (Target.Avoid), so only the round is kept here. A tunnel that came up and carried nothing
+// (verify_failed) is not tried again at once: one such failure is two.
+func (m *Manager) serverDown(state *actorState, failedServer, code string) {
 	if state.status.WhitelistByRule {
 		return
 	}
@@ -1098,6 +1115,9 @@ func (m *Manager) serverDown(state *actorState, failedServer string) {
 		for _, server := range state.selection.Order {
 			if server == failedServer {
 				state.roundFailures[server]++
+				if code == "verify_failed" {
+					state.roundFailures[server] = max(state.roundFailures[server], 2)
+				}
 				break
 			}
 		}
@@ -1111,6 +1131,9 @@ func (m *Manager) serverDown(state *actorState, failedServer string) {
 			state.status.WhitelistHint = true
 		}
 		state.roundFailures = make(map[string]int)
+	}
+	if isAuto(state.userServer) {
+		return
 	}
 	if state.failures < 2 {
 		return
@@ -1136,6 +1159,42 @@ func (m *Manager) serverDown(state *actorState, failedServer string) {
 		state.failures = 0
 		m.setPurpose(state, state.target)
 	}
+}
+
+func isAuto(server string) bool { return server == "" || server == "auto" }
+
+// avoidedPaths are the paths that failed twice in this round, for Target.Avoid.
+func avoidedPaths(failures map[string]int) []string {
+	var avoid []string
+	for server, n := range failures {
+		if n >= 2 {
+			avoid = append(avoid, server)
+		}
+	}
+	slices.Sort(avoid)
+	return avoid
+}
+
+// A first connect of Auto whose path fails for the path's own reasons goes on to another path at once (no backoff, no
+// error shown) for a few attempts and a little while: a person who pressed Connect does not want to read an error
+// because the first of several paths was blocked.
+const (
+	firstConnectAttempts = 4
+	firstConnectWindow   = 40 * time.Second
+)
+
+// nextPath marks the failed path and starts the next attempt, which Auto will take elsewhere. It does nothing (false)
+// unless this is such a connect with a path left to try; the usual handling of the failure follows then.
+func (m *Manager) nextPath(state *actorState, code, failed string) bool {
+	if state.status.State != "connecting" || !isAuto(state.userServer) || state.status.WhitelistByRule || failed == "" ||
+		code != "server_not_found" && code != "no_server_answers" && code != "verify_failed" ||
+		state.connectAttempts >= firstConnectAttempts || time.Since(state.connectStarted) >= firstConnectWindow ||
+		!slices.ContainsFunc(state.selection.Order, func(server string) bool { return server != failed && state.roundFailures[server] < 2 }) {
+		return false
+	}
+	state.roundFailures[failed] = 2
+	m.startAttempt(state, state.target)
+	return true
 }
 
 // offerWhitelist raises the hint "the ordinary servers do not answer": an ordinary server was asked for, it failed for

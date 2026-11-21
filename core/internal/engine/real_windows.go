@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/netip"
 	"slices"
@@ -78,7 +79,8 @@ type realRun struct {
 	verify  string
 	probeIP netip.Addr
 	rtt     time.Duration
-	awgID   string // the AmneziaWG profile in use (empty for Hysteria2): nothing else may handshake with its key
+	awgID   string          // the AmneziaWG profile in use (empty for Hysteria2): nothing else may handshake with its key
+	profile profile.Profile // what the tunnel was built from, as the subscriptions gave it (Stale compares it)
 	luid    uint64
 	dns     []netip.Addr
 
@@ -534,7 +536,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 			info = Info{Server: name, ServerID: selected.ID, Protocol: selected.Protocol, Purpose: selected.Purpose}
 		}
 	}()
-	// Auto is the server that answers quickest now, not the first of the list. No answer from any: the first, as before.
+	// Auto is the path that answers quickest now, wave by wave (see AutoWaves). No answer from any: the first path of
+	// the first wave.
 	if target.Server == "" || target.Server == "auto" {
 		_, ring, _ := profile.Ring(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game)
 		candidates := ring[:0:0]
@@ -543,24 +546,31 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 				candidates = append(candidates, p)
 			}
 		}
-		// a plain path when the list has one: a relay or a WARP exit answers as soon as its entry does, and is not
-		// what Auto should choose by a millisecond
-		plain := candidates[:0:0]
-		for _, p := range candidates {
-			if p.Via == "" || p.Via == "direct" {
-				plain = append(plain, p)
+		if !slices.ContainsFunc(candidates, func(p profile.Profile) bool { return !slices.Contains(target.Avoid, p.ID) }) {
+			candidates = ring // the chosen protocol failed on every path: the others may be tried
+		}
+		waves := profile.AutoWaves(candidates, target.Avoid)
+		answered := false
+		if !hasDefaultRoute() {
+			waves = waves[:min(len(waves), 1)] // no network: nothing will answer, and three waves are ten seconds of waiting
+		}
+		for _, wave := range waves {
+			if best := quickestOf(runCtx, wave); best >= 0 {
+				selected, answered = wave[best], true
+				break
 			}
-		}
-		if len(plain) > 0 {
-			candidates = plain
-		}
-		if best := quickestOf(runCtx, candidates); best >= 0 {
-			selected = candidates[best]
+			if err := runCtx.Err(); err != nil {
+				return Info{}, err
+			}
 		}
 		if err := runCtx.Err(); err != nil {
 			return Info{}, err
 		}
+		if !answered && len(waves) > 0 {
+			selected = waves[0][0]
+		}
 	}
+	started := selected // as the subscriptions gave it: the override below is not theirs
 	if r.verify != "" {
 		selected.Verify = r.verify
 	}
@@ -569,7 +579,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	run.tunnel.mu.Lock()
 	run.tunnel.noIPv6 = selected.NoIPv6 || selected.TT != nil && !selected.TT.HasIPv6
 	run.tunnel.mu.Unlock()
-	host, port, err := profileEndpoint(selected)
+	host, port, err := selected.Endpoint()
 	if err != nil {
 		return Info{}, failure("no_subscription", "read profile endpoint")
 	}
@@ -932,22 +942,22 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	}
 	run.verify = verify
 	run.probeIP = localIP
+	run.profile = started
 	r.mu.Unlock()
 	go r.keepLatency(runCtx, run, selected)
 	return info, nil
 }
 
-const latencyEvery = 30 * time.Second
+const latencyEvery = 5 * time.Minute
 
 // keepLatency keeps the number the window shows beside the speed: one round trip to the server in use, measured
-// the way the server list measures it (a handshake outside the tunnel), now and every 30 seconds. The tunnel's own
-// probes cannot give it: with the forwarder they are answered inside this process.
+// the way the server list measures it (a handshake outside the tunnel), now and about every 5 minutes (a fifth
+// either way, so that the clients of one server do not measure together). The tunnel's own probes cannot give it:
+// with the forwarder they are answered inside this process.
 func (r *Real) keepLatency(ctx context.Context, run *realRun, p profile.Profile) {
 	if p.Protocol == "awg" {
 		return // its key is the tunnel's: the time of the tunnel's own handshake stays
 	}
-	ticker := time.NewTicker(latencyEvery)
-	defer ticker.Stop()
 	for {
 		if rtt, err := diag.Latency(ctx, p, fastestTimeout); err == nil {
 			r.mu.Lock()
@@ -956,10 +966,12 @@ func (r *Real) keepLatency(ctx context.Context, run *realRun, p profile.Profile)
 			}
 			r.mu.Unlock()
 		}
+		timer := time.NewTimer(latencyEvery*4/5 + rand.N(latencyEvery*2/5))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
@@ -1012,24 +1024,64 @@ func (r *Real) Select(target Target) (Selection, bool) {
 // fastestTimeout bounds each server's handshake in Fastest.
 const fastestTimeout = 3 * time.Second
 
-// quickestOf makes one handshake to each profile's server at the same time and returns the index of the one that
-// answered soonest, or -1 when none did.
+// Paths of a wave start one after another, not in one burst; once one has answered the rest get this long.
+const (
+	waveStagger      = 250 * time.Millisecond
+	waveJitter       = 150 * time.Millisecond
+	afterFirstAnswer = 1500 * time.Millisecond
+)
+
+// quickestOf makes one handshake to each profile's server, staggered, and returns the index of the best of those that
+// answered: the quickest direct path, or the quickest at all when no direct one did. -1: none answered.
 func quickestOf(ctx context.Context, profiles []profile.Profile) int {
-	round := make([]time.Duration, len(profiles)) // 0: no answer
-	var wait sync.WaitGroup
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // the handshakes still running when the answers are in
+	type answer struct {
+		i   int
+		rtt time.Duration // 0: no answer
+	}
+	answers := make(chan answer, len(profiles)) // room for every one, so that no goroutine waits to be heard
 	for i, p := range profiles {
-		wait.Add(1)
 		go func() {
-			defer wait.Done()
-			if rtt, err := diag.Handshake(ctx, p, fastestTimeout); err == nil {
-				round[i] = rtt
+			timer := time.NewTimer(time.Duration(i)*waveStagger + rand.N(waveJitter))
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				answers <- answer{i: i}
+				return
 			}
+			rtt, err := diag.Handshake(ctx, p, fastestTimeout)
+			if err != nil {
+				rtt = 0
+			}
+			answers <- answer{i, rtt}
 		}()
 	}
-	wait.Wait()
+	round := make([]time.Duration, len(profiles))
+	var grace <-chan time.Time
+collect:
+	for range profiles {
+		select {
+		case a := <-answers:
+			round[a.i] = a.rtt
+			if a.rtt > 0 && grace == nil {
+				timer := time.NewTimer(afterFirstAnswer)
+				defer timer.Stop()
+				grace = timer.C
+			}
+		case <-grace:
+			break collect
+		case <-ctx.Done():
+			break collect
+		}
+	}
 	best := -1
 	for i, rtt := range round {
-		if rtt > 0 && (best < 0 || rtt < round[best]) {
+		if rtt <= 0 {
+			continue
+		}
+		if best < 0 || profiles[i].Direct() && !profiles[best].Direct() || profiles[i].Direct() == profiles[best].Direct() && rtt < round[best] {
 			best = i
 		}
 	}
@@ -1046,11 +1098,34 @@ func (r *Real) Fastest(ctx context.Context, target Target, except string) (strin
 	}
 	configured := r.settings()
 	others := profile.Others(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, except)
-	best := quickestOf(ctx, others)
-	if best < 0 {
-		return "", false
+	for _, wave := range profile.AutoWaves(others, nil) {
+		if best := quickestOf(ctx, wave); best >= 0 {
+			return wave[best].ID, true
+		}
+		if ctx.Err() != nil {
+			break
+		}
 	}
-	return others[best].ID, true
+	return "", false
+}
+
+func (r *Real) Stale() bool {
+	r.mu.Lock()
+	run := r.current
+	up := run != nil && run.dial != nil // dial is set once the tunnel is verified
+	var started profile.Profile
+	if up {
+		started = run.profile
+	}
+	r.mu.Unlock()
+	if !up || r.load == nil {
+		return false
+	}
+	profiles, err := r.load()
+	if err != nil {
+		return false // a failed read is no reason to cut the tunnel
+	}
+	return pathChanged(started, profiles)
 }
 
 func (r *Real) startRun(ctx context.Context, hold bool) (context.Context, *realRun, error) {
@@ -1470,38 +1545,6 @@ func (t *realTunnel) Close() {
 	}
 	if adapter != nil {
 		_ = adapter.Close()
-	}
-}
-
-func profileEndpoint(p profile.Profile) (string, uint16, error) {
-	switch p.Protocol {
-	case "hysteria2":
-		if p.Hy2 == nil || p.Hy2.Host == "" || p.Hy2.Port == 0 {
-			return "", 0, errors.New("missing Hysteria2 endpoint")
-		}
-		return p.Hy2.Host, p.Hy2.Port, nil
-	case "awg":
-		if p.AWG == nil || p.AWG.EndpointHost == "" || p.AWG.EndpointPort == 0 {
-			return "", 0, errors.New("missing AmneziaWG endpoint")
-		}
-		return p.AWG.EndpointHost, p.AWG.EndpointPort, nil
-	case "vless":
-		if p.VLESS == nil || p.VLESS.Host == "" || p.VLESS.Port == 0 {
-			return "", 0, errors.New("missing VLESS endpoint")
-		}
-		return p.VLESS.Host, p.VLESS.Port, nil
-	case "trusttunnel":
-		if p.TT == nil || len(p.TT.Addresses) == 0 {
-			return "", 0, errors.New("missing TrustTunnel endpoint")
-		}
-		host, portText, err := net.SplitHostPort(p.TT.Addresses[0])
-		port, portErr := strconv.ParseUint(portText, 10, 16)
-		if err != nil || portErr != nil || port == 0 {
-			return "", 0, errors.New("invalid TrustTunnel endpoint")
-		}
-		return host, uint16(port), nil
-	default:
-		return "", 0, errors.New("unsupported profile protocol")
 	}
 }
 

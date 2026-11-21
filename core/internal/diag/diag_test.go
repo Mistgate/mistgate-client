@@ -219,3 +219,36 @@ func TestRunnerStartAfterCancel(t *testing.T) {
 		t.Fatalf("calls=%d state=%#v", calls.Load(), got)
 	}
 }
+
+func TestServerAddressesAreKeptForAWhile(t *testing.T) {
+	now := time.Now()
+	cache := &addrCache{now: func() time.Time { return now }}
+	var asked int
+	answer := netip.MustParseAddr("203.0.113.9")
+	var fail bool
+	lookup := func(context.Context, string) (netip.Addr, error) {
+		asked++
+		if fail {
+			return netip.Addr{}, errors.New("host lookup failed")
+		}
+		return answer, nil
+	}
+	ask := func() (netip.Addr, error) { return cache.resolve(context.Background(), "node.example", lookup) }
+	fail = true
+	if _, err := ask(); err == nil {
+		t.Fatal("a failed lookup came back as an answer")
+	}
+	fail = false
+	for range 2 {
+		if ip, err := ask(); err != nil || ip != answer {
+			t.Fatalf("lookup = %v, %v", ip, err)
+		}
+	}
+	if asked != 2 { // the failure was not kept; the answer was, for the second call
+		t.Fatalf("DNS asked %d times, want 2", asked)
+	}
+	now = now.Add(serverAddrTTL + time.Second)
+	if _, err := ask(); err != nil || asked != 3 {
+		t.Fatalf("after the time ran out: asked %d times, err %v; want a fresh lookup", asked, err)
+	}
+}

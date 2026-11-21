@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -520,7 +521,7 @@ func validateHostPort(value string) error {
 func Pick(profiles []Profile, server, protocol, sub string) (Profile, bool) {
 	anyProtocol := protocol == "" || protocol == "auto"
 	if server == "" || server == "auto" {
-		// ponytail: auto picks the first match until connection measurements can choose one.
+		// the home of "auto" before a connection: what the status shows; the engine measures and chooses at connect
 		for _, p := range profiles {
 			if p.Purpose != PurposeWhitelist && (sub == "" || p.Sub == sub) && (anyProtocol || p.Protocol == protocol) {
 				return p, true
@@ -609,4 +610,103 @@ func PickForSettings(profiles []Profile, server, requestedProtocol, sub, configu
 		}
 	}
 	return Pick(profiles, server, "auto", sub)
+}
+
+// Direct is a path that reaches its server itself, not through a relay or a WARP exit.
+func (p Profile) Direct() bool { return p.Via == "" || p.Via == "direct" }
+
+// Endpoint is the host and port the path's server is reached at, as the profile gives them.
+func (p Profile) Endpoint() (string, uint16, error) {
+	switch p.Protocol {
+	case "hysteria2":
+		if p.Hy2 == nil || p.Hy2.Host == "" || p.Hy2.Port == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		return p.Hy2.Host, p.Hy2.Port, nil
+	case "awg":
+		if p.AWG == nil || p.AWG.EndpointHost == "" || p.AWG.EndpointPort == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		return p.AWG.EndpointHost, p.AWG.EndpointPort, nil
+	case "vless":
+		if p.VLESS == nil || p.VLESS.Host == "" || p.VLESS.Port == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		return p.VLESS.Host, p.VLESS.Port, nil
+	case "trusttunnel":
+		if p.TT == nil || len(p.TT.Addresses) == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		host, portText, err := net.SplitHostPort(p.TT.Addresses[0])
+		port, portErr := strconv.ParseUint(portText, 10, 16)
+		if err != nil || portErr != nil || port == 0 {
+			return "", 0, errors.New("invalid profile")
+		}
+		return host, uint16(port), nil
+	default:
+		return "", 0, errors.New("invalid profile")
+	}
+}
+
+const autoWaveSize, autoWaves = 3, 3
+
+// AutoWaves orders the paths Auto may take into the waves it tries one after another: a wave is measured at once, and
+// the first wave with an answer decides. Direct paths come first (the first wave is only direct ones, if there are
+// any), then the rest of them, then relays and WARP exits. Inside a wave a path of another transport family than the
+// one before it, on a host the wave does not have yet, is preferred, so that one block does not take a whole wave.
+// `avoid` are the paths that failed lately; when they would leave nothing, they are not avoided.
+// ponytail: nine paths at most; the rest are reached by `avoid` on the next attempts.
+func AutoWaves(candidates []Profile, avoid []string) [][]Profile {
+	var rest, relays []Profile
+	for _, p := range candidates {
+		if slices.Contains(avoid, p.ID) {
+			continue
+		}
+		if p.Direct() {
+			rest = append(rest, p)
+		} else {
+			relays = append(relays, p)
+		}
+	}
+	if len(rest)+len(relays) == 0 {
+		if len(avoid) == 0 {
+			return nil
+		}
+		return AutoWaves(candidates, nil) // nothing but avoided paths: they are all there is
+	}
+	if len(rest) == 0 {
+		rest, relays = relays, nil // no direct path: relays from the first wave
+	}
+	var waves [][]Profile
+	for len(rest) > 0 && len(waves) < autoWaves {
+		var wave []Profile
+		hosts := map[string]bool{}
+		for len(wave) < autoWaveSize && len(rest) > 0 {
+			pick := 0
+			for i, p := range rest {
+				host, _, _ := p.Endpoint()
+				if len(wave) == 0 || transportFamily(p) != transportFamily(wave[len(wave)-1]) && !hosts[host] {
+					pick = i
+					break
+				}
+			}
+			host, _, _ := rest[pick].Endpoint()
+			hosts[host] = true
+			wave = append(wave, rest[pick])
+			rest = slices.Delete(rest, pick, pick+1)
+		}
+		waves = append(waves, wave)
+		if len(waves) == 1 {
+			rest = append(rest, relays...) // relays follow what is left of the direct paths
+		}
+	}
+	return waves
+}
+
+// transportFamily: UDP (Hysteria2, AmneziaWG) or TCP (VLESS, TrustTunnel); a block of one tends to leave the other.
+func transportFamily(p Profile) string {
+	if p.Protocol == "vless" || p.Protocol == "trusttunnel" {
+		return "tcp"
+	}
+	return "udp"
 }

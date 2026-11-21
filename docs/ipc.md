@@ -114,9 +114,16 @@ at home or on the same PC is a real case.
 
 Status:
 
-`connect` with server `auto` makes one handshake to every server the settings allow and takes the one that answers
-soonest (the first of the list when none answers). `server_id` is the id of the server in use while connected: names
-repeat, ids do not.
+`connect` with server `auto` makes handshakes to the paths the settings allow, a wave of three at a time (outside the
+tunnel; the paths of a wave start 250 ms apart, a little at random), and takes the quickest direct path of the first
+wave that answers. A wave takes the paths of different transports (UDP: Hysteria2, AmneziaWG; TCP: VLESS, TrustTunnel)
+and different hosts first. The first wave is direct paths only; relays and WARP exits come in the waves after them, or
+first when the subscription has no direct path. At most three waves are tried; when none answers, the first path of the
+first wave is tried anyway. A first `connect` of Auto whose path failed with `server_not_found`, `no_server_answers` or
+`verify_failed` goes on to another path at once, with no backoff and no `error`, up to four attempts and 40 seconds in
+all (and while a path is left); only then does it end as any first `connect` does. Paths that failed are left out of
+Auto's next choice (see `on_server_down`). `server_id` is the id of the server in use while connected: names repeat,
+ids do not.
 
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
 protocol that are actually in use (`hysteria2`, `awg`, `vless` or `trusttunnel`; a window that only knows the first two must show an
@@ -158,19 +165,23 @@ failed for a reason of the network (a connect that failed outright; two failed r
 round in `next`) and `whitelist_auto` did not act, and falls when an ordinary server connects, the person picks a
 server, or the subscriptions change. The three keys are absent when they do not apply.
 
+`on_server_down` is about a server the person chose by name. `auto` has its own way round the paths: it picks a path at
+every attempt (as above) and leaves out the paths that failed twice since the last success, until every path has had its
+two failures (then the round starts again); a tunnel that came up but carried no traffic (`verify_failed`) counts as two
+failures at once. `status.server` stays `auto` while it retries, and none of the values below moves it to a server.
+
 With `on_server_down: "reconnect"` (default) every retry targets the same server. With `"next"`, a `reconnecting`
 session that fails two attempts in a row on one server sends its next attempt to the next server of the same
 subscription (the order of the subscription's list, wrapping around), and again after every two failures; `status.server`
 shows the server being tried. Servers the `protocol` setting rules out are skipped; the server the user chose is always in
 the round, so after every server has had its two attempts the round starts again from it. The backoff keeps growing
-across switches. `auto` stands for the server automatic selection picks (the first match of the subscription and
-protocol), so it moves on from there too. A single server has no next one and is retried.
+across switches. A single server has no next one and is retried.
 
 With `"fastest"` the trigger is the same (two failed attempts in a row on one server), but the third attempt first
-sends a handshake to every other server of the round (the same set `"next"` walks, outside the tunnel, all at once,
-3 s each) and goes to the one that answered with the smallest round trip. If none answers, it goes to the next server in
+sends a handshake to the other servers of the round (the same set `"next"` walks, outside the tunnel, in waves like
+those of `auto`, 3 s each) and goes to the one that answered with the smallest round trip in the first wave that answers. If none answers, it goes to the next server in
 list order, as `"next"` does. `status.server` shows the new server once that attempt has finished (the pick itself takes
-up to 3 s). Everything else in the paragraph above holds. This applies only to retries
+a few seconds). Everything else in the paragraph above holds. This applies only to retries
 of a session that was connected or is reconnecting, never to the first `connect` (in `always` a failed first `connect` is
 retried as a reconnect, so it counts there), and it does not change the user's choice:
 `last_server` stays, and a `connect` call goes to the server it names (an omitted or `auto` server in `reconnecting`
@@ -591,6 +602,11 @@ subscription calls `leave` first (5 s; whatever it answers, the subscription is 
 in `enrol` is per origin of the link once the origin has been enrolled; other origins keep the install id. Secrets
 (device key, base URL, paths with their credentials) are kept only in the protected store; `Subscription` carries
 `managed` and nothing else new.
+
+When a sync changes the path of the tunnel in use (anything of the path but its name), or takes it away, the tunnel is
+rebuilt as it is for a change of route mode: `reconnecting`, the network held, `auto` choosing a path again. A named
+server that is gone ends in `error` with `no_subscription`, as a `connect` to it would. A sync that changes nothing of
+the path (its data, the usage numbers, a new name) leaves the tunnel alone.
 
 A managed subscription reports its state in `error`; `subs.refresh` also returns it as the RPC error, except
 `inactive` and the enrol codes. What the window should say:

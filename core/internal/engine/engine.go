@@ -3,6 +3,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"reflect"
+
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
 
 type Step string
@@ -19,6 +22,8 @@ type Target struct {
 	Protocol string
 	Sub      string
 	Hold     bool // Keep the network closed during this attempt and if it fails.
+	// Avoid are the paths Auto should not pick now (they failed lately); a named server ignores it.
+	Avoid []string
 }
 
 type Info struct {
@@ -60,6 +65,22 @@ type Engine interface {
 	Fastest(ctx context.Context, target Target, except string) (server string, ok bool)
 	// Select returns the path that an automatic target names and the paths it can fail over through.
 	Select(target Target) (Selection, bool)
+	// Stale: a tunnel is up, and the path it was built from is, in the subscriptions now, another or gone.
+	Stale() bool
+}
+
+// pathChanged: the profile a tunnel was built from is gone from profiles, or is not the same path any more. A new
+// name is not a new path.
+// ponytail: DeepEqual tells a nil list from an empty one; at worst a sync that only changes that restarts the tunnel once.
+func pathChanged(started profile.Profile, profiles []profile.Profile) bool {
+	started.Name = ""
+	for _, p := range profiles {
+		if p.ID == started.ID && p.Sub == started.Sub {
+			p.Name = ""
+			return !reflect.DeepEqual(started, p)
+		}
+	}
+	return true
 }
 
 // ErrNoTunnel: DialVPN has no tunnel that is up. ErrBlockedDest: the destination is one the proxy may not reach.

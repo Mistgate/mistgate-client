@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +35,8 @@ type Fake struct {
 	servers       []string
 	profiles      []profile.Profile
 	fastest       string
+	failing       []string
+	stale         bool
 	starts        atomic.Uint64
 	probes        atomic.Uint64
 	received      atomic.Uint64
@@ -63,11 +66,20 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 	f.targets = append(f.targets, target)
 	config, failStartCode := f.config, f.failStartCode
 	hasProfiles := len(f.profiles) != 0
+	f.stale = false // a new tunnel is built from the subscriptions as they are now
 	f.mu.Unlock()
 	info, ok := f.Select(target)
 	if !ok || !hasProfiles {
 		info.Home = Info{Server: target.Server, Protocol: target.Protocol}
 	}
+	used := target.Server
+	if (target.Server == "" || target.Server == "auto") && ok && len(info.Order) != 0 {
+		info.Home = f.pickAuto(target, info)
+		used = info.Home.ServerID
+	}
+	f.mu.RLock()
+	failing := slices.Contains(f.failing, used)
+	f.mu.RUnlock()
 	steps := [...]Step{StepResolve, StepHandshake, StepTunnel, StepVerify}
 	for _, step := range steps {
 		if err := ctx.Err(); err != nil {
@@ -92,7 +104,7 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 				return info.Home, ctx.Err()
 			}
 		}
-		if config.FailAt == step {
+		if config.FailAt == step || failing && step == StepHandshake {
 			code := config.FailCode
 			if code == "" {
 				code = "no_server_answers"
@@ -101,6 +113,32 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 		}
 	}
 	return info.Home, ctx.Err()
+}
+
+// pickAuto is the path Auto takes: the first of the order that is not to be avoided, the first when all are.
+func (f *Fake) pickAuto(target Target, selection Selection) Info {
+	pick := selection.Order[0]
+	for _, id := range selection.Order {
+		if !slices.Contains(target.Avoid, id) {
+			pick = id
+			break
+		}
+	}
+	if pick == selection.Home.ServerID {
+		return selection.Home
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, p := range f.profiles {
+		if p.ID == pick {
+			name := p.Name
+			if name == "" {
+				name = p.ID
+			}
+			return Info{Server: name, ServerID: p.ID, Protocol: p.Protocol, Purpose: p.Purpose}
+		}
+	}
+	return Info{Server: pick, ServerID: pick, Protocol: selection.Home.Protocol}
 }
 
 func (f *Fake) Stop() { f.stops.Add(1) }
@@ -220,6 +258,26 @@ func (f *Fake) Select(target Target) (Selection, bool) {
 		}
 	}
 	return Selection{}, false
+}
+
+// SetFailing makes the attempts that go to these servers fail at the handshake (FakeConfig.FailCode, or no_server_answers).
+func (f *Fake) SetFailing(servers ...string) {
+	f.mu.Lock()
+	f.failing = append([]string(nil), servers...)
+	f.mu.Unlock()
+}
+
+// SetStale is what Stale answers until the next Start, which builds a tunnel from the subscriptions as they are.
+func (f *Fake) SetStale(stale bool) {
+	f.mu.Lock()
+	f.stale = stale
+	f.mu.Unlock()
+}
+
+func (f *Fake) Stale() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.stale
 }
 
 // SetServers is the server list of the one fake subscription, in order.

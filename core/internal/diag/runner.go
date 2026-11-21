@@ -457,7 +457,7 @@ func checkProfiles(ctx context.Context, profiles []profile.Profile, physical int
 
 func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo, config Config) (Server, bool) {
 	server := serverForProfile(p)
-	host, port, err := profileEndpoint(p)
+	host, port, err := p.Endpoint()
 	if err != nil {
 		return server, false
 	}
@@ -555,7 +555,7 @@ func Latency(ctx context.Context, p profile.Profile, timeout time.Duration) (tim
 
 // resolveProfile is p's server as an address, and the physical interface that reaches it.
 func resolveProfile(ctx context.Context, p profile.Profile) (netip.AddrPort, interfaceInfo, error) {
-	host, port, err := profileEndpoint(p)
+	host, port, err := p.Endpoint()
 	if err != nil {
 		return netip.AddrPort{}, interfaceInfo{}, err
 	}
@@ -563,50 +563,56 @@ func resolveProfile(ctx context.Context, p profile.Profile) (netip.AddrPort, int
 	if err != nil {
 		return netip.AddrPort{}, interfaceInfo{}, err
 	}
-	ip, err := resolveHost(ctx, host, physical, Config{})
+	ip, err := serverAddrs.resolve(ctx, host, func(ctx context.Context, name string) (netip.Addr, error) {
+		return resolveHost(ctx, name, physical, Config{})
+	})
 	if err != nil {
 		return netip.AddrPort{}, interfaceInfo{}, err
 	}
 	return netip.AddrPortFrom(ip, port), interfaceFor(ip, physical), nil
 }
 
-func serverForProfile(p profile.Profile) Server {
-	return Server{ID: p.ID, Name: p.Name, Protocol: p.Protocol, Verdict: "app", Reason: "engine_error"}
+// serverAddrs keeps the addresses of servers for the probes (Handshake, Latency), which come in rounds and every few
+// minutes; a server's address rarely moves. The checks of the network (checkProfile and the rest) ask DNS afresh: the
+// person looks at the live answer there.
+var serverAddrs = &addrCache{now: time.Now}
+
+const serverAddrTTL = 30 * time.Minute
+
+type addrCache struct {
+	mu     sync.Mutex
+	byName map[string]cachedAddr
+	now    func() time.Time
 }
 
-// Endpoint is the host and port the checks reach a profile's server at, as the profile gives them.
-func Endpoint(p profile.Profile) (string, uint16, error) { return profileEndpoint(p) }
+type cachedAddr struct {
+	ip    netip.Addr
+	until time.Time
+}
 
-func profileEndpoint(p profile.Profile) (string, uint16, error) {
-	switch p.Protocol {
-	case "hysteria2":
-		if p.Hy2 == nil || p.Hy2.Host == "" || p.Hy2.Port == 0 {
-			return "", 0, errors.New("invalid profile")
-		}
-		return p.Hy2.Host, p.Hy2.Port, nil
-	case "awg":
-		if p.AWG == nil || p.AWG.EndpointHost == "" || p.AWG.EndpointPort == 0 {
-			return "", 0, errors.New("invalid profile")
-		}
-		return p.AWG.EndpointHost, p.AWG.EndpointPort, nil
-	case "vless":
-		if p.VLESS == nil || p.VLESS.Host == "" || p.VLESS.Port == 0 {
-			return "", 0, errors.New("invalid profile")
-		}
-		return p.VLESS.Host, p.VLESS.Port, nil
-	case "trusttunnel":
-		if p.TT == nil || len(p.TT.Addresses) == 0 {
-			return "", 0, errors.New("invalid profile")
-		}
-		host, portText, err := net.SplitHostPort(p.TT.Addresses[0])
-		port, portErr := strconv.ParseUint(portText, 10, 16)
-		if err != nil || portErr != nil || port == 0 {
-			return "", 0, errors.New("invalid profile")
-		}
-		return host, uint16(port), nil
-	default:
-		return "", 0, errors.New("invalid profile")
+// resolve answers from the cache while an answer is fresh. Only an answer is kept, never a failure.
+func (c *addrCache) resolve(ctx context.Context, host string, lookup func(context.Context, string) (netip.Addr, error)) (netip.Addr, error) {
+	c.mu.Lock()
+	hit, ok := c.byName[host]
+	c.mu.Unlock()
+	if ok && c.now().Before(hit.until) {
+		return hit.ip, nil
 	}
+	ip, err := lookup(ctx, host)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	c.mu.Lock()
+	if c.byName == nil {
+		c.byName = map[string]cachedAddr{}
+	}
+	c.byName[host] = cachedAddr{ip: ip, until: c.now().Add(serverAddrTTL)}
+	c.mu.Unlock()
+	return ip, nil
+}
+
+func serverForProfile(p profile.Profile) Server {
+	return Server{ID: p.ID, Name: p.Name, Protocol: p.Protocol, Verdict: "app", Reason: "engine_error"}
 }
 
 func uniquePorts(port uint16, extra ...uint16) []uint16 {
