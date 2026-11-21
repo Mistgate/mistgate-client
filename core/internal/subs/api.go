@@ -583,9 +583,14 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	if st.Error == "" {
 		etag = st.ETag
 	}
-	// ponytail: X-Mistgate-Direct is not sent, the service does not know yet whether this request leaves outside the
-	// tunnel; `asn` comes with it.
-	r, err := s.call(ctx, http.MethodGet, target, st.Key, nil, 15*time.Second, etag)
+	// The header says the request leaves outside the tunnel; only then does the panel see the person's own network and
+	// give its `asn`.
+	var headers []string
+	direct := s.Direct != nil && s.Direct()
+	if direct {
+		headers = []string{"X-Mistgate-Direct", "1"}
+	}
+	r, err := s.call(ctx, http.MethodGet, target, st.Key, nil, 15*time.Second, etag, headers...)
 	if err != nil {
 		return fail(fetchErrorCode(err))
 	}
@@ -626,7 +631,12 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds = []Server{}, nil, 0, nil
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
 	st.Debug = panelDebug(b.Debug)
-	st.Probe, st.ASN = panelProbe(b.Probe), panelASN(b.ASN)
+	st.Probe = panelProbe(b.Probe)
+	// ponytail: a sync through the tunnel cannot carry the ASN, so it keeps the one of the last direct sync; it is stale
+	// when the person has moved to another network since. Drop it by the network's change when that is known here.
+	if direct || len(b.ASN) != 0 {
+		st.ASN = panelASN(b.ASN)
+	}
 	if b.Devices != nil && b.Devices.Used >= 0 && b.Devices.Limit >= 1 && b.Devices.Limit <= 1000 {
 		st.DevicesUsed, st.DevicesLimit = min(b.Devices.Used, 1000), b.Devices.Limit
 	}

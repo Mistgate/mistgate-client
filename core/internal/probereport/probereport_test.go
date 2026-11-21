@@ -152,7 +152,11 @@ func (p *reportPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/client/enrol"):
 		_, _ = fmt.Fprintf(w, `{"base":"https://%s%s"}`, r.Host, strings.TrimSuffix(r.URL.Path, "/enrol"))
 	case strings.HasSuffix(r.URL.Path, "/client/sync"):
-		_, _ = w.Write([]byte(`{"v":1,"status":"active","sync_every_s":3600,"asn":64500,"probe":{"intake":true,"v":1},"servers":[` +
+		asn := "" // the panel knows the network only of a request that says it comes from outside the tunnel
+		if r.Header.Get("X-Mistgate-Direct") == "1" {
+			asn = `"asn":64500,`
+		}
+		_, _ = w.Write([]byte(`{"v":1,"status":"active","sync_every_s":3600,` + asn + `"probe":{"intake":true,"v":1},"servers":[` +
 			`{"id":"srv_1","city":"Oslo","country":"NO","paths":[` + hy2JSON("pth_ok", "oslo.example", "direct") + `,` + hy2JSON("pth_block", "block.example", "direct") +
 			`,` + hy2JSON("pth_relay", "relay.example", "relay") + `,` + hy2JSON("pth_config", "config.example", "direct") + `]}]}`))
 	case strings.HasSuffix(r.URL.Path, "/probe"):
@@ -192,6 +196,7 @@ func TestReporterSendsOnlyWhatThePersonAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store.Direct = func() bool { return true } // the VPN is off: the ASN comes with the sync
 	var logs bytes.Buffer
 	reporter := &Reporter{Subs: store, Log: slog.New(slog.NewTextHandler(&logs, nil))}
 	ctx := context.Background()

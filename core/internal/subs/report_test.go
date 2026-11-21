@@ -48,6 +48,47 @@ func TestProbeSyncParsing(t *testing.T) {
 	}
 }
 
+func TestSyncSaysDirectOnlyOutsideTheTunnel(t *testing.T) {
+	ctx := context.Background()
+	panel, store, sub := managedStore(t)
+	panel.set(func() { panel.syncASN = "64500" })
+	direct := false
+	store.Direct = func() bool { return direct }
+	sync := func() {
+		t.Helper()
+		if _, err := store.Refresh(ctx, sub.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asn := func() uint32 { return store.state.Subscriptions[0].ASN }
+
+	sync() // through the tunnel: no header, so the panel gives no ASN
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" || asn() != 0 {
+		t.Fatalf("header = %q, asn = %d; want none", got, asn())
+	}
+	direct = true
+	sync()
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "1" || asn() != 64500 {
+		t.Fatalf("header = %q, asn = %d; want 1 and 64500", got, asn())
+	}
+	direct = false
+	sync() // an answer without an asn does not take the last one away
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" || asn() != 64500 {
+		t.Fatalf("header = %q, asn = %d; want none and 64500", got, asn())
+	}
+	direct = true
+	panel.set(func() { panel.syncASN = "" })
+	sync() // direct, and the panel does not know the network: the old one goes
+	if asn() != 0 {
+		t.Fatalf("asn = %d, want 0", asn())
+	}
+	store.Direct = nil
+	sync()
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" {
+		t.Fatalf("header = %q without a Direct", got)
+	}
+}
+
 func TestReportSwitch(t *testing.T) {
 	ctx := context.Background()
 	panel, store, sub := managedStore(t)

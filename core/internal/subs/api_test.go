@@ -45,6 +45,8 @@ type fakePanel struct {
 	etag        string
 	syncAuth    []string
 	syncINM     []string
+	syncDirect  []string // X-Mistgate-Direct of each sync
+	syncASN     string   // the asn the panel gives to a sync that says it is direct
 	leaves      int
 	leaveStatus int
 	leaveAuth   []string
@@ -120,6 +122,7 @@ func (p *fakePanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/client/sync"):
 		p.syncAuth = append(p.syncAuth, r.Header.Get("Authorization"))
 		p.syncINM = append(p.syncINM, r.Header.Get("If-None-Match"))
+		p.syncDirect = append(p.syncDirect, r.Header.Get("X-Mistgate-Direct"))
 		if p.syncStatus != 0 {
 			if p.syncRetry != "" {
 				w.Header().Set("Retry-After", p.syncRetry)
@@ -135,7 +138,11 @@ func (p *fakePanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("ETag", p.etag)
 		}
-		_, _ = w.Write([]byte(p.syncBody))
+		body := p.syncBody
+		if p.syncASN != "" && r.Header.Get("X-Mistgate-Direct") == "1" {
+			body = withProbe(body, `"asn":`+p.syncASN)
+		}
+		_, _ = w.Write([]byte(body))
 	case strings.HasSuffix(r.URL.Path, "/client/debug"), strings.HasSuffix(r.URL.Path, "/client/debug/decline"):
 		body, _ := io.ReadAll(r.Body)
 		p.debugCalls = append(p.debugCalls, debugCall{r.URL.Path, r.Header.Clone(), body, len(body) > 0})

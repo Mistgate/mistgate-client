@@ -272,7 +272,8 @@ switch (`report`, off by default, per subscription), except when the person pres
   it was tried from the physical adapter, outside the tunnel (the live tunnel's own AmneziaWG path is not tried that way,
   so it is left out).
 - `network.asn`: the `asn` of the last `sync`, left out when the panel did not give one. The panel gives it only to a
-  request that says `X-Mistgate-Direct: 1`, which the client does not send yet, so today it is usually absent.
+  request that says `X-Mistgate-Direct: 1`, which the client sends only while the VPN is off (state `off` or `error`);
+  a sync made through the tunnel brings none and keeps the one the last direct sync gave.
   `network.type` is `mobile` only for a mobile-broadband adapter; Wi-Fi and Ethernet could be a home or an office, so
   nothing is said. `operator`, `country` and `region` are never sent: the client does not know them.
 - `servers`: one per path of the subscription that the check could judge, `type` the path's protocol (`hysteria2`,
@@ -335,7 +336,8 @@ send more often than once per 10 minutes, a delivery in progress, or too many at
 - Basic mode against a Mistgate panel: the client announces itself as a Mihomo client and reads the Mihomo profile
   (Hysteria2 with Gecko and port ranges, AmneziaWG), see `docs/ipc.md`. That is the stopgap until this API is live.
 - The ASN for a report comes from `sync` (`X-Mistgate-Direct: 1`, outside the tunnel), never from a third-party
-  service. The client reads and keeps it already; it will send the header once it knows a sync leaves outside the tunnel.
+  service. The client sends the header only when the session is `off` or `error` (not in `connecting`, `connected`,
+  `reconnecting` or `blocked`), so the ASN is as old as the last sync made with the VPN off.
 - `hwid` must become per operator's panel and survive a reinstall (today it is one per install).
 - The client's own network check maps to report v1 only in part (see "probe: v1"); the rest waits for v2.
 

@@ -243,7 +243,6 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		return err
 	}
 	slog.SetDefault(logger.With("src", "engine"))
-	go store.Run(ctx)
 	var eng engine.Engine
 	var routeState session.RouteState
 	var routes func() geo.Routes
@@ -293,6 +292,13 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	}
 	manager := session.NewManager(eng, settingsStore.Get, routeState)
 	defer manager.Close()
+	// a sync says it leaves outside the tunnel only with the VPN off: connecting, a held network and a tunnel that is up
+	// or coming back all send it through the tunnel or not at all
+	store.Direct = func() bool {
+		status, err := manager.Status(ctx)
+		return err == nil && (status.State == "off" || status.State == "error")
+	}
+	go store.Run(ctx) // after Direct is set: the first refresh is already a sync
 	if powerEvents != nil {
 		go func() {
 			for {

@@ -146,6 +146,8 @@ type Store struct {
 	client  *http.Client
 	protect func([]byte) ([]byte, error)
 	clock   func() time.Time // nil: time.Now (tests)
+	// Direct says that a request now leaves outside the tunnel. Set before Run; nil: never (X-Mistgate-Direct is not sent).
+	Direct func() bool
 
 	reportMu sync.Mutex // after mu, never before it
 	reports  map[string]*reportState
