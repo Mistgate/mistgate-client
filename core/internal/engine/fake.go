@@ -38,6 +38,7 @@ type Fake struct {
 	probes        atomic.Uint64
 	received      atomic.Uint64
 	holds         atomic.Uint64
+	stops         atomic.Uint64
 	reapplies     atomic.Uint64
 }
 
@@ -102,7 +103,7 @@ func (f *Fake) Start(ctx context.Context, target Target, report func(Step)) (Inf
 	return info.Home, ctx.Err()
 }
 
-func (*Fake) Stop() {}
+func (f *Fake) Stop() { f.stops.Add(1) }
 
 func (f *Fake) Hold() bool {
 	f.holds.Add(1)
@@ -253,6 +254,8 @@ func (f *Fake) ProbeCount() uint64 { return f.probes.Load() }
 func (f *Fake) SetReceived(received uint64) { f.received.Store(received) }
 
 func (f *Fake) HoldCount() uint64 { return f.holds.Load() }
+
+func (f *Fake) StopCount() uint64 { return f.stops.Load() }
 
 func (f *Fake) ReapplyCount() uint64 { return f.reapplies.Load() }
 

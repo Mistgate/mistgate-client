@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/mistgate/mistgate-client/core/internal/profile"
 	"github.com/mistgate/mistgate-client/core/internal/session"
 	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
@@ -45,6 +47,28 @@ func TestShouldResumeAtStart(t *testing.T) {
 		if got := shouldResumeAtStart(c.s); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestSavedServerGone(t *testing.T) {
+	list := []profile.Profile{{ID: "a", Sub: "s1", Protocol: "awg"}}
+	for _, c := range []struct {
+		name string
+		s    settings.Settings
+		want bool
+	}{
+		{"the server is there", settings.Settings{LastServer: "a"}, false},
+		{"the server is there in its subscription", settings.Settings{LastServer: "a", LastSub: "s1"}, false},
+		{"auto and a server exists", settings.Settings{LastServer: "auto"}, false},
+		{"the server was removed", settings.Settings{LastServer: "b"}, true},
+		{"the subscription was removed", settings.Settings{LastServer: "a", LastSub: "s2"}, true},
+	} {
+		if got := savedServerGone(c.s, func() ([]profile.Profile, error) { return list, nil }); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	if savedServerGone(settings.Settings{LastServer: "b"}, func() ([]profile.Profile, error) { return nil, errors.New("unreadable") }) {
+		t.Error("unreadable profiles: the engine decides, the resume goes on")
 	}
 }
 

@@ -33,7 +33,12 @@ func TestSessionScenarios(t *testing.T) {
 		{name: "long sleep reconnects at once", run: testLongSleepReconnects},
 		{name: "disconnect cancels retry wait", run: testDisconnectCancelsRetryWait},
 		{name: "always holds at start and through disconnect", run: testAlwaysHoldsAtStartAndDisconnect},
-		{name: "always failed connect blocks without retries", run: testAlwaysFailedConnectBlocks},
+		{name: "always failed connect retries while the network is held", run: testAlwaysFailedConnectRetries},
+		{name: "always network event starts the next attempt", run: testAlwaysNetworkEventStartsAttempt},
+		{name: "always fatal failure blocks without retries", run: testAlwaysFatalFailureBlocks},
+		{name: "boot connect retries, a human connect does not", run: testBootConnectRetries},
+		{name: "a human connect over a waiting boot connect", run: testBootConnectGivesWayToAHuman},
+		{name: "no_subscription stops the engine and ends in error", run: testNoSubscriptionStopsTheEngine},
 		{name: "always unavailable hold is not reported as blocked", run: testAlwaysUnavailableHoldIsNotBlocked},
 		{name: "settings changes apply hold transitions", run: testSettingsChangesApplyHoldTransitions},
 		{name: "off reconnect does not hold", run: testOffReconnectDoesNotHold},
@@ -244,31 +249,146 @@ func testAlwaysHoldsAtStartAndDisconnect(t *testing.T) {
 	if _, err := manager.Connect(context.Background(), engine.Target{Server: "server-b"}); err != nil {
 		t.Fatal(err)
 	}
-	blocked := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "offline" })
-	if blocked.Error != "offline" {
-		t.Fatalf("failed retry status = %#v, want blocked/offline", blocked)
-	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Error == "offline" })
 }
 
-func testAlwaysFailedConnectBlocks(t *testing.T) {
-	store := testSettings(t, "always")
-	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
-	manager := NewManager(fake, store.Get)
-	defer manager.Close()
+func retryManager(t *testing.T, fake *engine.Fake, killSwitch string, backoff time.Duration) (*Manager, *Subscription) {
+	t.Helper()
+	store := testSettings(t, killSwitch)
+	timing := defaultManagerTiming()
+	timing.probeInterval = time.Hour
+	manager := newManagerWithTimings(fake, store.Get, timing, []time.Duration{backoff})
+	t.Cleanup(manager.Close)
 	subscription, err := manager.Events().Subscribe([]string{"status"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer subscription.Close()
+	t.Cleanup(subscription.Close)
+	return manager, subscription
+}
+
+// A first connect that fails while the network is held (Wi-Fi not back yet after a wake) is retried, not left for a button.
+func testAlwaysFailedConnectRetries(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
+	manager, subscription := retryManager(t, fake, "always", 5*time.Millisecond)
 	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
 		t.Fatal(err)
 	}
-	blocked := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "offline" })
-	if blocked.Error != "offline" {
-		t.Fatalf("blocked error = %q, want offline", blocked.Error)
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Error == "offline" })
+	waitForStarts(t, fake, 2)
+	fake.SetFailStartCode("")
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	for _, target := range fake.Targets() {
+		if !target.Hold {
+			t.Fatal("an attempt did not hold the network")
+		}
 	}
+}
+
+func testAlwaysNetworkEventStartsAttempt(t *testing.T) {
+	changed := make(chan struct{}, 1)
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline", Changed: changed})
+	manager, subscription := retryManager(t, fake, "always", time.Hour)
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Error == "offline" })
+	fake.SetFailStartCode("")
+	changed <- struct{}{}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if got := fake.StartCount(); got != 2 {
+		t.Fatalf("Start() calls = %d, want the failed attempt and the one the event started", got)
+	}
+}
+
+// The refusals that do not pass are not retried: the network stays held and the status says why.
+func testAlwaysFatalFailureBlocks(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "auth_rejected"})
+	manager, subscription := retryManager(t, fake, "always", 5*time.Millisecond)
+	if _, err := manager.Connect(context.Background(), engine.Target{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "auth_rejected" })
+	time.Sleep(50 * time.Millisecond)
 	if got := fake.StartCount(); got != 1 {
 		t.Fatalf("Start() calls = %d, want no automatic retry", got)
+	}
+}
+
+// The service's own connect at boot waits for the network (open, with no hold); a human's connect shows the error.
+func testBootConnectRetries(t *testing.T) {
+	changed := make(chan struct{}, 1)
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline", Changed: changed})
+	manager, subscription := retryManager(t, fake, "while", time.Hour)
+	if _, err := manager.ConnectAtStart(context.Background(), engine.Target{Server: "server-a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Error == "offline" })
+	fake.SetFailStartCode("")
+	changed <- struct{}{}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "connected" })
+	if got := fake.StartCount(); got != 2 {
+		t.Fatalf("Start() calls = %d, want the failed attempt and the one the network event started", got)
+	}
+	for _, target := range fake.Targets() {
+		if target.Hold {
+			t.Fatal("a boot attempt held the network")
+		}
+	}
+
+	human := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
+	byHuman, events := retryManager(t, human, "while", 5*time.Millisecond)
+	if _, err := byHuman.Connect(context.Background(), engine.Target{Server: "server-a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, events.C, func(status Status) bool { return status.State == "error" && status.Error == "offline" })
+	time.Sleep(50 * time.Millisecond)
+	if got := human.StartCount(); got != 1 {
+		t.Fatalf("Start() calls = %d, want no retry of a human's connect", got)
+	}
+}
+
+// A human who connects over a waiting boot connect gets an ordinary first connect.
+func testBootConnectGivesWayToAHuman(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
+	manager, subscription := retryManager(t, fake, "while", time.Hour)
+	if _, err := manager.ConnectAtStart(context.Background(), engine.Target{Server: "server-a"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" })
+	status, err := manager.Connect(context.Background(), engine.Target{Server: "server-a"})
+	if err != nil || status.State != "connecting" {
+		t.Fatalf("Connect() = %#v, %v; want a first connect", status, err)
+	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "error" && status.Error == "offline" })
+}
+
+// There is nothing to connect to: the hold of the attempt is let go (the engine is stopped) and the session ends in
+// error with the code, however it was started.
+func testNoSubscriptionStopsTheEngine(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "no_subscription"})
+	manager, subscription := retryManager(t, fake, "while", 5*time.Millisecond)
+	if _, err := manager.Resume(context.Background(), engine.Target{Server: "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	status := waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "error" })
+	if status.Error != "no_subscription" || fake.StopCount() == 0 {
+		t.Fatalf("status = %#v, Stop() calls = %d; want error/no_subscription with the engine stopped", status, fake.StopCount())
+	}
+	time.Sleep(30 * time.Millisecond)
+	if got := fake.StartCount(); got != 1 {
+		t.Fatalf("Start() calls = %d, want no retry", got)
+	}
+
+	// "always" keeps the network closed while the VPN is off: held again, and the session is in error all the same
+	held := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "no_subscription"})
+	always, events := retryManager(t, held, "always", 5*time.Millisecond)
+	if _, err := always.Resume(context.Background(), engine.Target{Server: "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	status = waitForStatus(t, events.C, func(status Status) bool { return status.State == "error" })
+	if status.Error != "no_subscription" || held.StopCount() != 0 || held.HoldCount() < 3 {
+		t.Fatalf("status = %#v, Stop() calls = %d, Hold() calls = %d; want error with the hold kept", status, held.StopCount(), held.HoldCount())
 	}
 }
 

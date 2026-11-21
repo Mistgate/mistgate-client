@@ -104,6 +104,18 @@ func shouldResumeAtStart(configured settings.Settings) bool {
 	return configured.LastServer != "" && configured.LastUp && configured.KillSwitch != "off"
 }
 
+// savedServerGone: the server the service would connect to is no longer in any subscription (removed, or the list
+// replaced). A resume holds the network for a tunnel it cannot bring up, so it does not start. When the profiles cannot
+// be read the engine decides, as it does for any connect.
+func savedServerGone(configured settings.Settings, profiles func() ([]profile.Profile, error)) bool {
+	list, err := profiles()
+	if err != nil {
+		return false
+	}
+	_, found := profile.PickForSettings(list, configured.LastServer, "auto", configured.LastSub, configured.Protocol, configured.Game)
+	return !found
+}
+
 // keepLastUp writes last_up from the session's own states: connected sets it, a session that ended in an error (the
 // network is open then) clears it. "off" is left alone: the service says it when it stops too, and a disconnect the
 // person asked for clears the flag where it is handled. "blocked" keeps it: the network is held, as it will be again.
@@ -270,10 +282,16 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	}
 	if configured := settingsStore.Get(); shouldResumeAtStart(configured) || shouldConnectAtStart(configured) {
 		target := engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub}
-		if shouldResumeAtStart(configured) {
+		resume := shouldResumeAtStart(configured)
+		if resume && savedServerGone(configured, store.Profiles) {
+			// nothing to hold the network for; and the flag must not bring the hold back at every start
+			_, _ = settingsStore.Set(map[string]json.RawMessage{"last_up": json.RawMessage("false")})
+			resume = false
+		}
+		if resume {
 			_, _ = manager.Resume(ctx, target)
-		} else {
-			_, _ = manager.Connect(ctx, target)
+		} else if shouldConnectAtStart(configured) {
+			_, _ = manager.ConnectAtStart(ctx, target)
 		}
 	}
 	reporter := &probereport.Reporter{Subs: store, Log: logger.With("src", "report")}

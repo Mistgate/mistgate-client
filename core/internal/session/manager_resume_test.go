@@ -79,18 +79,17 @@ func TestResumeRetriesLikeADroppedSession(t *testing.T) {
 	}
 }
 
-// With "always" a failed attempt is "blocked" and does not retry by itself, as for any other failed attempt there.
-func TestResumeAlwaysBlocksOnAFailedAttempt(t *testing.T) {
+// With "always" a failed attempt retries like any dropped session; only the refusals that do not pass block.
+func TestResumeAlwaysRetriesAFailedAttempt(t *testing.T) {
 	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond, FailStartCode: "offline"})
 	manager, subscription := resumeManager(t, "always", fake)
 	if _, err := manager.Resume(context.Background(), engine.Target{Server: "server-a"}); err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "offline" })
-	time.Sleep(50 * time.Millisecond)
-	if got := fake.StartCount(); got != 1 {
-		t.Fatalf("Start() calls = %d, want one", got)
-	}
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "reconnecting" && status.Error == "offline" })
+	waitForStarts(t, fake, 3)
+	fake.SetFailStartCode("auth_rejected")
+	waitForStatus(t, subscription.C, func(status Status) bool { return status.State == "blocked" && status.Error == "auth_rejected" })
 }
 
 func TestResumeDoesNothingWithKillSwitchOff(t *testing.T) {

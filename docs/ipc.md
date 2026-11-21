@@ -141,12 +141,15 @@ or `kill_switch`.
 
 `reconnecting` means the service detected a dead tunnel and is retrying; whether the network stays closed depends on
 `kill_switch`. `error` may contain the most recent failed retry code. `blocked` means a retry failed with
-`auth_rejected`, `no_subscription` or `unsupported_os`, or the `always` kill switch is holding the network. Calling
+`auth_rejected` or `unsupported_os`, or the `always` kill switch is holding the network. `no_subscription` (the server
+is gone from the subscriptions) is never retried and never holds the network: the session ends in `error` with the code
+and the engine is stopped; in `always` the network stays closed, as after a `disconnect`. Calling
 `connect` in `reconnecting` or a failure-blocked state retries immediately; from `blocked` with `kill_switch`, it
 starts a normal connect with the network held. Calling `disconnect` stops retries; in `always` it leaves the network
 held and reports `blocked` with `kill_switch`, otherwise it opens the network. A first
-user-initiated `connect` failure ends in `error` with the network open, except in `always`, where it ends in `blocked`
-with the attempt's error code.
+user-initiated `connect` failure ends in `error` with the network open. In `always` the network is held already, so a
+failed first `connect` goes the way of a dropped session: `reconnecting` with the attempt's error code and the usual
+retries (and a network change starts an attempt at once); only `auth_rejected` and `unsupported_os` end in `blocked`.
 
 While the server in use (connecting or connected) is one marked `purpose: whitelist`, the status carries
 `purpose: "whitelist"`, and `whitelist_by_rule: true` when `whitelist_auto` chose it. `whitelist_hint: true` says "the
@@ -168,7 +171,8 @@ sends a handshake to every other server of the round (the same set `"next"` walk
 3 s each) and goes to the one that answered with the smallest round trip. If none answers, it goes to the next server in
 list order, as `"next"` does. `status.server` shows the new server once that attempt has finished (the pick itself takes
 up to 3 s). Everything else in the paragraph above holds. This applies only to retries
-of a session that was connected or is reconnecting, never to the first `connect`, and it does not change the user's choice:
+of a session that was connected or is reconnecting, never to the first `connect` (in `always` a failed first `connect` is
+retried as a reconnect, so it counts there), and it does not change the user's choice:
 `last_server` stays, and a `connect` call goes to the server it names (an omitted or `auto` server in `reconnecting`
 means the user's original choice, not the one the retries moved to).
 
@@ -211,7 +215,7 @@ to write them.
 |---|---|---|---|---|
 | `off` | DNS rules only | network open; retries are unheld | open | open |
 | `while` | full rules | held | open | open |
-| `always` | full rules | held; failed attempt becomes `blocked` | held; `blocked` with failure code or `kill_switch` | held at once |
+| `always` | full rules | held; failed attempt is retried (`reconnecting`; `blocked` for `auth_rejected`, `unsupported_os`) | held; `reconnecting` with the failure code while retrying, `blocked` with `kill_switch` after `disconnect` | held at once |
 
 `off` still denies DNS outside the tunnel's resolvers while connected. `lan: false` removes the local network permits
 from full rules, including while held. `always` uses the dynamic WFP session, so its rules start when the service
@@ -839,15 +843,19 @@ starts" is its own: it puts itself into the user's Run key.
 `settings.set {"restore": true}`: when the service starts it connects to the same target if the VPN was on when it
 stopped, that is, the last call to `connect` was not followed by `disconnect` (`last_on`). A service stop, a crash
 or a shutdown does not clear `last_on`. At start the service connects when `autoconnect`, or `restore` with `last_on`,
-and there is a `last_server`.
+and there is a `last_server`. This connect, begun by the service itself, is retried while the failure is only that the
+network is not there yet (`offline`, `server_not_found`, `no_server_answers`): the status is `reconnecting` with the
+code, the attempts follow the usual backoff and start at once on a network change, and the network is not held. It goes
+on until a `disconnect` or a `connect` call; a `connect` call is an ordinary first connect and is not retried.
 With the kill switch `while` or `always` that is not the whole rule: when `last_up` is set (and there is a
 `last_server`) the service holds the network at once and reconnects, whatever `autoconnect` and `restore` say, so a
 crash, an update or a reboot with the VPN on does not leave an open network with no VPN; the "service start" column of
 the kill switch table is for the case where `last_up` is not set. The reconnect is the one of a tunnel that died: the
 status is `reconnecting` (never `connecting`), the retries and `on_server_down` are the usual ones, and `disconnect`
 ends it and opens the network (`always` keeps it held and reports `blocked` with `kill_switch`). A failed attempt ends
-as for any session that was up: in `while`, `reconnecting` with the retries going on; in `always`, `blocked` with the
-attempt's code and no retry by itself. With the kill switch `off` nothing is held and `autoconnect` and `restore`
-decide as above. `last_up` is the service's own: set when a session becomes `connected`, cleared by `disconnect` and
+as for any session that was up: `reconnecting` with the retries going on (in `always` too; only `auth_rejected` and
+`unsupported_os` end in `blocked`). When `last_server` no longer exists in the subscriptions the service does not
+resume (and clears `last_up`): there is nothing to connect to, and holding the network would be for nothing. With the kill switch `off` nothing is held and
+`autoconnect` and `restore` decide as above. `last_up` is the service's own: set when a session becomes `connected`, cleared by `disconnect` and
 when a session ends in `error` (the network is open then), kept through `blocked`, a service stop and a crash. So a
 restart after a first `connect` that never came up holds nothing.

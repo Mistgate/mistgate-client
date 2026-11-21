@@ -62,8 +62,9 @@ type Manager struct {
 
 type statusRequest struct{ reply chan Status }
 type connectRequest struct {
-	target engine.Target
-	reply  chan connectReply
+	target  engine.Target
+	atStart bool // begun by the service itself at boot, not asked for by a person
+	reply   chan connectReply
 }
 type connectReply struct {
 	status Status
@@ -125,6 +126,9 @@ type actorState struct {
 	// A round is complete after each ordinary path in the selected failover order has failed twice.
 	roundFailures   map[string]int
 	whitelistManual bool
+	// bootConnect: the connect is the service's own, made at boot (the network may not be there yet). It is a first
+	// connect that keeps trying, so it never holds the network and never moves to another server.
+	bootConnect bool
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -261,8 +265,20 @@ func (m *Manager) Status(ctx context.Context) (Status, error) {
 }
 
 func (m *Manager) Connect(ctx context.Context, target engine.Target) (Status, error) {
+	return m.sendConnect(ctx, connectRequest{target: target})
+}
+
+// ConnectAtStart is the connect the service makes when it starts (Auto-connect, restore). The network may not be up
+// yet, so while the failure is only that, it keeps trying (backoff and network events) until a person disconnects or
+// connects. A person's Connect is not retried: they see the error.
+func (m *Manager) ConnectAtStart(ctx context.Context, target engine.Target) (Status, error) {
+	return m.sendConnect(ctx, connectRequest{target: target, atStart: true})
+}
+
+func (m *Manager) sendConnect(ctx context.Context, request connectRequest) (Status, error) {
 	reply := make(chan connectReply, 1)
-	if err := m.send(ctx, connectRequest{target: target, reply: reply}); err != nil {
+	request.reply = reply
+	if err := m.send(ctx, request); err != nil {
 		return Status{}, err
 	}
 	select {
@@ -392,7 +408,7 @@ func (m *Manager) run() {
 			case connectRequest:
 				clearTimer(&healthTimer, &healthC)
 				clearTimer(&retryTimer, &retryC)
-				status, err := m.connect(&state, request.target)
+				status, err := m.connect(&state, request.target, request.atStart)
 				request.reply <- connectReply{status: status, err: err}
 			case resumeRequest:
 				m.resume(&state, request.target)
@@ -441,43 +457,84 @@ func (m *Manager) run() {
 					}
 					// in the message itself: the log ring keeps the message only
 					slog.Warn("connect failed: " + code + " (" + state.status.Protocol + "; " + reason + ")")
-					if m.currentSettings().KillSwitch == "always" {
-						if m.engine != nil && m.engine.Hold() {
-							state.status.State = "blocked"
-						} else {
-							state.status.State = "error"
+					always := m.currentSettings().KillSwitch == "always"
+					retry := false
+					switch {
+					case code == "no_subscription":
+						// nothing to connect to, so nothing to hold the network for: let go of it as a disconnect does
+						// ("always" keeps it closed while the VPN is off, there as here)
+						if !always || !m.engine.Hold() {
+							m.engine.Stop()
 						}
+						state.status.State = "error"
 						state.status.Error = code
 						state.status.Purpose = ""
+						clearTimer(&retryTimer, &retryC)
+					case always:
+						// a failed attempt is no dead end while the network is held: it may only be late
+						if !m.engine.Hold() {
+							state.status.State = "error"
+						} else if fatalReconnectCode(code) {
+							state.status.State = "blocked"
+						} else {
+							retry = true
+						}
+						if !retry {
+							state.status.Error = code
+							state.status.Purpose = ""
+							clearTimer(&retryTimer, &retryC)
+						}
 						if !fatalReconnectCode(code) {
 							m.offerWhitelist(&state)
 						}
-						clearTimer(&retryTimer, &retryC)
-					} else if state.status.State == "reconnecting" {
-						state.status.Error = code
+					case state.bootConnect:
+						if bootRetryCode(code) {
+							retry = true
+						} else {
+							state.status.State = "error"
+							state.status.Error = code
+							state.status.Purpose = ""
+						}
+						if !fatalReconnectCode(code) {
+							m.offerWhitelist(&state)
+						}
+					case state.status.State == "reconnecting":
 						if fatalReconnectCode(code) && !m.stillPatient(&state, code) {
 							state.status.State = "blocked"
+							state.status.Error = code
 							state.status.Purpose = ""
 							clearTimer(&retryTimer, &retryC)
 						} else {
-							failedServer := request.info.ServerID
-							if failedServer == "" {
-								failedServer = state.target.Server
-							}
-							m.serverDown(&state, failedServer)
-							delay := m.backoffAt(state.retryIndex)
-							if state.retryIndex < len(m.backoff)-1 {
-								state.retryIndex++
-							}
-							resetTimer(&retryTimer, &retryC, delay)
+							retry = true
 						}
-					} else {
+					default:
 						state.status.State = "error"
 						state.status.Error = code
 						state.status.Purpose = ""
 						if !fatalReconnectCode(code) {
 							m.offerWhitelist(&state)
 						}
+					}
+					if retry {
+						if state.status.State != "reconnecting" {
+							state.status.State = "reconnecting"
+							state.status.SinceUnix = time.Now().Unix()
+						}
+						state.status.Error = code
+						if !state.bootConnect {
+							failedServer := request.info.ServerID
+							if failedServer == "" {
+								failedServer = state.target.Server
+							}
+							m.serverDown(&state, failedServer)
+						}
+						delay := m.backoffAt(state.retryIndex)
+						if state.retryIndex < len(m.backoff)-1 {
+							state.retryIndex++
+						}
+						resetTimer(&retryTimer, &retryC, delay)
+					} else if state.status.State == "error" {
+						state.bootConnect = false
 					}
 					m.hub.Publish("status", state.status)
 				} else {
@@ -500,6 +557,7 @@ func (m *Manager) run() {
 					state.failures = 0
 					state.roundFailures = make(map[string]int)
 					state.holdReconnect = false
+					state.bootConnect = false
 					state.runCancel = nil
 					m.hub.Publish("status", state.status)
 					resetTimer(&healthTimer, &healthC, m.probeInterval)
@@ -562,7 +620,7 @@ func (m *Manager) run() {
 			retryC = nil
 			if state.status.State == "reconnecting" && state.runCancel == nil {
 				target := state.target
-				target.Hold = state.holdReconnect || holdFor(m.currentSettings(), true)
+				target.Hold = m.retryHold(&state, m.currentSettings())
 				m.startAttempt(&state, target)
 			}
 		case _, ok := <-changed:
@@ -577,8 +635,9 @@ func (m *Manager) run() {
 	}
 }
 
-func (m *Manager) connect(state *actorState, target engine.Target) (Status, error) {
-	reconnecting := state.status.State == "reconnecting" || state.status.State == "blocked" && state.status.Error != "kill_switch"
+func (m *Manager) connect(state *actorState, target engine.Target, atStart bool) (Status, error) {
+	// a boot connect waiting for the network is a first connect still: a person's connect over it starts afresh
+	reconnecting := state.status.State == "reconnecting" && !state.bootConnect || state.status.State == "blocked" && state.status.Error != "kill_switch"
 	settingsNow := m.currentSettings()
 	// StepVerify means an in-progress attempt has brought its tunnel up; replacing it must keep the firewall closed.
 	connectingWithTunnel := state.status.State == "connecting" &&
@@ -606,6 +665,7 @@ func (m *Manager) connect(state *actorState, target engine.Target) (Status, erro
 		return state.status, &CodeError{Code: "no_subscription"}
 	}
 	m.setChoice(state, target)
+	state.bootConnect = atStart
 
 	if reconnecting {
 		if state.runCancel != nil {
@@ -828,7 +888,7 @@ func (m *Manager) networkChanged(state *actorState, _ string, asleep time.Durati
 		}
 	} else if state.status.State == "reconnecting" && state.runCancel == nil {
 		target := state.target
-		target.Hold = state.holdReconnect || holdFor(m.currentSettings(), true)
+		target.Hold = m.retryHold(state, m.currentSettings())
 		m.startAttempt(state, target)
 	}
 }
@@ -839,7 +899,7 @@ func (m *Manager) beginReconnect(state *actorState, hold bool) {
 	}
 	state.holdReconnect = state.holdReconnect || hold
 	target := state.target
-	target.Hold = state.holdReconnect || holdFor(m.currentSettings(), true)
+	target.Hold = m.retryHold(state, m.currentSettings())
 	if target.Hold && m.engine != nil {
 		m.engine.Hold()
 	}
@@ -917,6 +977,7 @@ func (m *Manager) stop(state *actorState) {
 	state.retryIndex = 0
 	state.noFailures()
 	state.holdReconnect = false
+	state.bootConnect = false
 	m.hub.Publish("status", state.status)
 }
 
@@ -955,7 +1016,7 @@ func (m *Manager) settingsChanged(state *actorState) {
 			state.routeSettings = configured
 			state.attemptPath = path
 		}
-		state.target.Hold = state.holdReconnect || holdFor(configured, true)
+		state.target.Hold = m.retryHold(state, configured)
 		if configured.KillSwitch == "off" && !state.holdReconnect && state.status.State == "reconnecting" {
 			wasRunning := state.runCancel != nil
 			if wasRunning {
@@ -1150,6 +1211,12 @@ func (m *Manager) currentSettings() settings.Settings {
 	return m.getSettings()
 }
 
+// retryHold: a retry holds the network as a reconnect does, except one of the service's own boot connect, which stays
+// as open as that connect was.
+func (m *Manager) retryHold(state *actorState, configured settings.Settings) bool {
+	return state.holdReconnect || holdFor(configured, !state.bootConnect)
+}
+
 func holdFor(configured settings.Settings, reconnecting bool) bool {
 	return configured.KillSwitch == "always" || reconnecting && configured.KillSwitch != "off"
 }
@@ -1171,6 +1238,11 @@ func (m *Manager) stillPatient(state *actorState, code string) bool {
 		state.refusedSince = time.Now()
 	}
 	return time.Since(state.refusedSince) < m.refusalPatience
+}
+
+// bootRetryCode: the failures a boot connect waits out; the network is not there (yet).
+func bootRetryCode(code string) bool {
+	return code == "offline" || code == "server_not_found" || code == "no_server_answers"
 }
 
 func fatalReconnectCode(code string) bool {
