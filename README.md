@@ -39,7 +39,7 @@ network you are on, and sends through the VPN only what you want there.
   servers, and shows the plan, the data used and the devices.
 - **Routes.** *Smart* leaves local sites and the home network outside the VPN, *Only selected* sends through it just
   what you pick, *Everything* sends all of it. Rules by ready-made collections, your own lists, sites and programs.
-- **Kill switch.** While the tunnel is down nothing leaves the PC: while connected, or always.
+- **Kill switch.** While the tunnel is down nothing leaves the PC: while connected, or always. "Always" holds from the moment the service starts: before that at boot, and if the service crashes, the network is open.
 - **Network check.** One button shows which servers and which ways to them work from here.
 - **Local proxy.** SOCKS5 and HTTP for the programs and the home devices that cannot use the VPN directly.
 - **Telegram proxies** from the panel: one press hands a proxy to Telegram.

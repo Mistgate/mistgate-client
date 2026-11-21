@@ -36,7 +36,7 @@ Aboneliği bir kez eklersiniz. Uygulama sunucu listesini güncel tutar, bulundu�
 - **Tek düğme, dört protokol.** Hysteria2, AmneziaWG, VLESS ve TrustTunnel. *Otomatik*, o anda en hızlı yanıt veren sunucuyu seçer; sunucuyu ve protokolü kendiniz de seçebilirsiniz.
 - **Mistgate paneliyle de, panelsiz de.** Abonelik bağlantısını, `hysteria2://`, `vless://` veya `tt://` bağlantılarını, bir Mihomo profilini ya da AmneziaWG yapılandırmasını yapıştırın. Mistgate panelinde uygulama bu bilgisayarı kendi anahtarıyla kaydeder, panelin sunucularını izler ve planı, kullanılan veriyi ve cihazları gösterir.
 - **Rotalar.** *Akıllı*, yerel siteleri ve ev ağını VPN dışında bırakır; *Yalnızca seçilenler* sadece seçtiklerinizi VPN'den geçirir; *Her şey* tüm trafiği geçirir. Hazır koleksiyonlara, kendi listelerinize, sitelere ve programlara göre kurallar.
-- **Kill switch.** Tünel kapalıyken bilgisayardan hiçbir şey çıkmaz: bağlıyken veya her zaman.
+- **Kill switch.** Tünel kapalıyken bilgisayardan hiçbir şey çıkmaz: bağlıyken veya her zaman. "Her zaman" hizmet başladığı andan itibaren geçerlidir: açılışta bundan önce ve hizmet çökerse ağ açıktır.
 - **Ağ denetimi.** Tek düğme, buradan hangi sunucuların ve hangi yolların çalıştığını gösterir.
 - **Yerel vekil.** VPN'i doğrudan kullanamayan programlar ve evdeki cihazlar için SOCKS5 ve HTTP.
 - **Telegram vekilleri** panelden gelir: tek dokunuşla Telegram'a aktarılır.
