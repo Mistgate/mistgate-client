@@ -131,6 +131,40 @@ func keepLastUp(statuses <-chan session.Event, store *settings.Store) {
 	}
 }
 
+// A panel that issued a new key leaves a connected client with auth_rejected until its next scheduled sync, and the
+// session would give up first. One sync of that subscription fetches the new profiles for the next attempt. The panel
+// allows 30 requests an hour per device: one in this window is at most 6.
+const refreshAfterRejection = 10 * time.Minute
+
+// subscriptionOf is the subscription of the server a status names; the one the person connected through when the status
+// names none (a first connect that failed).
+func subscriptionOf(list []subs.Subscription, serverID, lastSub string) string {
+	for _, sub := range list {
+		if serverID != "" && slices.ContainsFunc(sub.Servers, func(server subs.Server) bool { return server.ID == serverID }) {
+			return sub.ID
+		}
+	}
+	return lastSub
+}
+
+// refreshOnRejection asks for a refresh of the subscription when a connect or reconnect is refused for its key, at most
+// once per window for each subscription. refresh must not wait for the network: this loop drains the session's events.
+func refreshOnRejection(statuses <-chan session.Event, subOf func(serverID string) string, refresh func(sub string), now func() time.Time) {
+	last := make(map[string]time.Time)
+	for event := range statuses {
+		status, ok := event.Data.(session.Status)
+		if !ok || status.Error != "auth_rejected" || status.State != "reconnecting" && status.State != "error" {
+			continue
+		}
+		sub := subOf(status.ServerID)
+		if at, asked := last[sub]; sub == "" || asked && now().Sub(at) < refreshAfterRejection {
+			continue
+		}
+		last[sub] = now()
+		refresh(sub)
+	}
+}
+
 // keepCrashOutput: a service has no console, so what the runtime says when it dies (the panic and the goroutines'
 // stacks) goes to crash.log in the data directory. The file is started again once it is over 256 KiB.
 func keepCrashOutput(dataDir string) {
@@ -279,6 +313,13 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 	eventMu.Unlock()
 	if statuses, err := manager.Events().Subscribe([]string{"status"}); err == nil {
 		go keepLastUp(statuses.C, settingsStore) // ends when the manager closes its hub
+	}
+	if statuses, err := manager.Events().Subscribe([]string{"status"}); err == nil {
+		go refreshOnRejection(statuses.C, func(serverID string) string {
+			return subscriptionOf(store.List(), serverID, settingsStore.Get().LastSub)
+		}, func(sub string) {
+			go store.Refresh(ctx, sub) // the store tells the session when the profiles changed
+		}, time.Now)
 	}
 	if configured := settingsStore.Get(); shouldResumeAtStart(configured) || shouldConnectAtStart(configured) {
 		target := engine.Target{Server: configured.LastServer, Protocol: "auto", Sub: configured.LastSub}
