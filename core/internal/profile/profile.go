@@ -33,6 +33,8 @@ type Profile struct {
 	// What the panel's sync said about DNS (plain resolvers only); empty for a subscription that is not managed.
 	PanelDNS   []netip.Addr
 	PanelSplit []DNSSplit
+	// The panel's preset blocks the ad names of geosite:category-ads-all.
+	PanelBlockAds bool
 	// The panel said no IPv6 leaves through this path (ipv6_egress false): the engine takes its word and does not probe.
 	NoIPv6 bool
 }

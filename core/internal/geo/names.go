@@ -16,12 +16,17 @@ const (
 	RuleBlock
 )
 
-// ByName is the name half of every routing decision (flows and DNS questions use it alike). Block wins; then smart reads
-// only the direct sites and selected only the VPN sites. Other modes have no forwarder, so no rule applies.
-// ponytail: blocking in "all" needs the forwarder path for DNS only (Hysteria2 already has the bridge there; AmneziaWG
-// is native); upgrade = run the bridge for DNS in "all" and let this return RuleBlock for that mode.
+// ByName is the name half of every routing decision (flows and DNS questions use it alike). The panel's ad list blocks
+// in every mode; then the user's block wins; then smart reads only the direct sites and selected only the VPN sites.
+// Other modes have no forwarder, so no other rule applies there.
 func (r *SiteRules) ByName(mode, name string) RuleVerdict {
-	if r == nil || mode != "smart" && mode != "selected" {
+	if r == nil {
+		return NoRule
+	}
+	if r.Ads.Len() != 0 && r.Ads.Match(name) {
+		return RuleBlock
+	}
+	if mode != "smart" && mode != "selected" {
 		return NoRule
 	}
 	// Len first: an empty set cannot match, and Match would normalise the name for nothing.
@@ -52,12 +57,14 @@ const (
 // DecideName is what the forwarder decides for a host name alone, without an address. In smart mode "vpn by default"
 // only means that no name rule applies: the address of the flow still decides there.
 func DecideName(name, mode, region string, rules *SiteRules) (route, by string) {
+	verdict := rules.ByName(mode, name)
+	if verdict == RuleBlock {
+		return NameBlock, byRules
+	}
 	if mode != "smart" && mode != "selected" {
 		return NameVPN, byMode
 	}
-	switch rules.ByName(mode, name) {
-	case RuleBlock:
-		return NameBlock, byRules
+	switch verdict {
 	case RuleDirect:
 		return NameDirect, byRules
 	case RuleVPN:
@@ -131,6 +138,9 @@ func (s *Store) matching(route, name string) (by, rule string) {
 	selection := rules.Direct
 	switch route {
 	case NameBlock:
+		if s.ActiveSiteRules().Ads.Match(name) { // ByName reads it first
+			return "collection", adsList
+		}
 		selection = rules.Block
 	case NameVPN:
 		selection = rules.VPN

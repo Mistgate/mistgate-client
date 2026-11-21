@@ -141,7 +141,7 @@ func TestPanelSitesAreLoadedFromTheCacheAndLetGo(t *testing.T) {
 		}
 	}
 	// only geosite lists with a good name count; the rest is dropped without a word
-	store.SetPanelSites([]string{"geosite:media", "geosite:media", "list:https://lists.example/x", "geosite:Bad Name", "geosite:news"})
+	store.SetPanelSites([]string{"geosite:media", "geosite:media", "list:https://lists.example/x", "geosite:Bad Name", "geosite:news"}, false)
 	rules := store.ActiveSiteRules()
 	if !rules.InPanelSite("geosite:media", "a.tube.example") || rules.InPanelSite("geosite:news", "a.tube.example") || rules.InPanelSite("geosite:other", "a.tube.example") {
 		t.Error("a name is not matched by its own list alone")
@@ -156,7 +156,7 @@ func TestPanelSitesAreLoadedFromTheCacheAndLetGo(t *testing.T) {
 	if _, _, err := store.SetRules(Rules{Direct: Selection{Collections: []string{"geosite:news"}}}); err != nil {
 		t.Fatal(err)
 	}
-	store.SetPanelSites(nil)
+	store.SetPanelSites(nil, false)
 	rules = store.ActiveSiteRules()
 	if rules.InPanelSite("geosite:media", "tube.example") || !rules.Direct.Match("daily.example") {
 		t.Error("lists not let go as they should")
@@ -167,6 +167,58 @@ func TestPanelSitesAreLoadedFromTheCacheAndLetGo(t *testing.T) {
 	var none *SiteRules
 	if none.InPanelSite("geosite:media", "tube.example") {
 		t.Error("nil rules matched")
+	}
+}
+
+func TestPanelAdListBlocksInEveryModeAndIsLetGo(t *testing.T) {
+	store := nameStore(t)
+	if err := os.WriteFile(filepath.Join(store.dir, "site-category-ads-all.list"), []byte("+.adnet.example\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.CheckName("all", "", "x.adnet.example", false); got.Route != NameVPN {
+		t.Fatalf("blocked before the preset asked for it: %+v", got)
+	}
+	store.SetPanelSites(nil, true)
+	rules := store.ActiveSiteRules()
+	tests := []struct {
+		mode, name string
+		route, by  string
+	}{
+		{"all", "adnet.example", NameBlock, "rules"},
+		{"all", "x.adnet.example", NameBlock, "rules"},
+		{"smart", "x.adnet.example", NameBlock, "rules"},
+		{"selected", "x.adnet.example", NameBlock, "rules"},
+		{"all", "example.com", NameVPN, "mode"},
+		{"all", "ads.example", NameVPN, "mode"}, // the user's own block still needs a forwarder
+		{"smart", "ads.example", NameBlock, "rules"},
+	}
+	for _, test := range tests {
+		if route, by := DecideName(test.name, test.mode, "", rules); route != test.route || by != test.by {
+			t.Errorf("DecideName(%q, %s) = %s, %s; want %s, %s", test.name, test.mode, route, by, test.route, test.by)
+		}
+	}
+	if rules.ByName("all", "adnet.example") != RuleBlock || rules.ByName("all", "direct.example") != NoRule || !rules.HasBlock {
+		t.Error("ByName or HasBlock ignore the ad list")
+	}
+	if got, want := store.CheckName("all", "", "a.adnet.example", true), (Check{"block", "collection", "geosite:category-ads-all", "vpn"}); got != want {
+		t.Errorf("CheckName = %+v; want %+v", got, want)
+	}
+	if got := store.CheckName("smart", "", "a.tracker.example", false); got.Rule != "geosite:adlist" {
+		t.Errorf("the user's own list is no longer named: %+v", got)
+	}
+
+	// the preset stops asking: the list goes, and the names with it
+	store.SetPanelSites(nil, false)
+	rules = store.ActiveSiteRules()
+	if rules.Ads != nil || rules.ByName("all", "adnet.example") != NoRule || store.CheckName("all", "", "adnet.example", false).Route != NameVPN {
+		t.Error("the ad list stayed after the preset dropped it")
+	}
+	if _, ok := store.siteSet("geosite:category-ads-all"); ok {
+		t.Error("the ad list stayed in memory")
+	}
+	var none *SiteRules
+	if none.ByName("all", "adnet.example") != NoRule {
+		t.Error("nil rules blocked")
 	}
 }
 

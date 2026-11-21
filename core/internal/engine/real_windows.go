@@ -338,14 +338,12 @@ func (r *Real) routeDirectNames(address netip.Addr, name string, remembered []st
 // VPN as before). It runs for every DNS question of the machine, so it only reads.
 func (r *Real) nameRoute(name string) (block bool, resolver netip.AddrPort) {
 	configured := r.settings()
-	if configured.RouteMode != "smart" && configured.RouteMode != "selected" {
-		return false, netip.AddrPort{}
-	}
 	var rules *geo.SiteRules
 	if r.geo != nil {
 		rules = r.geo.ActiveSiteRules()
 	}
 	region := r.routeRegion(configured)
+	// In "all" DecideName only blocks (the panel's ad list); nothing else applies there.
 	switch route, _ := geo.DecideName(name, configured.RouteMode, region, rules); route {
 	case geo.NameBlock:
 		return true, netip.AddrPort{}
@@ -577,7 +575,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	}
 	split := selected.PanelSplit
 	r.panelSplit.Store(&split)
-	r.geo.SetPanelSites(panelSites(split))
+	r.geo.SetPanelSites(panelSites(split), selected.PanelBlockAds)
 	run.tunnel.mu.Lock()
 	run.tunnel.noIPv6 = selected.NoIPv6 || selected.TT != nil && !selected.TT.HasIPv6
 	run.tunnel.mu.Unlock()
@@ -669,6 +667,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		case "selected":
 			return rules.HasVPN || rules.HasBlock
 		default:
+			// ponytail: the panel's ad list blocks DNS answers only in "all"; reading the name of every TCP flow there
+			// would cost each connection a round trip. Upgrade = return rules.Ads.Len() != 0 here.
 			return false
 		}
 	}
@@ -777,7 +777,8 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 		// that the server routes no IPv6 and turns it away at once (see noVPN6). On the plain adapter Windows would
 		// send IPv6 into a path that carries nothing, and an app without an IPv4 fallback would hang.
 		// ponytail: costs the second stack's throughput; a probe on the plain adapter that drops its IPv6 route if this shows.
-		awgStack = useForwarder || slices.ContainsFunc(selected.AWG.Addresses, func(a netip.Prefix) bool { return a.Addr().Is6() })
+		// The panel's ad block lives in the forwarder too: only its DNS answers can drop a name, the plain adapter has none.
+		awgStack = useForwarder || selected.PanelBlockAds || slices.ContainsFunc(selected.AWG.Addresses, func(a netip.Prefix) bool { return a.Addr().Is6() })
 		if awgStack {
 			// ponytail: two stacks in a row cost throughput; a packet-level split would be faster.
 			addresses := make([]netip.Addr, 0, len(selected.AWG.Addresses))

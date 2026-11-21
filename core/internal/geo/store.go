@@ -186,6 +186,7 @@ type Store struct {
 	siteRefreshing  map[string]bool
 	rules           Rules
 	panelSites      []string // "geosite:<name>" lists the panel's DNS split names; kept beside the rules' own
+	blockAds        bool     // the panel's preset blocks adsList; the list is one of panelSites then
 	rulesCompileMu  sync.Mutex
 	siteRules       atomic.Pointer[SiteRules]
 	suggest         *Tracker

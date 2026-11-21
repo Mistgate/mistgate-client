@@ -65,6 +65,8 @@ type apiState struct {
 	DNSSplit []profile.DNSSplit `json:"dns_split,omitempty"`
 	// The panel's preset is IPv4 only: the profiles of the subscription carry no IPv6.
 	DNSIPv4Only bool `json:"dns_ipv4_only,omitempty"`
+	// The preset blocks the names of geosite:category-ads-all, before any other rule and in every route mode.
+	DNSBlockAds bool `json:"dns_block_ads,omitempty"`
 	// The ASN of this device's network as the panel saw it; only a block report uses it, the window never gets it.
 	ASN uint32 `json:"asn,omitempty"`
 }
@@ -192,6 +194,7 @@ type syncDNS struct {
 		Servers  []syncResolver `json:"servers"`
 	} `json:"split"`
 	SplitDirect bool `json:"split_direct"`
+	BlockAds    bool `json:"block_ads"`
 	IPv4Only    bool `json:"ipv4_only"`
 }
 
@@ -564,6 +567,7 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	st.ExpireUnix, st.TotalBytes, st.UsedBytes = b.Plan.ExpiresUnix, b.Plan.QuotaBytes, b.Plan.UsedBytes
 	st.Notice = shortTextN(b.Notice.Text, maxNotice)
 	st.DNS, st.DNSSplit, st.DNSIPv4Only = panelDNS(b.DNS) // absent unless active: the old resolvers go with the old answer
+	st.DNSBlockAds = b.DNS != nil && b.DNS.BlockAds
 	st.Servers, st.Entries, st.Unsupported, st.UnsupportedKinds = []Server{}, nil, 0, nil
 	st.Telegram, st.DevicesUsed, st.DevicesLimit = nil, 0, 0
 	st.Debug = panelDebug(b.Debug)

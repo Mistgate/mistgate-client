@@ -119,7 +119,7 @@ func TestOldStoredSplitStillReads(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"dns":["9.9.9.9"],"dns_split":[{"geo":["cn"],"servers":["223.5.5.5"]}]}`), &st); err != nil {
 		t.Fatal(err)
 	}
-	if want := []profile.DNSSplit{{Geo: []string{"cn"}, Servers: addrs("223.5.5.5")}}; !reflect.DeepEqual(st.DNSSplit, want) || st.DNSIPv4Only {
+	if want := []profile.DNSSplit{{Geo: []string{"cn"}, Servers: addrs("223.5.5.5")}}; !reflect.DeepEqual(st.DNSSplit, want) || st.DNSIPv4Only || st.DNSBlockAds {
 		t.Fatalf("old state read as %+v, %t", st.DNSSplit, st.DNSIPv4Only)
 	}
 }
@@ -148,7 +148,7 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 				map[string]any{"suffixes": []string{"ru"}, "geo": []string{"cn"}, "servers": []any{plain("223.5.5.5")}},
 				map[string]any{"suffixes": []string{"example.org"}, "geo": []string{"geosite:category-ru"}, "servers": []any{plain("77.88.8.8")}},
 			},
-			"split_direct": true, "ipv4_only": true,
+			"split_direct": true, "block_ads": true, "ipv4_only": true,
 		})
 	})
 	if _, err := store.Refresh(ctx, sub.ID); err != nil {
@@ -163,8 +163,8 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 		{Geo: []string{"cn"}, Suffixes: []string{"ru"}, Servers: addrs("223.5.5.5")},
 		{Suffixes: []string{"example.org"}, Sites: []string{"geosite:category-ru"}, Servers: addrs("77.88.8.8")},
 	}
-	if !reflect.DeepEqual(p.PanelDNS, addrs("9.9.9.9")) || !reflect.DeepEqual(p.PanelSplit, wantSplit) || !p.NoIPv6 {
-		t.Fatalf("profile DNS = %v, %+v, no IPv6 %t", p.PanelDNS, p.PanelSplit, p.NoIPv6)
+	if !reflect.DeepEqual(p.PanelDNS, addrs("9.9.9.9")) || !reflect.DeepEqual(p.PanelSplit, wantSplit) || !p.NoIPv6 || !p.PanelBlockAds {
+		t.Fatalf("profile DNS = %v, %+v, no IPv6 %t, block ads %t", p.PanelDNS, p.PanelSplit, p.NoIPv6, p.PanelBlockAds)
 	}
 
 	// kept with the subscription across a restart
@@ -172,7 +172,7 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again, err := reopened.Profiles(); err != nil || len(again) != 1 || !reflect.DeepEqual(again[0].PanelDNS, p.PanelDNS) || !reflect.DeepEqual(again[0].PanelSplit, p.PanelSplit) || !again[0].NoIPv6 {
+	if again, err := reopened.Profiles(); err != nil || len(again) != 1 || !reflect.DeepEqual(again[0].PanelDNS, p.PanelDNS) || !reflect.DeepEqual(again[0].PanelSplit, p.PanelSplit) || !again[0].NoIPv6 || !again[0].PanelBlockAds {
 		t.Fatalf("after a restart: %v, %+v, %v", again, p.PanelSplit, err)
 	}
 
@@ -189,13 +189,13 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	if _, err := store.Refresh(ctx, sub.ID); err != nil {
 		t.Fatal(err)
 	}
-	if profiles, _ = store.Profiles(); len(profiles[0].PanelDNS) != 0 || len(profiles[0].PanelSplit) != 0 || profiles[0].NoIPv6 {
-		t.Fatalf("old DNS survived: %v, %+v, no IPv6 %t", profiles[0].PanelDNS, profiles[0].PanelSplit, profiles[0].NoIPv6)
+	if profiles, _ = store.Profiles(); len(profiles[0].PanelDNS) != 0 || len(profiles[0].PanelSplit) != 0 || profiles[0].NoIPv6 || profiles[0].PanelBlockAds {
+		t.Fatalf("old DNS survived: %v, %+v, no IPv6 %t, block ads %t", profiles[0].PanelDNS, profiles[0].PanelSplit, profiles[0].NoIPv6, profiles[0].PanelBlockAds)
 	}
 
 	// and so does an inactive status
 	panel.set(func() {
-		panel.syncBody = withDNS(map[string]any{"servers": []any{plain("9.9.9.9")}, "ipv4_only": true})
+		panel.syncBody = withDNS(map[string]any{"servers": []any{plain("9.9.9.9")}, "block_ads": true, "ipv4_only": true})
 	})
 	if _, err := store.Refresh(ctx, sub.ID); err != nil {
 		t.Fatal(err)
@@ -207,7 +207,7 @@ func TestSyncStoresPanelDNSAndSurvivesRestartAndClears(t *testing.T) {
 	if _, err := store.Refresh(ctx, sub.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.state.Subscriptions[0]; len(got.DNS) != 0 || len(got.DNSSplit) != 0 || got.DNSIPv4Only {
-		t.Fatalf("an inactive subscription kept resolvers: %v %+v %t", got.DNS, got.DNSSplit, got.DNSIPv4Only)
+	if got := store.state.Subscriptions[0]; len(got.DNS) != 0 || len(got.DNSSplit) != 0 || got.DNSIPv4Only || got.DNSBlockAds {
+		t.Fatalf("an inactive subscription kept resolvers: %v %+v %t %t", got.DNS, got.DNSSplit, got.DNSIPv4Only, got.DNSBlockAds)
 	}
 }

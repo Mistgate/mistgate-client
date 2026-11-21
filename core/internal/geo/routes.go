@@ -42,7 +42,9 @@ type SiteRules struct {
 	Block     *SiteSet
 	HasDirect bool
 	HasVPN    bool
-	HasBlock  bool
+	HasBlock  bool // the user's block rules, or the panel's ad list (flows are read for their names then)
+	// The panel's ad list when its preset blocks ads and the list is loaded, else nil. ByName checks it first, in every mode.
+	Ads *SiteSet
 	// The lists the panel's DNS split names, by collection id; only InPanelSite reads them.
 	Panel map[string]*SiteSet
 	// Programs by normalised path. Only the direct set counts in smart and only the VPN set in selected.
@@ -130,14 +132,21 @@ func (s *Store) releaseSites() {
 	}
 }
 
-const maxPanelSites = 16
+const (
+	maxPanelSites = 16
+	adsList       = "geosite:category-ads-all" // what the panel's block_ads names
+)
 
 // SetPanelSites names the geosite lists the panel's DNS split points at (what the profile just started carries): they
 // are loaded from the cache and downloaded when stale, as the rules' lists are, and InPanelSite reads them. A list the
-// rules also name is shared. ponytail: refreshed whenever the profile starts or a download lands, not on a timer.
-func (s *Store) SetPanelSites(collections []string) {
+// rules also name is shared. blockAds adds the panel's ad list, which SiteRules.Ads then carries.
+// ponytail: refreshed whenever the profile starts or a download lands, not on a timer.
+func (s *Store) SetPanelSites(collections []string, blockAds bool) {
 	if s == nil {
 		return
+	}
+	if blockAds {
+		collections = append([]string{adsList}, collections...) // first: the cap must not cut it
 	}
 	var named []string
 	for _, collection := range collections {
@@ -146,8 +155,8 @@ func (s *Store) SetPanelSites(collections []string) {
 		}
 	}
 	s.mu.Lock()
-	changed := !slices.Equal(s.panelSites, named)
-	s.panelSites = named
+	changed := !slices.Equal(s.panelSites, named) || s.blockAds != blockAds
+	s.panelSites, s.blockAds = named, blockAds
 	s.releaseSites()
 	s.mu.Unlock()
 	for _, collection := range named {
@@ -194,7 +203,7 @@ func (s *Store) rebuildSiteRules() {
 	add(vpn, rules.VPN)
 	add(block, rules.Block)
 	s.mu.Lock()
-	panelNames := slices.Clone(s.panelSites)
+	panelNames, blockAds := slices.Clone(s.panelSites), s.blockAds
 	s.mu.Unlock()
 	panel := make(map[string]*SiteSet, len(panelNames))
 	for _, collection := range panelNames {
@@ -202,14 +211,19 @@ func (s *Store) rebuildSiteRules() {
 			panel[collection] = set
 		}
 	}
+	var ads *SiteSet
+	if blockAds {
+		ads = panel[adsList]
+	}
 	s.siteRules.Store(&SiteRules{
 		Panel:      panel,
+		Ads:        ads,
 		Direct:     direct,
 		VPN:        vpn,
 		Block:      block,
 		HasDirect:  len(rules.Direct.Collections)+len(rules.Direct.Sites) != 0,
 		HasVPN:     len(rules.VPN.Collections)+len(rules.VPN.Sites) != 0,
-		HasBlock:   len(rules.Block.Collections)+len(rules.Block.Sites) != 0,
+		HasBlock:   len(rules.Block.Collections)+len(rules.Block.Sites) != 0 || ads.Len() != 0,
 		DirectApps: appSet(rules.Direct.Apps),
 		VPNApps:    appSet(rules.VPN.Apps),
 	})

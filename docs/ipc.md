@@ -462,7 +462,9 @@ answer is not logged. Programs that are installed but not running are not listed
 
 `routes.check {"site": "example.com"}` answers what the forwarder would do with that name now, by the same code
 as a flow (no lookup, no network): `route` is `direct`, `vpn` or `block`; `by` is `mode` (the `all` mode; always
-`vpn`), `site` (an entry of the matching selection, named in `rule`), `collection` (the collection id in `rule`),
+`vpn`; except a name of the panel's ad list, see below), `site` (an entry of the matching selection, named in `rule`),
+`collection` (the collection id in `rule`; for a name of the panel's ad list with `block_ads` it is
+`geosite:category-ads-all`, `route` is `block` in every mode, and the list counts once it has loaded),
 `region` (the name is under the effective region's own top-level domain; `rule` is empty) or `default`; `dns` says
 where the question goes: `direct` when `route` is `direct` and a regional or panel resolver is known, otherwise `vpn` (a
 blocked name's question is answered by the service and reported as `vpn`). In `smart`, `vpn` with `default`
@@ -481,7 +483,9 @@ entries of `geo` (lower-case letters, digits, `-`, and `!` or `@` after the firs
 entry) and the `suffixes` (lower-case ASCII labels, no leading dot, up to 253 characters, at most 256 per entry). At most
 64 entries are kept, and anything malformed is dropped without a word; an entry with no plain resolver, or naming
 nothing usable, is dropped. DoT and DoH entries and other ports are skipped. `dns.ipv4_only` true makes the profiles of
-the subscription carry no IPv6, as a path whose `ipv6_egress` is false does. A sync without `dns`, or with a status
+the subscription carry no IPv6, as a path whose `ipv6_egress` is false does. `dns.block_ads` true is kept as well: the
+names of `geosite:category-ads-all` are blocked before any other rule, in every route mode (in `all` through their DNS
+questions only; see `docs/client-api.md`). A sync without `dns`, or with a status
 other than `active`, clears all of it. None of it is part of the `Subscription` object.
 The tunnel's DNS is the first that exists of: the user's `dns` setting, the profile's own servers (AmneziaWG), the panel's
 `dns.servers`, `1.1.1.1` and `1.0.0.1`. The panel does not decide which names go direct (the route rules and the region

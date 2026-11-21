@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -210,6 +211,32 @@ func TestNameRouteSelectedWithProgramsKeepsDNSInTheTunnel(t *testing.T) {
 	}
 	if block, _ := r.nameRoute("ads.example"); !block {
 		t.Fatal("a blocked name was not blocked")
+	}
+}
+
+// The panel's ad list blocks a name's DNS question in every mode, "all" included, and nothing else is decided there.
+func TestNameRouteBlocksThePanelAdListInEveryMode(t *testing.T) {
+	dir := t.TempDir()
+	store, err := geo.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "geo", "site-category-ads-all.list"), []byte("+.adnet.example\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store.SetPanelSites(nil, true)
+	for _, mode := range []string{"all", "smart", "selected"} {
+		r := &Real{geo: store, getSettings: func() settings.Settings {
+			s := settings.Defaults()
+			s.RouteMode = mode
+			return s
+		}}
+		if block, _ := r.nameRoute("x.adnet.example"); !block {
+			t.Errorf("%s: an ad name was not blocked", mode)
+		}
+		if block, resolver := r.nameRoute("plain.example"); block || mode == "all" && resolver.IsValid() {
+			t.Errorf("%s: block=%t resolver=%v for a name outside the list", mode, block, resolver)
+		}
 	}
 }
 

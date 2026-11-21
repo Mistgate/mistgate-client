@@ -175,7 +175,11 @@ The body (stable key order; the client ignores fields it does not know):
   URL; `ips` are absent when unknown. `split` is empty unless `split_direct`; a rule names domain `suffixes` (lower-case
   punycode, no leading dot) and `geo` (country codes and `geosite:<name>` lists). The client uses only the plain
   resolvers: a rule sends the questions of the names it names, when they go direct, to its resolver; it does not make
-  a name direct. `ipv4_only` makes the client keep IPv6 off the paths. `dns` is absent when the status is not
+  a name direct. `ipv4_only` makes the client keep IPv6 off the paths. `block_ads` true makes the client drop the names of
+  `geosite:category-ads-all` (loaded like any list, from the cache, downloaded when stale) before every other rule and in
+  every route mode: their DNS questions are answered with no address; in `smart` and `selected` the name inside a
+  flow is read as well. In `all` only the DNS questions are checked, so a program that does not ask the system's DNS
+  gets nothing blocked there; AmneziaWG then also runs behind the client's forwarder. `dns` is absent when the status is not
   `active` or the panel has no usable preset.
 - `servers` is `[]` unless the status is `active`. With another status the answer is still `200`, with the status,
   plan, brand, notice, probe and debug.
