@@ -638,6 +638,9 @@ func (s *Store) loadURL(ctx context.Context, rawURL, id string) (storedSubscript
 			return managed, nil
 		}
 		plain.Halt, plain.RetryUnix = managed.Halt, managed.RetryUnix // the plain answer is a placeholder; enrol said not to try again
+		if noRetryCodes[managed.Error] {
+			err = &Error{Code: managed.Error} // what the person needs to hear is the refusal, not how the placeholder reads
+		}
 	}
 	return plain, err
 }

@@ -622,6 +622,35 @@ func TestClientAPIEnrolDoNotRetry(t *testing.T) {
 	}
 }
 
+// A panel's plain answer is often a placeholder nobody can read: the refusal is then what the person is told, not the
+// reading error of the placeholder.
+func TestClientAPIRefusalBeatsUnreadablePlainAnswer(t *testing.T) {
+	ctx := context.Background()
+	for _, plain := range []string{"just a placeholder", "{}", "# empty\nproxies: []"} {
+		for code := range noRetryCodes {
+			panel := newPanel(t, true)
+			panel.set(func() { panel.plain, panel.enrolCode = plain, code })
+			store := panel.openStore(t)
+			if _, err := store.Add(ctx, panel.link("tok")); errorCode(err) != code || len(store.List()) != 0 {
+				t.Fatalf("add with %q and %s = %v, %d saved", plain, code, err, len(store.List()))
+			}
+		}
+	}
+	// a subscription that is already there says it on refresh, and stops until the person asks again
+	panel := newPanel(t, true)
+	store := panel.openStore(t)
+	added, err := store.Add(ctx, panel.link("tok"))
+	if err != nil || !added.Managed {
+		t.Fatalf("add = %#v, %v", added, err)
+	}
+	store.state.Subscriptions[0].Key = "" // basic mode again, as a refusal leaves it
+	panel.set(func() { panel.plain, panel.enrolCode = "just a placeholder", "user_inactive" })
+	got, err := store.Refresh(ctx, added.ID)
+	if st := store.state.Subscriptions[0]; errorCode(err) != "user_inactive" || got.Error != "user_inactive" || !st.Halt || st.RetryUnix == 0 {
+		t.Fatalf("refresh = %#v, %v, halt %v retry %d", got, err, st.Halt, st.RetryUnix)
+	}
+}
+
 // A refusal the owner can undo (the user or the app switched off) is asked again once a day, and only then; the others
 // wait for the person.
 func TestClientAPIRefusalIsAskedOnceADay(t *testing.T) {

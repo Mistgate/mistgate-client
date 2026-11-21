@@ -657,7 +657,9 @@ answer. After `user_inactive`, `app_disabled` and `client_api_off` the ordinary 
 attempt is made 24 hours after the refusal; if the panel refuses again the next one is 24 hours after that, and when it
 accepts the device the subscription is managed and on the usual schedule again (the attempt is kept in the service's
 store only, `Subscription` does not show it). The other refusals wait for the person: asking again would change nothing,
-or would use up a device slot. Any other enrol or first-sync failure also leaves basic mode with `fetch_failed` or `offline` in `error`, and
+or would use up a device slot. When the plain answer is a placeholder that cannot be read as servers (it would fail with
+`no_servers`, `bad_link` or `unsupported_format`), `subs.add` and `subs.refresh` answer with the refusal's code instead,
+and a refresh keeps it in `error` with the same stop; a first add saves nothing then. Any other enrol or first-sync failure also leaves basic mode with `fetch_failed` or `offline` in `error`, and
 is repeated with the same device key at the next refresh. Adding a link of the same panel while a subscription is in
 `link_changed` moves that subscription to the new link (one subscription, not two). Adding a link that is already
 managed refreshes it. `unreachable` in the contract is `offline` or `fetch_failed` here.
