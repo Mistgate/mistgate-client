@@ -41,10 +41,7 @@ func TestDegraded(t *testing.T) {
 		{"old probes are not looked at", probes(12, 12, 10*time.Minute), false, false},
 		{"the edge of the window is in", append(probes(8, 8, 60*time.Second), Sample{At: t0.Add(-ProbeSpan), Fail: true}), false, true},
 		{"just past the edge is out", append(probes(8, 8, 60*time.Second), Sample{At: t0.Add(-ProbeSpan - time.Second), Fail: true}), false, false},
-		{"three stalls", stalls(3, 4*time.Minute), false, true},
-		{"two stalls", stalls(2, time.Minute), false, false},
-		{"three stalls, one too old", append(stalls(2, time.Minute), stalls(1, stallSpan+time.Second)...), false, false},
-		{"stalls count for awg too", stalls(3, time.Minute), true, true},
+		{"stalls alone are not degraded (an upload looks like one)", stalls(5, time.Minute), false, false},
 		{"stalls are not probes", append(stalls(2, time.Minute), probes(8, 0, time.Minute)...), false, false},
 	}
 	for _, test := range tests {

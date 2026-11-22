@@ -13,8 +13,6 @@ const (
 	failShare    = 0.30            // the share of failed probes that is "degraded"
 	failShareAWG = 0.45            // AmneziaWG fails single probes with no loss at all, so it takes more
 	Span         = 5 * time.Minute // the longest of the windows: what a session keeps of its samples
-	stallSpan    = Span            // the window of the stalls
-	stallsToMove = 3               // stalls in that window that are "degraded"
 	heavySpan    = 2 * time.Minute
 	heavyShare   = 0.5
 	minHeavy     = 6 // probes in heavySpan that a share of failures is read from; one failed probe is no "half"
@@ -72,22 +70,17 @@ func Look(samples []Sample, span time.Duration, now time.Time) Window {
 }
 
 // Degraded: the connection is up but poor. At least 9 probes in the last 3 minutes and 30% of them failed (45% for
-// AmneziaWG), or 3 stalls in the last 5 minutes.
+// AmneziaWG).
+// ponytail: stalls are kept in the samples and not judged here. The forwarder counts bytes of the streams, not packets,
+// so a long upload (data out, nothing back until it ends) looks like a stall; a rule on stalls needs a counter that
+// sees the transport's own answers.
 func Degraded(samples []Sample, awg bool, now time.Time) bool {
 	share := failShare
 	if awg {
 		share = failShareAWG
 	}
-	if w := Look(samples, ProbeSpan, now); w.Probes >= minProbes && float64(w.Fails) >= share*float64(w.Probes) {
-		return true
-	}
-	stalls := 0
-	for _, s := range samples {
-		if s.Stall && now.Sub(s.At) <= stallSpan {
-			stalls++
-		}
-	}
-	return stalls >= stallsToMove
+	w := Look(samples, ProbeSpan, now)
+	return w.Probes >= minProbes && float64(w.Fails) >= share*float64(w.Probes)
 }
 
 // Heavy: half of the probes of the last 2 minutes failed. The bar for a game, which a move would interrupt.

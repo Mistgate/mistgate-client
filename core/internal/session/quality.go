@@ -130,10 +130,12 @@ func stalled(base, cur counterSample, window time.Duration) bool {
 	return cur.at.Sub(base.at) >= window && cur.sent >= base.sent && cur.sent-base.sent >= stallSent && cur.received == base.received
 }
 
-// stalledDead is the quick death of a connection: a probe failed (one is enough) while data goes out and none comes back,
+// stalledDead is the quick death of a connection: two probes in a row failed while data goes out and none comes back,
 // so the window that probeIsDead waits out is not needed. The bytes that came since the streak began still save it.
+// Two, not one: the forwarder counts bytes of streams, so a long upload looks like a stall, and one probe may fail on a
+// line that an upload fills.
 func stalledDead(failures int, streakStart time.Time, receivedAtStart, receivedNow uint64, stall bool) bool {
-	return stall && failures >= 1 && !streakStart.IsZero() && receivedSince(receivedAtStart, receivedNow) < receivedAliveThreshold
+	return stall && failures >= 2 && !streakStart.IsZero() && receivedSince(receivedAtStart, receivedNow) < receivedAliveThreshold
 }
 
 // quietBPS is the speed below which the line is quiet, in bits per second as Traffic has it: 64 KB/s.

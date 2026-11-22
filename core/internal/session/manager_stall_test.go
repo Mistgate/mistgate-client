@@ -46,12 +46,13 @@ func TestStalledDead(t *testing.T) {
 		stall    bool
 		want     bool
 	}{
-		{"a stall and one failed probe", 1, start, 0, 0, true, true},
+		{"a stall and two failed probes", 2, start, 0, 0, true, true},
+		{"a stall and one failed probe (an upload with one lost probe)", 1, start, 0, 0, true, false},
 		{"a stall and no failed probe", 0, start, 0, 0, true, false},
 		{"a failed probe and no stall", 3, start, 0, 0, false, false},
-		{"a stall, but the streak has no start", 1, time.Time{}, 0, 0, true, false},
-		{"bytes came since the streak began", 1, start, 0, receivedAliveThreshold, true, false},
-		{"fewer bytes than that", 1, start, 0, receivedAliveThreshold - 1, true, true},
+		{"a stall, but the streak has no start", 2, time.Time{}, 0, 0, true, false},
+		{"bytes came since the streak began", 2, start, 0, receivedAliveThreshold, true, false},
+		{"fewer bytes than that", 2, start, 0, receivedAliveThreshold - 1, true, true},
 	}
 	for _, test := range tests {
 		if got := stalledDead(test.failures, test.start, test.rxAtBase, test.rxNow, test.stall); got != test.want {

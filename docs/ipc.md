@@ -161,11 +161,11 @@ path marked `purpose: whitelist`). Nothing here changes what Auto does when ther
   says `reason: "freeze"`. Only one such move is made in a row: when the next path does not pass either, the network or
   the target is more likely at fault, and Auto stays on it, unmarked. A person's `connect` starts the count again. A
   check that could not tell (nothing could be reached) does nothing. `auto_switch` does not stop this move.
-- Stall. Data going out (32 KiB or more in 6 seconds or longer) with none coming back is a stall. A health probe that
-  fails during a stall ends the connection at once instead of after the usual 20 seconds, and the path is marked as
+- Stall. Data going out (32 KiB or more in 6 seconds or longer) with none coming back is a stall. Two health probes in a row that
+  fail during a stall end the connection at once instead of after the usual 20 seconds, and the path is marked as
   failed in the memory (an ordinary death is not marked: a change of Wi-Fi is no fault of the server).
 - Degraded. The probes of the last 3 minutes are kept. When at least 9 of them are there and 30% have failed (45% for
-  AmneziaWG, whose single probes fail with no loss at all), or 3 stalls came in 5 minutes, the connection is
+  AmneziaWG, whose single probes fail with no loss at all), the connection is
   *degraded*; in the game mode only a loss of half of the probes of 2 minutes (at least 6) counts. A degraded connection
   makes Auto look for a replacement: the quickest answer of the other paths (the handshakes of `connect`, outside the
   tunnel), without the paths in quarantine and the paths it left in the last 30 minutes. None found: it stays, with the
