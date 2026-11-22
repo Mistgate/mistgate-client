@@ -44,6 +44,9 @@ type Fake struct {
 	rttMS         atomic.Int64
 	rxBPS, txBPS  atomic.Int64
 	fastestCalls  atomic.Uint64
+	measured      map[string]time.Duration // what Measure answers, by path; a path not here did not answer
+	unmeasured    []string                 // paths Measure skips
+	measureCalls  [][]string               // the paths each Measure was asked about
 	proofs        map[string]string
 	current       string // the path of the last Start
 	proofCalls    atomic.Uint64
@@ -278,6 +281,36 @@ func (f *Fake) Fastest(_ context.Context, target Target, except string) (string,
 		return "", false
 	}
 	return f.fastest, true
+}
+
+// SetMeasure is what Measure answers: the round trip of each path that answers, and the paths it skips. A path in neither
+// does not answer.
+func (f *Fake) SetMeasure(rtts map[string]time.Duration, skipped ...string) {
+	f.mu.Lock()
+	f.measured, f.unmeasured = rtts, skipped
+	f.mu.Unlock()
+}
+
+// MeasureCalls are the paths that each Measure was asked about, in order.
+func (f *Fake) MeasureCalls() [][]string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return slices.Clone(f.measureCalls)
+}
+
+func (f *Fake) Measure(_ context.Context, ids []string) (map[string]time.Duration, []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.measureCalls = append(f.measureCalls, slices.Clone(ids))
+	rtts, skipped := map[string]time.Duration{}, []string(nil)
+	for _, id := range ids {
+		if rtt, ok := f.measured[id]; ok {
+			rtts[id] = rtt
+		} else if slices.Contains(f.unmeasured, id) {
+			skipped = append(skipped, id)
+		}
+	}
+	return rtts, skipped
 }
 
 func (f *Fake) Select(target Target) (Selection, bool) {

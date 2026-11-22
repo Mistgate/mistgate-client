@@ -43,6 +43,7 @@ func (m *Manager) endLive(state *actorState) {
 	state.liveCtx, state.liveCancel, state.liveNet = nil, nil, ""
 	state.samples, state.counters, state.stalled = nil, nil, false
 	state.searching, state.candidate, state.quietSince, state.nextSearch = false, "", time.Time{}, time.Time{}
+	state.measuring, state.nextMeasure = false, time.Time{}
 }
 
 // autoOwn: the connection is Auto's own pick, on a network the memory knows, and not on the path for allowlists.
@@ -160,6 +161,11 @@ func (m *Manager) watch(state *actorState, stats engine.Traffic) {
 	case !state.searching:
 		m.maybeSearch(state, now)
 	}
+	mode := auto.ModeHealthy
+	if m.poor(state, now, m.currentSettings()) {
+		mode = auto.ModeDegraded
+	}
+	m.maybeMeasure(state, now, mode)
 }
 
 // poor: the connection is bad enough to look for another path. The game mode takes only a heavy loss: a move would cost
@@ -280,4 +286,93 @@ func (m *Manager) diedStalled(state *actorState, r probeResult) bool {
 	m.auto.Paths.Failure(state.liveNet, path, m.auto.now())
 	slog.Info("auto: dead path=" + path + " reason=stall")
 	return true
+}
+
+// measureResult is the answer of a round of background probes (Engine.Measure), which ran off the actor.
+type measureResult struct {
+	live    uint64
+	net     string
+	ids     []string
+	rtts    map[string]time.Duration
+	skipped []string
+}
+
+// jitter is d, by 70 to 130 percent, so that the clients of one server do not probe together.
+func jitter(d time.Duration) time.Duration { return d*7/10 + rand.N(max(d*6/10, 1)) }
+
+// maybeMeasure makes a round of background probes of the other paths when one is due: a handshake to each, outside the
+// tunnel (the engine's Measure, off the actor), for what the memory and a later move by choice go by. Which paths and how
+// often is auto.Probes'; the round comes about every 30 minutes, and every 10 while the connection is poor.
+func (m *Manager) maybeMeasure(state *actorState, now time.Time, mode string) {
+	every := m.timing.measureHealthy
+	if mode != auto.ModeHealthy {
+		every = m.timing.measureBad
+	}
+	if state.nextMeasure.IsZero() || mode != state.measureMode {
+		if due := now.Add(jitter(every)); state.nextMeasure.IsZero() || due.Before(state.nextMeasure) {
+			state.nextMeasure = due
+		}
+	}
+	state.measureMode = mode
+	if now.Before(state.nextMeasure) || state.measuring {
+		return
+	}
+	state.nextMeasure = now.Add(jitter(every))
+	// while the connection's own probes fail in a row, a path that does not answer may be a cut network, not the path's fault
+	if state.probeFailures >= 2 {
+		return
+	}
+	var paths []auto.Path
+	for _, id := range state.selection.Order {
+		if id != state.status.ServerID {
+			paths = append(paths, auto.Path{ID: id, Via: state.selection.Via[id]})
+		}
+	}
+	ids := auto.Probes(auto.ProbeInput{Paths: paths, Stats: m.auto.Paths.Stats(state.liveNet), History: state.measured,
+		Net: state.liveNet, Now: now, Mode: mode, Game: m.currentSettings().Game})
+	if len(ids) == 0 {
+		return
+	}
+	state.measuring = true
+	live, net, ctx := state.liveID, state.liveNet, state.liveCtx
+	go func() {
+		rtts, skipped := m.engine.Measure(ctx, ids)
+		select {
+		case m.commands <- measureResult{live: live, net: net, ids: ids, rtts: rtts, skipped: skipped}:
+		case <-ctx.Done():
+		case <-m.done:
+		}
+	}()
+}
+
+// measureDone writes the round to the memory and to the history: a path that answered is a success with its round trip, one
+// that did not is a failure (unless the connection's own probes fail now: see maybeMeasure), one that was skipped nothing.
+func (m *Manager) measureDone(state *actorState, r measureResult) {
+	if r.live != state.liveID || state.status.State != "connected" {
+		return
+	}
+	state.measuring = false
+	now, count := m.auto.now(), 0
+	state.measured = auto.TrimProbes(state.measured, now)
+	for _, id := range r.ids {
+		rtt, answered := r.rtts[id]
+		probe := auto.Probe{At: now, Net: r.net, Path: id, RTT: rtt}
+		switch {
+		case slices.Contains(r.skipped, id):
+			probe.Skipped = true
+		case answered:
+			m.auto.Paths.Success(r.net, id, int(rtt.Milliseconds()), now)
+		case state.probeFailures < 2:
+			m.auto.Paths.Failure(r.net, id, now)
+		default:
+			continue
+		}
+		state.measured = append(state.measured, probe)
+		if !probe.Skipped {
+			count++
+		}
+	}
+	if count != 0 {
+		slog.Info("auto: probed count=" + strconv.Itoa(count))
+	}
 }

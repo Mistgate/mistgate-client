@@ -516,9 +516,9 @@ func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo
 // answered with the live number. Hysteria2 has no such rule: every connection is its own.
 var LiveAWG func() (id, key string, rtt time.Duration)
 
-// liveAWG says whether p must not be handshaken now (it is the AmneziaWG profile in use, or has its key), with the live
+// LiveGuard says whether p must not be handshaken now (it is the AmneziaWG profile in use, or has its key), with the live
 // round trip to answer in its place.
-func liveAWG(p profile.Profile) (time.Duration, bool) {
+func LiveGuard(p profile.Profile) (time.Duration, bool) {
 	if LiveAWG == nil {
 		return 0, false
 	}

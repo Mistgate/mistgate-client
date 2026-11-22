@@ -1044,9 +1044,9 @@ const (
 	afterFirstAnswer = 1500 * time.Millisecond
 )
 
-// quickestOf makes one handshake to each profile's server, staggered, and returns the index of the best of those that
-// answered: the quickest direct path, or the quickest at all when no direct one did. -1: none answered.
-func quickestOf(ctx context.Context, profiles []profile.Profile) int {
+// roundOf makes one handshake to each profile's server, staggered, and returns how long each took to answer (0: no
+// answer). With grace it stops afterFirstAnswer after the first answer; without, it waits for every one.
+func roundOf(ctx context.Context, profiles []profile.Profile, grace bool) []time.Duration {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // the handshakes still running when the answers are in
 	type answer struct {
@@ -1072,23 +1072,30 @@ func quickestOf(ctx context.Context, profiles []profile.Profile) int {
 		}()
 	}
 	round := make([]time.Duration, len(profiles))
-	var grace <-chan time.Time
+	var wait <-chan time.Time
 collect:
 	for range profiles {
 		select {
 		case a := <-answers:
 			round[a.i] = a.rtt
-			if a.rtt > 0 && grace == nil {
+			if grace && a.rtt > 0 && wait == nil {
 				timer := time.NewTimer(afterFirstAnswer)
 				defer timer.Stop()
-				grace = timer.C
+				wait = timer.C
 			}
-		case <-grace:
+		case <-wait:
 			break collect
 		case <-ctx.Done():
 			break collect
 		}
 	}
+	return round
+}
+
+// quickestOf returns the index of the best of the profiles that answered a round: the quickest direct path, or the
+// quickest at all when no direct one did. -1: none answered.
+func quickestOf(ctx context.Context, profiles []profile.Profile) int {
+	round := roundOf(ctx, profiles, true)
 	best := -1
 	for i, rtt := range round {
 		if rtt <= 0 {
@@ -1099,6 +1106,34 @@ collect:
 		}
 	}
 	return best
+}
+
+func (r *Real) Measure(ctx context.Context, ids []string) (map[string]time.Duration, []string) {
+	if r.load == nil {
+		return nil, nil
+	}
+	profiles, err := r.load()
+	if err != nil {
+		return nil, nil
+	}
+	var tried []profile.Profile
+	var skipped []string
+	for _, p := range profiles {
+		switch _, live := diag.LiveGuard(p); {
+		case !slices.Contains(ids, p.ID):
+		case live:
+			skipped = append(skipped, p.ID)
+		default:
+			tried = append(tried, p)
+		}
+	}
+	rtts := map[string]time.Duration{}
+	for i, rtt := range roundOf(ctx, tried, false) {
+		if rtt > 0 {
+			rtts[tried[i].ID] = rtt
+		}
+	}
+	return rtts, skipped
 }
 
 func (r *Real) Fastest(ctx context.Context, target Target, except string) (string, bool) {

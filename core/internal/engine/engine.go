@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/profile"
 )
@@ -92,6 +93,10 @@ type Engine interface {
 	// false when none answers in time (or there is no other server): the caller then falls back to Next. The paths in
 	// target.Avoid are left out of the round.
 	Fastest(ctx context.Context, target Target, except string) (server string, ok bool)
+	// Measure makes one handshake outside the tunnel to each of the named paths, the way Fastest does, and returns the
+	// round trip of each that answered; one that is not in the map did not answer. skipped are the paths that were not
+	// tried at all: the key of the live AmneziaWG tunnel must not be handshaken twice.
+	Measure(ctx context.Context, ids []string) (rtts map[string]time.Duration, skipped []string)
 	// Select returns the path that an automatic target names and the paths it can fail over through.
 	Select(target Target) (Selection, bool)
 	// Stale: a tunnel is up, and the path it was built from is, in the subscriptions now, another or gone.

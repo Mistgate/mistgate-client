@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/geo"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
@@ -52,6 +53,8 @@ func (*Real) RefreshAutoRegion(onChange func()) {
 }
 
 func (*Real) Fastest(context.Context, Target, string) (string, bool) { return "", false }
+
+func (*Real) Measure(context.Context, []string) (map[string]time.Duration, []string) { return nil, nil }
 
 func (*Real) DialVPN(context.Context, string, uint16) (net.Conn, error) { return nil, ErrNoTunnel }
 func (*Real) HomeAddr() string                                          { return "" }

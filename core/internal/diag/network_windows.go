@@ -223,7 +223,7 @@ func attemptProfile(ctx context.Context, p profile.Profile, endpoint netip.AddrP
 	case "trusttunnel":
 		return attemptTT(ctx, p.TT, endpoint, physical)
 	case "awg":
-		if rtt, live := liveAWG(p); live {
+		if rtt, live := LiveGuard(p); live {
 			return rtt, nil // in use, or a twin of its key: it works, and must not be handshaken beside the tunnel
 		}
 		return attemptAWG(ctx, p.AWG, endpoint, physical, config.AWGTimeout)

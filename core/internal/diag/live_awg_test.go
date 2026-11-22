@@ -33,12 +33,12 @@ func TestLiveAWGGuardGoesByKey(t *testing.T) {
 		{"another key", profile.Profile{ID: "other", AWG: other}, false},
 		{"no AmneziaWG config", profile.Profile{ID: "hy2"}, false},
 	} {
-		if rtt, skipped := liveAWG(c.p); skipped != c.skip || skipped && rtt != 40*time.Millisecond {
+		if rtt, skipped := LiveGuard(c.p); skipped != c.skip || skipped && rtt != 40*time.Millisecond {
 			t.Errorf("%s: skipped=%v rtt=%v", c.name, skipped, rtt)
 		}
 	}
 	LiveAWG = func() (string, string, time.Duration) { return "", "", 0 } // no tunnel: nothing is guarded
-	if _, skipped := liveAWG(profile.Profile{ID: "live", AWG: live}); skipped {
+	if _, skipped := LiveGuard(profile.Profile{ID: "live", AWG: live}); skipped {
 		t.Error("with no tunnel up nothing is skipped")
 	}
 }

@@ -168,6 +168,13 @@ type actorState struct {
 	candidateSince, quietSince time.Time
 	nextSearch                 time.Time
 	switches                   []auto.Switch
+	// The background probes of the other paths (quality.go): measured is the history of this process, over every
+	// connection (the limits are the process's); measuring is a round that runs; the next is due at nextMeasure, which was
+	// set for measureMode.
+	measured    []auto.Probe
+	measuring   bool
+	nextMeasure time.Time
+	measureMode string
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -187,17 +194,22 @@ type managerTiming struct {
 	// quietFor is how long the speed must stay low for a move (by choice) to go; quietLimit, how long it waits for that
 	// before it goes anyway; searchEvery, how long after a search that found nothing the next may begin.
 	quietFor, quietLimit, searchEvery time.Duration
+	// measureHealthy and measureBad: about how often other paths are probed while the connection is well, and while it is
+	// poor or on the path for allowlists (each time 70 to 130 percent of it).
+	measureHealthy, measureBad time.Duration
 }
 
 func defaultManagerTiming() managerTiming {
 	return managerTiming{
-		proofDelayMin: 2 * time.Second,
-		proofDelayMax: 5 * time.Second,
-		trafficEvery:  time.Second,
-		stallFor:      6 * time.Second,
-		quietFor:      5 * time.Second,
-		quietLimit:    time.Minute,
-		searchEvery:   3 * time.Minute,
+		proofDelayMin:  2 * time.Second,
+		proofDelayMax:  5 * time.Second,
+		trafficEvery:   time.Second,
+		stallFor:       6 * time.Second,
+		quietFor:       5 * time.Second,
+		quietLimit:     time.Minute,
+		searchEvery:    3 * time.Minute,
+		measureHealthy: 30 * time.Minute,
+		measureBad:     10 * time.Minute,
 		// Measured on the dev stand under packet loss (2026-11): the 20 s window is what keeps a live AmneziaWG link from
 		// being torn down (it fails single probes, up to three in a row, with no loss at all); the period only moves
 		// how soon a real cut is noticed (27 to 37 s with these values).
@@ -268,6 +280,12 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	}
 	if timing.searchEvery <= 0 {
 		timing.searchEvery = defaults.searchEvery
+	}
+	if timing.measureHealthy <= 0 {
+		timing.measureHealthy = defaults.measureHealthy
+	}
+	if timing.measureBad <= 0 {
+		timing.measureBad = defaults.measureBad
 	}
 	if len(backoff) == 0 {
 		backoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 30 * time.Second}
@@ -662,6 +680,8 @@ func (m *Manager) run() {
 				m.proofDone(&state, request)
 			case searchResult:
 				m.searchDone(&state, request)
+			case measureResult:
+				m.measureDone(&state, request)
 			case probeResult:
 				if request.generation != state.generation || state.status.State != "connected" {
 					continue

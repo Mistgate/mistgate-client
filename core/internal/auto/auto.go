@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -262,6 +263,19 @@ func Score(s Stat, via string, now time.Time) float64 {
 		score += frozenCost
 	}
 	return score
+}
+
+// Stats are what is known of each path of the network now (a copy).
+func (m *Memory) Stats(net string) map[string]Stat {
+	if m == nil || net == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if n := m.nets[net]; n != nil {
+		return maps.Clone(n.Paths)
+	}
+	return nil
 }
 
 // Keep forgets the paths that are not in ids any more (removed from the subscriptions). An empty list is no news: it is
