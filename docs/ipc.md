@@ -187,7 +187,7 @@ is no memory.
   failing two in a row, since a path that is silent then may be a cut network. The paths are those of the subscription's
   round that are not set aside, the best by the memory's score: three, each at most once in 2 hours, and at most 2 probes
   in an hour while the connection is well; while it is degraded, and on the path for allowlists (there: the two best
-  ordinary paths), each at most once in 5 minutes and 6 probes in an hour. In the game mode never more than 2 in an
+  ordinary paths, set aside or not, since only a probe tells that one answers again), each at most once in 5 minutes and 6 probes in an hour. In the game mode never more than 2 in an
   hour, and in any mode never more than 48 in 24 hours (all counted since the service started, not kept in a file). The
   log has one line for a round: `auto: probed count=...`.
 - Upgrade. A connection that is well (not degraded) moves by choice to a path that has proved much quicker, when all of
