@@ -276,7 +276,7 @@ func (r *Runner) check(ctx context.Context, sub string) (*Result, error) {
 	result := &Result{Sub: sub, Servers: make([]Server, len(selected))}
 	result.Network.Kind = physical.Kind
 	if result.VPN = r.config.Tunnel != nil && r.config.Tunnel(); result.VPN && LiveAWG != nil {
-		result.Live, _ = LiveAWG()
+		result.Live, _, _ = LiveAWG()
 	}
 	result.Neighbours = neighbours(scanLocal())
 	r.log("neighbours", fmt.Sprintf("found=%d", len(result.Neighbours)))
@@ -509,11 +509,25 @@ func checkProfile(ctx context.Context, p profile.Profile, physical interfaceInfo
 	return server, false
 }
 
-// LiveAWG tells which AmneziaWG profile the tunnel is using now, and its round trip (the engine sets it). A second
-// handshake with that profile's key, from another socket, makes the server send its answers there: the live tunnel
-// goes silent until it handshakes again. So no check ever handshakes that profile: it is answered with the live
-// number. Hysteria2 has no such rule: every connection is its own.
-var LiveAWG func() (id string, rtt time.Duration)
+// LiveAWG tells which AmneziaWG profile the tunnel is using now, the fingerprint of its client key (see
+// profile.AWG.ClientKeyID) and its round trip (the engine sets it). A second handshake with that key, from another
+// socket, makes the server send its answers there: the live tunnel goes silent until it handshakes again. So no check
+// ever handshakes that profile, nor another one with the same key (a subscription may hold two entries of one key): it is
+// answered with the live number. Hysteria2 has no such rule: every connection is its own.
+var LiveAWG func() (id, key string, rtt time.Duration)
+
+// liveAWG says whether p must not be handshaken now (it is the AmneziaWG profile in use, or has its key), with the live
+// round trip to answer in its place.
+func liveAWG(p profile.Profile) (time.Duration, bool) {
+	if LiveAWG == nil {
+		return 0, false
+	}
+	id, key, rtt := LiveAWG()
+	if id == "" || id != p.ID && (key == "" || p.AWG == nil || key != p.AWG.ClientKeyID()) {
+		return 0, false
+	}
+	return max(rtt, time.Millisecond), true
+}
 
 // Handshake is one handshake attempt to p's server outside the tunnel, on the physical interface, resolve included,
 // in timeout at most. It returns the round trip. The engine uses it to find the quickest server.

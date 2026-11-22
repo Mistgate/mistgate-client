@@ -80,6 +80,7 @@ type realRun struct {
 	probeIP netip.Addr
 	rtt     time.Duration
 	awgID   string          // the AmneziaWG profile in use (empty for Hysteria2): nothing else may handshake with its key
+	awgKey  string          // the fingerprint of that key: a profile with the same key is as much in use
 	profile profile.Profile // what the tunnel was built from, as the subscriptions gave it (Stale compares it)
 	luid    uint64
 	dns     []netip.Addr
@@ -116,13 +117,13 @@ func NewReal(load func() ([]profile.Profile, error), getSettings func() settings
 		interfaceChanges:  make(chan struct{}, 1),
 		gatewayInterfaces: make(map[winipcfg.LUID]struct{}),
 	}
-	diag.LiveAWG = func() (string, time.Duration) {
+	diag.LiveAWG = func() (string, string, time.Duration) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if run := r.current; run != nil && run.probeIP.IsValid() {
-			return run.awgID, run.rtt
+			return run.awgID, run.awgKey, run.rtt
 		}
-		return "", 0
+		return "", "", 0
 	}
 	if gateways, err := ipv4GatewayInterfaces(); err == nil {
 		r.gatewayInterfaces = gateways
@@ -950,7 +951,7 @@ func (r *Real) Start(ctx context.Context, target Target, report func(Step)) (inf
 	run.dial = proxyDial
 	_ = rtt // the tunnel check's time is not the server's: see keepLatency
 	if selected.Protocol == "awg" {
-		run.awgID, run.rtt = selected.ID, before
+		run.awgID, run.awgKey, run.rtt = selected.ID, selected.AWG.ClientKeyID(), before
 	}
 	run.verify = verify
 	run.probeIP = localIP

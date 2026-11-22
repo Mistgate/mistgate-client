@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -77,6 +78,7 @@ type AWG struct {
 	EndpointHost string
 	EndpointPort uint16
 	uapi         string
+	keyID        string // fingerprint of the client's private key (see ClientKeyID)
 }
 
 func ParseHy2(raw string) (*Hy2, error) {
@@ -265,7 +267,8 @@ func ParseAWG(conf string) (*AWG, error) {
 		return nil, errors.New("invalid peer public key")
 	}
 
-	out := &AWG{ServerKey: serverKey, MTU: 1280}
+	sum := sha256.Sum256([]byte(privateKey))
+	out := &AWG{ServerKey: serverKey, MTU: 1280, keyID: hex.EncodeToString(sum[:])}
 	for _, value := range splitCSV(iface["address"]) {
 		prefix, err := netip.ParsePrefix(value)
 		if err != nil {
@@ -404,6 +407,10 @@ func ParseAWG(conf string) (*AWG, error) {
 	out.uapi = b.String()
 	return out, nil
 }
+
+// ClientKeyID is a fingerprint of the client's private key, not the key: two profiles with one key give one value, and ""
+// means the key is not known. Two peers that share a key must not both handshake: the server answers the last one only.
+func (a *AWG) ClientKeyID() string { return a.keyID }
 
 func (a *AWG) UAPI(endpoint netip.AddrPort) string {
 	return a.uapi + "endpoint=" + endpoint.String() + "\n"
