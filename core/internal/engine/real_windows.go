@@ -1110,6 +1110,7 @@ func (r *Real) Fastest(ctx context.Context, target Target, except string) (strin
 	}
 	configured := r.settings()
 	others := profile.Others(profiles, target.Server, target.Protocol, target.Sub, configured.Protocol, configured.Game, except)
+	others = slices.DeleteFunc(others, func(p profile.Profile) bool { return slices.Contains(target.Avoid, p.ID) }) // Auto's own
 	for _, wave := range profile.AutoWaves(others, nil) {
 		if best := quickestOf(ctx, wave); best >= 0 {
 			return wave[best].ID, true

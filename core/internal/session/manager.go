@@ -160,6 +160,14 @@ type actorState struct {
 	samples            []auto.Sample
 	counters           []counterSample // the last window or so, to tell a stall
 	stalled            bool            // the last look at the counters said stall
+	// Looking for another path while the connection is poor: a search runs (searching), has found one (candidate, since
+	// candidateSince) and waits for the line to be quiet (quietSince); after a search that found none the next waits until
+	// nextSearch. switches is every move Auto made by itself in this process, for the limits on them.
+	searching                  bool
+	candidate                  string
+	candidateSince, quietSince time.Time
+	nextSearch                 time.Time
+	switches                   []auto.Switch
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -176,6 +184,9 @@ type managerTiming struct {
 	// trafficEvery is how often the connection's counters are read; stallFor is how long data may go out with none coming
 	// back before that is a stall.
 	trafficEvery, stallFor time.Duration
+	// quietFor is how long the speed must stay low for a move (by choice) to go; quietLimit, how long it waits for that
+	// before it goes anyway; searchEvery, how long after a search that found nothing the next may begin.
+	quietFor, quietLimit, searchEvery time.Duration
 }
 
 func defaultManagerTiming() managerTiming {
@@ -184,6 +195,9 @@ func defaultManagerTiming() managerTiming {
 		proofDelayMax: 5 * time.Second,
 		trafficEvery:  time.Second,
 		stallFor:      6 * time.Second,
+		quietFor:      5 * time.Second,
+		quietLimit:    time.Minute,
+		searchEvery:   3 * time.Minute,
 		// Measured on the dev stand under packet loss (2026-11): the 20 s window is what keeps a live AmneziaWG link from
 		// being torn down (it fails single probes, up to three in a row, with no loss at all); the period only moves
 		// how soon a real cut is noticed (27 to 37 s with these values).
@@ -245,6 +259,15 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	}
 	if timing.stallFor <= 0 {
 		timing.stallFor = defaults.stallFor
+	}
+	if timing.quietFor <= 0 {
+		timing.quietFor = defaults.quietFor
+	}
+	if timing.quietLimit <= 0 {
+		timing.quietLimit = defaults.quietLimit
+	}
+	if timing.searchEvery <= 0 {
+		timing.searchEvery = defaults.searchEvery
 	}
 	if len(backoff) == 0 {
 		backoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 30 * time.Second}
@@ -637,6 +660,8 @@ func (m *Manager) run() {
 				m.publishRoutes(&state)
 			case proofResult:
 				m.proofDone(&state, request)
+			case searchResult:
+				m.searchDone(&state, request)
 			case probeResult:
 				if request.generation != state.generation || state.status.State != "connected" {
 					continue
@@ -686,8 +711,9 @@ func (m *Manager) run() {
 			}
 		case <-traffic.C:
 			if state.status.State == "connected" && m.engine != nil {
-				m.hub.Publish("traffic", m.engine.Stats())
-				m.watch(&state)
+				stats := m.engine.Stats()
+				m.hub.Publish("traffic", stats)
+				m.watch(&state, stats)
 			}
 		case <-proofC:
 			proofC = nil
@@ -914,7 +940,7 @@ func (m *Manager) startAttempt(state *actorState, target engine.Target) {
 	done := make(chan struct{})
 	state.workerDone = done
 	pick, home := state.fastest, target
-	home.Server = state.userServer
+	home.Server, home.Avoid = state.userServer, nil // Fastest leaves out Target.Avoid now: the pick of a named server never did
 	go func() {
 		defer close(done)
 		if previousDone != nil {

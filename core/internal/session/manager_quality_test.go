@@ -76,6 +76,7 @@ func TestProof(t *testing.T) {
 		{"a check that passes writes the mark and resets the count", testProofOkMarks},
 		{"the check is skipped when it is not needed or not wanted", testProofSkipped},
 		{"Auto with no memory checks nothing", testProofNeedsMemory},
+		{"a freeze moves even with auto_switch off", testProofFreezeIgnoresAutoSwitch},
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)
@@ -229,6 +230,21 @@ func testProofSkipped(t *testing.T) {
 			t.Errorf("%s: %d checks, want %d", test.name, got, test.want)
 		}
 		manager.Close()
+	}
+}
+
+func testProofFreezeIgnoresAutoSwitch(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetProfiles(autoProfiles("p1", "p2")...)
+	fake.SetProof("p1", "freeze")
+	manager, subscription, store := qualityManager(t, fake, auto.Open(""), newClock(), nil)
+	if _, err := store.Set(map[string]json.RawMessage{"auto_switch": json.RawMessage(`false`)}); err != nil {
+		t.Fatal(err)
+	}
+	connectAuto(t, manager)
+	waitForStatus(t, subscription.C, connected)
+	if back := waitForStatus(t, subscription.C, connected); back.ServerID != "p2" || back.Reason != "freeze" {
+		t.Fatalf("status = %#v, want p2 by freeze", back)
 	}
 }
 

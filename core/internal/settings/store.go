@@ -25,6 +25,8 @@ type Settings struct {
 	LastSub     string `json:"last_sub"`
 	// "next": a dead link moves to the next server of the subscription after two failed attempts.
 	OnServerDown string `json:"on_server_down"`
+	// Auto moves to another path by itself when the connection is poor; false: only when it has stopped working.
+	AutoSwitch bool `json:"auto_switch"`
 	// Bring the VPN back at service start if the user left it on (LastOn).
 	Restore bool `json:"restore"`
 	LastOn  bool `json:"last_on"`
@@ -52,7 +54,7 @@ type Store struct {
 var ErrBadParams = errors.New("bad settings parameters")
 
 func Defaults() Settings {
-	return Settings{KillSwitch: "while", LAN: true, Protocol: "auto", RouteMode: "all", RouteRegion: "auto", OnServerDown: "reconnect", DNS: "auto"}
+	return Settings{KillSwitch: "while", LAN: true, Protocol: "auto", RouteMode: "all", RouteRegion: "auto", OnServerDown: "reconnect", AutoSwitch: true, DNS: "auto"}
 }
 
 // DNSAddrs is nil for "auto".
@@ -168,7 +170,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			return false
 		}
 		value.RouteRegion = v
-	case "autoconnect", "restore", "last_on", "last_up", "proxy", "proxy_lan", "whitelist_auto":
+	case "autoconnect", "restore", "last_on", "last_up", "proxy", "proxy_lan", "whitelist_auto", "auto_switch":
 		var v bool
 		if !strictBool(raw, &v) {
 			return false
@@ -184,6 +186,8 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 			value.ProxyLAN = v
 		case "whitelist_auto":
 			value.WhitelistAuto = v
+		case "auto_switch":
+			value.AutoSwitch = v
 		case "last_up":
 			value.LastUp = v
 		default:
@@ -229,7 +233,7 @@ func apply(value *Settings, key string, raw json.RawMessage) bool {
 
 func knownKey(key string) bool {
 	switch key {
-	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "last_up", "proxy", "proxy_lan", "whitelist_auto", "on_server_down", "dns", "mtu", "last_server", "last_sub":
+	case "kill_switch", "lan", "protocol", "game", "route_mode", "route_region", "autoconnect", "restore", "last_on", "last_up", "proxy", "proxy_lan", "whitelist_auto", "auto_switch", "on_server_down", "dns", "mtu", "last_server", "last_sub":
 		return true
 	default:
 		return false

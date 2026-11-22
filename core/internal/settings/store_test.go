@@ -25,7 +25,7 @@ func TestStoreRoundTripAndChanges(t *testing.T) {
 		"route_mode":   json.RawMessage(`"smart"`),
 		"route_region": json.RawMessage(`"ru"`),
 	}
-	if got, err := store.Set(patch); err != nil || got != (Settings{KillSwitch: "always", LAN: false, Protocol: "awg", Game: true, RouteMode: "smart", RouteRegion: "ru", OnServerDown: "reconnect", DNS: "auto"}) {
+	if got, err := store.Set(patch); err != nil || got != (Settings{KillSwitch: "always", LAN: false, Protocol: "awg", Game: true, RouteMode: "smart", RouteRegion: "ru", OnServerDown: "reconnect", AutoSwitch: true, DNS: "auto"}) {
 		t.Fatalf("Set() = %#v, %v", got, err)
 	}
 	select {
@@ -221,5 +221,32 @@ func TestProxyKeys(t *testing.T) {
 	data, _ := json.Marshal(reopened.Get())
 	if !strings.Contains(string(data), `"proxy":true`) || !strings.Contains(string(data), `"proxy_lan":true`) {
 		t.Fatalf("encoded = %s", data)
+	}
+}
+
+func TestAutoSwitchKey(t *testing.T) {
+	dir := t.TempDir()
+	// a file from before the key existed turns it on
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"lan":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.Get().AutoSwitch || store.Get().LAN {
+		t.Fatalf("defaults = %#v, want auto_switch on and the file's lan", store.Get())
+	}
+	for _, bad := range []string{`"false"`, `0`, `null`, `[]`} {
+		if _, err := store.Set(map[string]json.RawMessage{"auto_switch": json.RawMessage(bad)}); err != ErrBadParams {
+			t.Fatalf("auto_switch=%s: err = %v, want ErrBadParams", bad, err)
+		}
+	}
+	if got, err := store.Set(map[string]json.RawMessage{"auto_switch": json.RawMessage(`false`)}); err != nil || got.AutoSwitch {
+		t.Fatalf("Set(false) = %#v, %v", got, err)
+	}
+	reopened, err := Open(dir)
+	if err != nil || reopened.Get().AutoSwitch {
+		t.Fatalf("reopened = %#v, %v: the key was not saved", reopened.Get(), err)
 	}
 }

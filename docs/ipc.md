@@ -128,21 +128,58 @@ ids do not.
 Auto remembers, for each network, which paths worked: a connect that came up through a path, a failed attempt that
 ended in `verify_failed`, and a `no_server_answers` of the known path Auto went to at once are noted for the network the
 machine is on (a race nobody answered names no path, so an outage of the network sets none aside; `offline`,
-`auth_rejected`, `tunnel_failed`, `server_not_found`, a cancelled attempt, and the death of a live connection are not noted either).
+`auth_rejected`, `tunnel_failed`, `server_not_found`, a cancelled attempt, and the death of a live connection (but for one in a stall, below) are not noted either).
 A path that failed twice in a row is left out of Auto's choice for 2 minutes, then 10, 30 and 120 for each failure
 after that; a success lifts it. When the first attempt of a round meets a path that worked in this network within the
 last 24 hours, has not failed since and is not set aside, Auto goes to it at once, with no race of handshakes (the best
 by round trip, failure share and kind of path if there are several); if that fails, the next attempt is a race as above.
 A network is told by the kind of the interface that has the default route and its IPv4 gateway, hashed with a random
 salt of the install; the file `<data directory>\auto.json` holds the salt, those hashes and the ids of paths with the
-times, a failure share, a round trip and a quarantine end for each, for at most 16 networks and 128 paths each. It has
+times (also of the last data seen to go through the path and of the last freeze), a failure share, a round trip and a
+quarantine end for each, for at most 16 networks and 128 paths each. It has
 no addresses, no names of networks, hosts or paths, and no account names; a missing or broken file is an empty memory,
 and a path that is gone from the subscriptions is dropped from it.
 
 `auto: true` in the status says that Auto picked the path in use (a server the person named leaves it out), and `reason`
 why: `known` (the memory's path, at once), `only` (it is the one candidate), `failover` (another path failed in this
-round, or the connection died on another path) or else `fastest` (the race). Both keys are absent when they do not apply
-and while the session is not connected.
+round, or the connection died on another path), `freeze` (the last path let the connection start and carried no data, see
+below), `degraded` (the last path was poor, and Auto moved on by choice, see below) or else `fastest` (the race). Both
+keys are absent when they do not apply and while the session is not connected.
+
+Auto also watches the connection it made (only with the memory above, and not on a server the person named or on the
+path marked `purpose: whitelist`). Nothing here changes what Auto does when there is no memory.
+
+- Does data go? A few seconds (2 to 5, by chance) after the connection came up, Auto downloads 128 KiB through the
+  tunnel itself, from the first of the two public speed-test hosts that the network check's freeze test uses (the second
+  when the first fails; the targets and the verdicts are those of `core/internal/diag/freeze.go`; the download leaves
+  the machine only through the VPN). When it completes, the memory notes that data went through the path (good for 24
+  hours, which spares the check). It is not made when that note is fresh, when 256 KiB have already come through the
+  connection, in the game mode (`game`), or when the subscription has no other path. When the download began and then
+  stalled or was cut, and the second host did not complete either, the path is marked as failed and as frozen (a failure
+  share and a cost in the choice of paths that lasts 24 hours, until data is seen to go through it), and Auto goes to
+  another path at once: the network is held as for a change of route, the path is left out of the choice, and the status
+  says `reason: "freeze"`. Only one such move is made in a row: when the next path does not pass either, the network or
+  the target is more likely at fault, and Auto stays on it, unmarked. A person's `connect` starts the count again. A
+  check that could not tell (nothing could be reached) does nothing. `auto_switch` does not stop this move.
+- Stall. Data going out (32 KiB or more in 6 seconds or longer) with none coming back is a stall. A health probe that
+  fails during a stall ends the connection at once instead of after the usual 20 seconds, and the path is marked as
+  failed in the memory (an ordinary death is not marked: a change of Wi-Fi is no fault of the server).
+- Degraded. The probes of the last 3 minutes are kept. When at least 9 of them are there and 30% have failed (45% for
+  AmneziaWG, whose single probes fail with no loss at all), or 3 stalls came in 5 minutes, the connection is
+  *degraded*; in the game mode only a loss of half of the probes of 2 minutes (at least 6) counts. A degraded connection
+  makes Auto look for a replacement: the quickest answer of the other paths (the handshakes of `connect`, outside the
+  tunnel), without the paths in quarantine and the paths it left in the last 30 minutes. None found: it stays, with the
+  status as it was, and looks again no sooner than 3 minutes later. One found: it waits for a quiet moment (the speed, up
+  and down together, under 64 KB/s for 5 seconds on end; at most 60 seconds, then it goes anyway), looks once more at
+  the connection and the limits, and goes to that path as for a change of route; the status says `reason: "degraded"`.
+  The limits: no sooner than 3 minutes after the last such move, at most 4 in an hour and 12 in a day (counted since the
+  service started, not kept in a file), and not back to a path it left by choice within 30 minutes. A server the person
+  named, the path marked `purpose: whitelist` and a setting `auto_switch: false` are never moved by choice; with
+  `auto_switch: false` a connection that died, and a freeze, still go to another path.
+
+The log has, for these, lines with the path's id and numbers only: `auto: proof path=… state=ok|freeze`,
+`auto: dead path=… reason=stall`, `auto: degraded path=… count=… ms=…` (failed probes and the median round trip of the
+probes of the window) and `auto: switch path=… reason=degraded`.
 
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
 protocol that are actually in use (`hysteria2`, `awg`, `vless` or `trusttunnel`; a window that only knows the first two must show an
@@ -221,6 +258,7 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 | Key | Values | Default | Meaning |
 |---|---|---|---|
 | `on_server_down` | `reconnect`, `next`, `fastest` | `reconnect` | What the retries do when the server stays down: keep trying the same server, move to the next server of the subscription, or move to the one that answers soonest (see the reconnect text above) |
+| `auto_switch` | `true`, `false` | `true` | Whether Auto may move to another path by itself while the connection works but is poor (see "degraded" above). `false`: only when the connection has stopped working (it still moves for a freeze) |
 | `whitelist_auto` | `true`, `false` | `false` | When the ordinary servers of the subscription have all failed in a row (each twice) in a session that was up, move to the subscription's server marked `purpose: whitelist`. With `on_server_down: "reconnect"` the retries then walk the ordinary servers first, when the subscription has such a server. The session stays on that server until the person reconnects or picks another |
 | `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
 | `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` takes the first that exists of: the profile's own (AmneziaWG), the panel's (managed subscriptions, see "The panel's DNS"), `1.1.1.1` and `1.0.0.1` |

@@ -4,10 +4,14 @@ import (
 	"context"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/mistgate/mistgate-client/core/internal/auto"
+	"github.com/mistgate/mistgate-client/core/internal/engine"
 	"github.com/mistgate/mistgate-client/core/internal/profile"
+	"github.com/mistgate/mistgate-client/core/internal/settings"
 )
 
 // What the actor keeps of a connection that Auto made and watches (state.live*): liveID changes with every connection and
@@ -38,6 +42,7 @@ func (m *Manager) endLive(state *actorState) {
 	state.liveID++
 	state.liveCtx, state.liveCancel, state.liveNet = nil, nil, ""
 	state.samples, state.counters, state.stalled = nil, nil, false
+	state.searching, state.candidate, state.quietSince, state.nextSearch = false, "", time.Time{}, time.Time{}
 }
 
 // autoOwn: the connection is Auto's own pick, on a network the memory knows, and not on the path for allowlists.
@@ -131,11 +136,106 @@ func stalledDead(failures int, streakStart time.Time, receivedAtStart, receivedN
 	return stall && failures >= 1 && !streakStart.IsZero() && receivedSince(receivedAtStart, receivedNow) < receivedAliveThreshold
 }
 
-// watch is what the actor does with an Auto connection at every tick of the counters.
-func (m *Manager) watch(state *actorState) {
-	if m.autoOwn(state) {
-		m.sampleCounters(state, m.auto.now())
+// quietBPS is the speed below which the line is quiet, in bits per second as Traffic has it: 64 KB/s.
+const quietBPS = (64 << 10) * 8
+
+type searchResult struct {
+	live   uint64
+	server string // "" when none was found
+}
+
+// watch is what the actor does with an Auto connection at every tick of the counters (stats are the same tick's): it
+// reads them, and moves a poor connection to a better path at a quiet moment.
+func (m *Manager) watch(state *actorState, stats engine.Traffic) {
+	if !m.autoOwn(state) {
+		return
 	}
+	now := m.auto.now()
+	m.sampleCounters(state, now)
+	switch {
+	case state.candidate != "":
+		m.waitQuiet(state, stats, now)
+	case !state.searching:
+		m.maybeSearch(state, now)
+	}
+}
+
+// poor: the connection is bad enough to look for another path. The game mode takes only a heavy loss: a move would cost
+// it more than the loss does.
+func (m *Manager) poor(state *actorState, now time.Time, configured settings.Settings) bool {
+	if configured.Game {
+		return auto.Heavy(state.samples, now)
+	}
+	return auto.Degraded(state.samples, state.status.Protocol == "awg", now)
+}
+
+// maybeSearch begins the search for a replacement (the engine's Fastest, off the actor) when the connection is poor and
+// a move is allowed.
+func (m *Manager) maybeSearch(state *actorState, now time.Time) {
+	configured := m.currentSettings()
+	if !configured.AutoSwitch || len(state.selection.Order) < 2 || now.Before(state.nextSearch) ||
+		!m.poor(state, now, configured) || !auto.MaySwitch(state.switches, "", now) {
+		return
+	}
+	path, w := state.status.ServerID, auto.Look(state.samples, auto.ProbeSpan, now)
+	slog.Info("auto: degraded path=" + path + " count=" + strconv.Itoa(w.Fails) + " ms=" + strconv.FormatInt(w.Median.Milliseconds(), 10))
+	state.searching = true
+	// the quarantine of the memory and the paths left lately are not candidates
+	home := state.target
+	home.Server, home.Prefer = state.userServer, ""
+	home.Avoid = slices.Concat(m.auto.Paths.Avoid(state.liveNet, now), auto.Left(state.switches, now))
+	live, ctx := state.liveID, state.liveCtx
+	go func() {
+		server, _ := m.engine.Fastest(ctx, home, path)
+		select {
+		case m.commands <- searchResult{live: live, server: server}:
+		case <-ctx.Done():
+		case <-m.done:
+		}
+	}()
+}
+
+// searchDone: a replacement was found (it waits for a quiet moment), or none was and the next search is not before
+// searchEvery.
+func (m *Manager) searchDone(state *actorState, r searchResult) {
+	if r.live != state.liveID || state.status.State != "connected" {
+		return
+	}
+	now := m.auto.now()
+	state.searching = false
+	if r.server == "" {
+		state.nextSearch = now.Add(m.timing.searchEvery)
+		return
+	}
+	state.candidate, state.candidateSince, state.quietSince = r.server, now, time.Time{}
+}
+
+// waitQuiet moves to the replacement once the speed has stayed under quietBPS for quietFor, or after quietLimit anyway.
+func (m *Manager) waitQuiet(state *actorState, stats engine.Traffic, now time.Time) {
+	switch {
+	case stats.RXBPS+stats.TXBPS >= quietBPS:
+		state.quietSince = time.Time{}
+	case state.quietSince.IsZero():
+		state.quietSince = now
+	}
+	if !state.quietSince.IsZero() && now.Sub(state.quietSince) >= m.timing.quietFor || now.Sub(state.candidateSince) >= m.timing.quietLimit {
+		m.switchNow(state, now)
+	}
+}
+
+// switchNow makes the move, after a last look: the setting must still be on, the connection still poor, and the limits
+// must still allow it. It is alive (watch runs only for a connected one); a connection that is dying has the death of a
+// connection to deal with, and goes to a path that was already found just the same.
+func (m *Manager) switchNow(state *actorState, now time.Time) {
+	to := state.candidate
+	state.candidate, state.quietSince = "", time.Time{}
+	configured := m.currentSettings()
+	if !configured.AutoSwitch || !m.poor(state, now, configured) || !auto.MaySwitch(state.switches, to, now) {
+		return
+	}
+	state.switches = auto.Moved(state.switches, now, state.status.ServerID)
+	slog.Info("auto: switch path=" + to + " reason=degraded")
+	m.leave(state, "degraded", to)
 }
 
 // sampleCounters reads the counters and says whether the connection is in a stall; the start of one is a sample.

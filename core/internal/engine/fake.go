@@ -42,6 +42,8 @@ type Fake struct {
 	received      atomic.Uint64
 	sent          atomic.Uint64
 	rttMS         atomic.Int64
+	rxBPS, txBPS  atomic.Int64
+	fastestCalls  atomic.Uint64
 	proofs        map[string]string
 	current       string // the path of the last Start
 	proofCalls    atomic.Uint64
@@ -169,7 +171,15 @@ func (f *Fake) Hold() bool {
 
 func (f *Fake) Reapply() { f.reapplies.Add(1) }
 
-func (f *Fake) Stats() Traffic { return Traffic{RTTMS: f.rttMS.Load()} }
+func (f *Fake) Stats() Traffic {
+	return Traffic{RXBPS: f.rxBPS.Load(), TXBPS: f.txBPS.Load(), RTTMS: f.rttMS.Load()}
+}
+
+// SetTraffic is the speed, in bits per second, that Stats reports.
+func (f *Fake) SetTraffic(rxBPS, txBPS int64) {
+	f.rxBPS.Store(rxBPS)
+	f.txBPS.Store(txBPS)
+}
 
 // SetRTT is the round trip, in ms, that Stats reports.
 func (f *Fake) SetRTT(ms int64) { f.rttMS.Store(ms) }
@@ -249,10 +259,14 @@ func (f *Fake) SetFastest(server string) {
 	f.mu.Unlock()
 }
 
+// FastestCount is how many times Fastest was asked.
+func (f *Fake) FastestCount() uint64 { return f.fastestCalls.Load() }
+
 func (f *Fake) Fastest(_ context.Context, target Target, except string) (string, bool) {
+	f.fastestCalls.Add(1)
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if f.fastest == "" || f.fastest == except {
+	if f.fastest == "" || f.fastest == except || slices.Contains(target.Avoid, f.fastest) {
 		return "", false
 	}
 	if len(f.profiles) != 0 {
@@ -337,6 +351,13 @@ func (f *Fake) SetServers(servers ...string) {
 func (f *Fake) SetProfiles(profiles ...profile.Profile) {
 	f.mu.Lock()
 	f.profiles = append([]profile.Profile(nil), profiles...)
+	f.mu.Unlock()
+}
+
+// SetProbeErrs replaces the answers that the next probes get, one each (then SetProbeErr's answer goes on).
+func (f *Fake) SetProbeErrs(errs ...error) {
+	f.mu.Lock()
+	f.probeErrs = append([]error(nil), errs...)
 	f.mu.Unlock()
 }
 
