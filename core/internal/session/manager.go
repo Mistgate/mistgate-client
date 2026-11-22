@@ -175,6 +175,11 @@ type actorState struct {
 	measuring   bool
 	nextMeasure time.Time
 	measureMode string
+	// liveSince is when the connection came up (the clock of the memory). whitelistSince is when the rule took the session
+	// to the path for allowlists; returned says the connection in use (or being made) is a return from that path, which a
+	// failure sends back to it (see returnNow).
+	liveSince, whitelistSince time.Time
+	returned                  bool
 }
 
 func (s *actorState) noFailures() { s.failures, s.fastest = 0, false }
@@ -197,6 +202,8 @@ type managerTiming struct {
 	// measureHealthy and measureBad: about how often other paths are probed while the connection is well, and while it is
 	// poor or on the path for allowlists (each time 70 to 130 percent of it).
 	measureHealthy, measureBad time.Duration
+	// upgradeOnPath is how long a connection must have been on its path for a move to a quicker one by choice.
+	upgradeOnPath time.Duration
 }
 
 func defaultManagerTiming() managerTiming {
@@ -210,6 +217,7 @@ func defaultManagerTiming() managerTiming {
 		searchEvery:    3 * time.Minute,
 		measureHealthy: 30 * time.Minute,
 		measureBad:     10 * time.Minute,
+		upgradeOnPath:  auto.UpgradeOnPath,
 		// Measured on the dev stand under packet loss (2026-11): the 20 s window is what keeps a live AmneziaWG link from
 		// being torn down (it fails single probes, up to three in a row, with no loss at all); the period only moves
 		// how soon a real cut is noticed (27 to 37 s with these values).
@@ -286,6 +294,9 @@ func newManagerWithTimings(eng engine.Engine, getSettings func() settings.Settin
 	}
 	if timing.measureBad <= 0 {
 		timing.measureBad = defaults.measureBad
+	}
+	if timing.upgradeOnPath <= 0 {
+		timing.upgradeOnPath = defaults.upgradeOnPath
 	}
 	if len(backoff) == 0 {
 		backoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 30 * time.Second}
@@ -548,8 +559,18 @@ func (m *Manager) run() {
 					// A path that answered and carried nothing is marked, and so is the known one that did not answer. A race
 					// nobody answered names no culprit (it reports its first path): an outage of the network itself would
 					// put the best paths aside for hours.
-					if id := request.info.ServerID; code == "verify_failed" || code == "no_server_answers" && id != "" && id == request.prefer {
-						m.auto.Paths.Failure(request.net, request.info.ServerID, m.auto.now())
+					bad := request.info.ServerID
+					switch {
+					case state.returned && code != "offline" && !fatalReconnectCode(code):
+						// A return from the path for allowlists that fails, whatever the code (but a network that is not there),
+						// is two failures: the path is put aside, and serverDown sends the session back to the allowlist path.
+						if bad == "" {
+							bad = request.prefer
+						}
+						m.auto.Paths.Failure(request.net, bad, m.auto.now())
+						m.auto.Paths.Failure(request.net, bad, m.auto.now())
+					case code == "verify_failed" || code == "no_server_answers" && bad != "" && bad == request.prefer:
+						m.auto.Paths.Failure(request.net, bad, m.auto.now())
 					}
 					// the reason is the engine's own fixed wording; any other error may name an address
 					var failed *engine.Failure
@@ -793,7 +814,7 @@ func (m *Manager) connect(state *actorState, target engine.Target, atStart bool)
 	}
 	m.setChoice(state, target)
 	m.endLive(state)
-	state.nextReason, state.prefer, state.proofFreezes = "", "", 0
+	state.nextReason, state.prefer, state.proofFreezes, state.returned = "", "", 0, false
 	state.bootConnect = atStart
 	state.connectAttempts, state.connectStarted = 0, time.Now()
 
@@ -1118,7 +1139,7 @@ func (m *Manager) stop(state *actorState) {
 	}
 	held := m.engine != nil && m.currentSettings().KillSwitch == "always" && m.engine.Hold()
 	m.endLive(state)
-	state.nextReason, state.prefer = "", ""
+	state.nextReason, state.prefer, state.returned = "", "", false
 	state.generation++
 	if held {
 		state.status = Status{State: "blocked", SinceUnix: time.Now().Unix(), Error: "kill_switch"}
@@ -1252,6 +1273,12 @@ func (m *Manager) serverDown(state *actorState, failedServer, code string) {
 	if state.status.WhitelistByRule {
 		return
 	}
+	if state.returned {
+		// the return from the path for allowlists failed: back to it at once, not through a round of the ordinary paths
+		state.returned = false
+		m.chooseWhitelist(state)
+		return
+	}
 	state.failures++
 	configured := m.currentSettings()
 	mode := configured.OnServerDown
@@ -1368,7 +1395,10 @@ func (m *Manager) chooseWhitelist(state *actorState) {
 	if state.selection.Whitelist == "" || state.whitelistManual {
 		return
 	}
-	// ponytail: stay here until an outside-tunnel probe can prove an ordinary path works; that return path is a later step.
+	// The session stays here while an Auto with a memory has the background probes (watchWhitelist) to tell when an ordinary
+	// path answers again, and then goes back (returnNow). Without a memory it stays until the person reconnects or picks
+	// another server. ponytail: the probes prove a handshake, not data; the check of data after the return does the rest.
+	state.whitelistSince, state.returned = m.auto.now(), false
 	state.target.Server = state.selection.Whitelist
 	state.status.Server = state.selection.Whitelist
 	state.status.ServerID = ""

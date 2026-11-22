@@ -132,3 +132,70 @@ func Confirmed(history []Probe, net, path string, since time.Time, gap time.Dura
 	}
 	return last[0].RTT, true
 }
+
+// bestConfirmed is the quickest of the paths that are confirmed (see Confirmed), not set aside and allowed by keep (all
+// are when it is nil): its id, and its round trip. "": none is.
+func bestConfirmed(paths []Path, stats map[string]Stat, history []Probe, net string, since time.Time, gap time.Duration,
+	now time.Time, keep func(id string) bool) (id string, best time.Duration) {
+	for _, c := range paths {
+		if stats[c.ID].Until > now.Unix() || keep != nil && !keep(c.ID) {
+			continue
+		}
+		if rtt, ok := Confirmed(history, net, c.ID, since, gap, now); ok && (id == "" || rtt < best) {
+			id, best = c.ID, rtt
+		}
+	}
+	return id, best
+}
+
+// A move by choice off a connection that works, to a path that is much quicker (see Upgrade).
+const (
+	UpgradeOnPath   = time.Hour     // the connection has been on its path this long
+	UpgradeQuiet    = time.Minute   // and the line has been quiet this long
+	UpgradeQuietBPS = (4 << 10) * 8 // quiet: rx and tx together under 4 KB/s, in bits per second as Traffic has it
+	upgradeGain     = 60 * time.Millisecond
+	noReturnUpgrade = 2 * time.Hour // a path left by choice is not gone back to for this long (30 minutes for the other moves)
+)
+
+// Better says whether a path that answers in cand is worth a move off one that answers in cur: at most 0.6 of its time,
+// and 60 ms quicker. A cur that is not known (0) is worth nothing.
+func Better(cur, cand time.Duration) bool {
+	return cur > 0 && cand > 0 && cand*10 <= cur*6 && cur-cand >= upgradeGain
+}
+
+// UpgradeInput is what Upgrade decides from.
+type UpgradeInput struct {
+	Poor, Game, AutoSwitch bool
+	OnPath, MinOnPath      time.Duration // how long on the path in use, and how long it must be (UpgradeOnPath)
+	Quiet                  time.Duration // how long the line has been quiet
+	Cur                    time.Duration // the round trip of the path in use, the engine's; 0 when not known
+	Paths                  []Path        // the alternatives
+	Stats                  map[string]Stat
+	History                []Probe
+	Switches               []Switch
+	Net                    string
+	Now                    time.Time
+}
+
+// Upgrade names the path that a healthy connection that is idle may move to: only when the connection is not poor, the
+// setting is on, no game is played, it has been on its path for MinOnPath and the line quiet for a minute, the path in use
+// has a round trip, and an alternative is confirmed by two answered probes 10 minutes apart, is Better than the one in
+// use, is not in quarantine, is allowed by MaySwitch and was not left by choice in the last 2 hours.
+func Upgrade(in UpgradeInput) (to string, ok bool) {
+	if in.Poor || !in.AutoSwitch || in.Game || in.OnPath < in.MinOnPath || in.Quiet < UpgradeQuiet || in.Cur <= 0 {
+		return "", false
+	}
+	id, rtt := bestConfirmed(in.Paths, in.Stats, in.History, in.Net, time.Time{}, ProbeConfirmGap, in.Now,
+		func(id string) bool { return maySwitch(in.Switches, id, in.Now, noReturnUpgrade) })
+	if id == "" || !Better(in.Cur, rtt) {
+		return "", false
+	}
+	return id, true
+}
+
+// ReturnTo names the ordinary path that the connection on the path for allowlists may go back to: the quickest that
+// answered two probes made since it went there, 5 minutes apart, and is not in quarantine. "": none.
+func ReturnTo(paths []Path, stats map[string]Stat, history []Probe, net string, since, now time.Time) string {
+	id, _ := bestConfirmed(paths, stats, history, net, since, ProbeReturnGap, now, nil)
+	return id
+}

@@ -143,11 +143,13 @@ and a path that is gone from the subscriptions is dropped from it.
 `auto: true` in the status says that Auto picked the path in use (a server the person named leaves it out), and `reason`
 why: `known` (the memory's path, at once), `only` (it is the one candidate), `failover` (another path failed in this
 round, or the connection died on another path), `freeze` (the last path let the connection start and carried no data, see
-below), `degraded` (the last path was poor, and Auto moved on by choice, see below) or else `fastest` (the race). Both
-keys are absent when they do not apply and while the session is not connected.
+below), `degraded` (the last path was poor, and Auto moved on by choice, see below), `upgrade` (Auto moved by choice
+to a much quicker path while the connection was well, or went back from the path for allowlists to an ordinary one; see
+below) or else `fastest` (the race). Both keys are absent when they do not apply and while the session is not connected.
 
 Auto also watches the connection it made (only with the memory above, and not on a server the person named or on the
-path marked `purpose: whitelist`). Nothing here changes what Auto does when there is no memory.
+path marked `purpose: whitelist`, except for the return from it, below). Nothing here changes what Auto does when there
+is no memory.
 
 - Does data go? A few seconds (2 to 5, by chance) after the connection came up, Auto downloads 128 KiB through the
   tunnel itself, from the first of the two public speed-test hosts that the network check's freeze test uses (the second
@@ -176,10 +178,44 @@ path marked `purpose: whitelist`). Nothing here changes what Auto does when ther
   service started, not kept in a file), and not back to a path it left by choice within 30 minutes. A server the person
   named, the path marked `purpose: whitelist` and a setting `auto_switch: false` are never moved by choice; with
   `auto_switch: false` a connection that died, and a freeze, still go to another path.
+- Probes of the other paths. Now and then, about every 30 minutes (70 to 130 percent of it, by chance; every 10 minutes
+  while the connection is degraded or on the path for allowlists), Auto makes one handshake, outside the tunnel and as
+  `connect` makes it, to the best few other paths and writes what it saw to the memory: an answer is a success with its
+  round trip, no answer a failure (two in a row put the path aside as above), and a path that is not tried (the one
+  whose AmneziaWG key the live tunnel uses, or another with the same key: a second handshake with a key cuts the first
+  tunnel) is noted for neither. The rounds are made while the connection works: not while its own health probes are
+  failing two in a row, since a path that is silent then may be a cut network. The paths are those of the subscription's
+  round that are not set aside, the best by the memory's score: three, each at most once in 2 hours, and at most 2 probes
+  in an hour while the connection is well; while it is degraded, and on the path for allowlists (there: the two best
+  ordinary paths), each at most once in 5 minutes and 6 probes in an hour. In the game mode never more than 2 in an
+  hour, and in any mode never more than 48 in 24 hours (all counted since the service started, not kept in a file). The
+  log has one line for a round: `auto: probed count=...`.
+- Upgrade. A connection that is well (not degraded) moves by choice to a path that has proved much quicker, when all of
+  this holds: `auto_switch` is on and the game mode is off; the connection has been on its path for 60 minutes; the line
+  has been idle for 60 seconds (rx and tx together under 4 KB/s the whole time; the move is not forced by waiting);
+  the round trip of the path in use is known (`rtt_ms` of `traffic`, the same handshake outside the tunnel); the other path
+  answered the two last probes made 10 minutes apart or more, the later no more than 3 hours ago; its round trip (the later
+  answer) is at most 0.6 of the path in use and at least 60 ms less; it is not set aside; the limits of the degraded move
+  allow it (3 minutes since the last move, 4 in an hour, 12 in a day) and Auto did not leave that path by choice in the
+  last 2 hours (30 minutes for the degraded move). With a probe of a path at most once in 2 hours, the earliest an upgrade
+  can come is about 2 hours after the connection. The move is made as the degraded one is, and the status says
+  `reason: "upgrade"`; the log has `auto: switch path=... reason=upgrade`.
+- Back from the path for allowlists. When `whitelist_auto` has taken the session to the path marked `purpose:
+  whitelist` (`whitelist_by_rule`), an Auto that has the memory goes on probing the two best ordinary paths (every 10
+  minutes about, each at most once in 5 minutes). When one has answered two probes, made after the session came to the
+  path for allowlists and 5 minutes apart or more, and is not set aside, the session goes back to it at a quiet moment
+  (the speed under 64 KB/s for 5 seconds; at most 60 seconds, then it goes anyway), as for a change of route, and the
+  status says `reason: "upgrade"`, with the marks of the path for allowlists gone. `auto_switch: false` does not stop
+  this move: the path for allowlists is an emergency path, and the person does not want to stay on it. If the attempt to
+  the ordinary path fails (whatever the code but `offline` or a refused account), or the check of data finds it frozen
+  in the first minute, the path is marked in the memory (two failures, which put it aside for 2 minutes and then longer
+  while they go on, and the freeze mark) and the session goes straight back to the path for allowlists, with no round of
+  the ordinary paths first; the next return needs two new answers. Without the memory, the session stays on the path for
+  allowlists until the person reconnects or picks another server, as before.
 
 The log has, for these, lines with the path's id and numbers only: `auto: proof path=… state=ok|freeze`,
 `auto: dead path=… reason=stall`, `auto: degraded path=… count=… ms=…` (failed probes and the median round trip of the
-probes of the window) and `auto: switch path=… reason=degraded`.
+probes of the window), `auto: switch path=… reason=degraded|upgrade` and `auto: probed count=…`.
 
 While connecting, `server` and `protocol` reflect the request. Once connected, they hold the profile name and
 protocol that are actually in use (`hysteria2`, `awg`, `vless` or `trusttunnel`; a window that only knows the first two must show an
@@ -258,8 +294,8 @@ Connection settings added after the first ones (all keys of `settings.get` / `se
 | Key | Values | Default | Meaning |
 |---|---|---|---|
 | `on_server_down` | `reconnect`, `next`, `fastest` | `reconnect` | What the retries do when the server stays down: keep trying the same server, move to the next server of the subscription, or move to the one that answers soonest (see the reconnect text above) |
-| `auto_switch` | `true`, `false` | `true` | Whether Auto may move to another path by itself while the connection works but is poor (see "degraded" above). `false`: only when the connection has stopped working (it still moves for a freeze) |
-| `whitelist_auto` | `true`, `false` | `false` | When the ordinary servers of the subscription have all failed in a row (each twice) in a session that was up, move to the subscription's server marked `purpose: whitelist`. With `on_server_down: "reconnect"` the retries then walk the ordinary servers first, when the subscription has such a server. The session stays on that server until the person reconnects or picks another |
+| `auto_switch` | `true`, `false` | `true` | Whether Auto may move to another path by itself while the connection works but is poor (see "degraded" above). `false`: only when the connection has stopped working (it still moves for a freeze, and back from the path for allowlists, see "Back from the path for allowlists" above); it also stops the move to a quicker path of an idle connection ("Upgrade"). The background probes go on |
+| `whitelist_auto` | `true`, `false` | `false` | When the ordinary servers of the subscription have all failed in a row (each twice) in a session that was up, move to the subscription's server marked `purpose: whitelist`. With `on_server_down: "reconnect"` the retries then walk the ordinary servers first, when the subscription has such a server. The session stays on that server until the person reconnects or picks another; an Auto that has the memory also goes back to an ordinary path that answers the background probes again (see "Back from the path for allowlists" above) |
 | `restore` | `true`, `false` | `false` | Bring the VPN back when the service starts if it was on when the service stopped (see Auto-connect) |
 | `dns` | `auto`, or one or two IP addresses joined with a comma | `auto` | The tunnel's DNS servers. `auto` takes the first that exists of: the profile's own (AmneziaWG), the panel's (managed subscriptions, see "The panel's DNS"), `1.1.1.1` and `1.0.0.1` |
 | `mtu` | `0`, or `1280` to `1500` | `0` | The tunnel adapter's MTU. `0` is automatic |

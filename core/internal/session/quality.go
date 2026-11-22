@@ -31,7 +31,7 @@ type proofResult struct {
 func (m *Manager) beginLive(state *actorState, net string) {
 	m.endLive(state)
 	state.liveCtx, state.liveCancel = context.WithCancel(context.Background())
-	state.liveNet = net
+	state.liveNet, state.liveSince = net, m.auto.now()
 }
 
 // endLive ends the watch: the connection is over (or replaced), and what was running for it is stopped.
@@ -98,7 +98,7 @@ func (m *Manager) proofDone(state *actorState, r proofResult) {
 	slog.Info("auto: proof path=" + r.path + " state=" + r.verdict)
 	if r.verdict == "ok" {
 		m.auto.Paths.Prove(r.net, r.path, m.auto.now())
-		state.proofFreezes = 0
+		state.proofFreezes, state.returned = 0, false
 		return
 	}
 	if state.proofFreezes > 0 {
@@ -106,6 +106,12 @@ func (m *Manager) proofDone(state *actorState, r proofResult) {
 	}
 	state.proofFreezes++
 	m.auto.Paths.Freeze(r.net, r.path, m.auto.now())
+	if state.returned {
+		// a return from the path for allowlists that carries nothing goes back to it, not on to another ordinary path
+		m.auto.Paths.Failure(r.net, r.path, m.auto.now())
+		state.returned = false
+		m.chooseWhitelist(state)
+	}
 	m.leave(state, "freeze", "")
 }
 
@@ -147,25 +153,121 @@ type searchResult struct {
 	server string // "" when none was found
 }
 
+// returnSettle: a return from the path for allowlists that has lasted this long is an ordinary connection.
+const returnSettle = time.Minute
+
+// onWhitelist: the connection is on the path for allowlists that the rule chose (whitelist_auto), for an Auto that has a
+// memory of this network.
+func (m *Manager) onWhitelist(state *actorState) bool {
+	return state.status.State == "connected" && state.liveNet != "" && isAuto(state.userServer) && state.status.WhitelistByRule
+}
+
 // watch is what the actor does with an Auto connection at every tick of the counters (stats are the same tick's): it
-// reads them, and moves a poor connection to a better path at a quiet moment.
+// reads them, moves a poor connection to a better path at a quiet moment, probes the other paths now and then, moves an
+// idle healthy one to a much quicker path, and takes the path for allowlists back to an ordinary path that answers.
 func (m *Manager) watch(state *actorState, stats engine.Traffic) {
+	now := m.auto.now()
+	if m.onWhitelist(state) {
+		m.watchWhitelist(state, stats, now)
+		return
+	}
 	if !m.autoOwn(state) {
 		return
 	}
-	now := m.auto.now()
+	if state.returned && now.Sub(state.liveSince) >= returnSettle {
+		state.returned = false
+	}
 	m.sampleCounters(state, now)
+	configured := m.currentSettings()
 	switch {
 	case state.candidate != "":
 		m.waitQuiet(state, stats, now)
 	case !state.searching:
 		m.maybeSearch(state, now)
 	}
-	mode := auto.ModeHealthy
-	if m.poor(state, now, m.currentSettings()) {
+	poor, mode := m.poor(state, now, configured), auto.ModeHealthy
+	if poor {
 		mode = auto.ModeDegraded
 	}
 	m.maybeMeasure(state, now, mode)
+	if state.candidate == "" && !state.searching {
+		m.maybeUpgrade(state, stats, now, configured, poor)
+	}
+}
+
+// alternatives are the paths Auto may go to from the one in use.
+func (m *Manager) alternatives(state *actorState) []auto.Path {
+	var paths []auto.Path
+	for _, id := range state.selection.Order {
+		if id != state.status.ServerID {
+			paths = append(paths, auto.Path{ID: id, Via: state.selection.Via[id]})
+		}
+	}
+	return paths
+}
+
+// watchWhitelist: on the path for allowlists, the best ordinary paths are probed (see maybeMeasure), and when one has
+// answered twice, 5 minutes apart, since the session came here, the session goes back to it at a quiet moment (waitQuiet,
+// returnNow). The setting auto_switch does not stop it: this path is an emergency one.
+func (m *Manager) watchWhitelist(state *actorState, stats engine.Traffic, now time.Time) {
+	if state.candidate != "" {
+		m.waitQuiet(state, stats, now)
+	} else if to := auto.ReturnTo(m.alternatives(state), m.auto.Paths.Stats(state.liveNet), state.measured, state.liveNet,
+		state.whitelistSince, now); to != "" {
+		state.candidate, state.candidateSince, state.quietSince = to, now, time.Time{}
+	}
+	m.maybeMeasure(state, now, auto.ModeWhitelist)
+}
+
+// returnNow goes back from the path for allowlists to the ordinary path that has answered, after a last look at the
+// quarantine. The attempt goes to that path at once (Prefer), as a move by choice does. If it fails, or the data check
+// finds the connection frozen, the session is on the path for allowlists again (serverDown, proofDone) and the path is
+// marked in the memory: its quarantine is what keeps the next return from going to it at once.
+func (m *Manager) returnNow(state *actorState, now time.Time) {
+	to := state.candidate
+	state.candidate, state.quietSince = "", time.Time{}
+	if m.auto.Paths.Stats(state.liveNet)[to].Until > now.Unix() {
+		return
+	}
+	slog.Info("auto: switch path=" + to + " reason=upgrade")
+	state.returned, state.proofFreezes = true, 0
+	state.target.Server, state.status.Server = state.userServer, state.userServer
+	state.status.WhitelistByRule = false
+	m.setPurpose(state, state.target)
+	m.leave(state, "upgrade", to)
+}
+
+// maybeUpgrade moves a healthy connection that is idle to a path that has proved much quicker (auto.Upgrade says when).
+// The line is idle when it has stayed under 4 KB/s; the move is not forced by waiting.
+func (m *Manager) maybeUpgrade(state *actorState, stats engine.Traffic, now time.Time, configured settings.Settings, poor bool) {
+	state.noteQuiet(stats, now, auto.UpgradeQuietBPS)
+	var quiet time.Duration
+	if !state.quietSince.IsZero() {
+		quiet = now.Sub(state.quietSince)
+	}
+	to, ok := auto.Upgrade(auto.UpgradeInput{
+		Poor: poor, Game: configured.Game, AutoSwitch: configured.AutoSwitch,
+		OnPath: now.Sub(state.liveSince), MinOnPath: m.timing.upgradeOnPath, Quiet: quiet,
+		Cur:   time.Duration(stats.RTTMS) * time.Millisecond,
+		Paths: m.alternatives(state), Stats: m.auto.Paths.Stats(state.liveNet), History: state.measured,
+		Switches: state.switches, Net: state.liveNet, Now: now,
+	})
+	if !ok {
+		return
+	}
+	state.switches = auto.Moved(state.switches, now, state.status.ServerID)
+	slog.Info("auto: switch path=" + to + " reason=upgrade")
+	m.leave(state, "upgrade", to)
+}
+
+// noteQuiet keeps since when the speed (rx and tx together) has been under bps.
+func (state *actorState) noteQuiet(stats engine.Traffic, now time.Time, bps int64) {
+	switch {
+	case stats.RXBPS+stats.TXBPS >= bps:
+		state.quietSince = time.Time{}
+	case state.quietSince.IsZero():
+		state.quietSince = now
+	}
 }
 
 // poor: the connection is bad enough to look for another path. The game mode takes only a heavy loss: a move would cost
@@ -218,16 +320,16 @@ func (m *Manager) searchDone(state *actorState, r searchResult) {
 	state.candidate, state.candidateSince, state.quietSince = r.server, now, time.Time{}
 }
 
-// waitQuiet moves to the replacement once the speed has stayed under quietBPS for quietFor, or after quietLimit anyway.
+// waitQuiet moves to the replacement once the speed has stayed under quietBPS for quietFor, or after quietLimit anyway:
+// a poor connection to a better path (switchNow), the path for allowlists back to an ordinary one (returnNow).
 func (m *Manager) waitQuiet(state *actorState, stats engine.Traffic, now time.Time) {
-	switch {
-	case stats.RXBPS+stats.TXBPS >= quietBPS:
-		state.quietSince = time.Time{}
-	case state.quietSince.IsZero():
-		state.quietSince = now
-	}
+	state.noteQuiet(stats, now, quietBPS)
 	if !state.quietSince.IsZero() && now.Sub(state.quietSince) >= m.timing.quietFor || now.Sub(state.candidateSince) >= m.timing.quietLimit {
-		m.switchNow(state, now)
+		if m.onWhitelist(state) {
+			m.returnNow(state, now)
+		} else {
+			m.switchNow(state, now)
+		}
 	}
 }
 
@@ -322,13 +424,7 @@ func (m *Manager) maybeMeasure(state *actorState, now time.Time, mode string) {
 	if state.probeFailures >= 2 {
 		return
 	}
-	var paths []auto.Path
-	for _, id := range state.selection.Order {
-		if id != state.status.ServerID {
-			paths = append(paths, auto.Path{ID: id, Via: state.selection.Via[id]})
-		}
-	}
-	ids := auto.Probes(auto.ProbeInput{Paths: paths, Stats: m.auto.Paths.Stats(state.liveNet), History: state.measured,
+	ids := auto.Probes(auto.ProbeInput{Paths: m.alternatives(state), Stats: m.auto.Paths.Stats(state.liveNet), History: state.measured,
 		Net: state.liveNet, Now: now, Mode: mode, Game: m.currentSettings().Game})
 	if len(ids) == 0 {
 		return

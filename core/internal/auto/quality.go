@@ -99,10 +99,15 @@ type Switch struct {
 // within 3 minutes of the last move, not a fifth within the hour or a thirteenth within the day, and not back to a path
 // it left in the last half hour.
 func MaySwitch(history []Switch, to string, now time.Time) bool {
+	return maySwitch(history, to, now, noReturn)
+}
+
+// maySwitch is MaySwitch with the time that a path that was left is not gone back to.
+func maySwitch(history []Switch, to string, now time.Time, back time.Duration) bool {
 	hour, day := 0, 0
 	for _, s := range history {
 		age := now.Sub(s.At)
-		if age < minSwitchGap || age < noReturn && to != "" && s.From == to {
+		if age < minSwitchGap || age < back && to != "" && s.From == to {
 			return false
 		}
 		if age < time.Hour {
