@@ -56,6 +56,8 @@ type network struct {
 type file struct {
 	Salt string              `json:"salt"`
 	Nets map[string]*network `json:"nets"`
+	// ASNNets: subscription id -> key of the network where its ASN came from the panel (see ASNNet).
+	ASNNets map[string]string `json:"asn_nets,omitempty"`
 }
 
 // Memory is safe for concurrent use. A nil *Memory remembers nothing, and so does an empty network key.
@@ -63,6 +65,7 @@ type Memory struct {
 	mu    sync.Mutex
 	salt  []byte
 	nets  map[string]*network
+	asn   map[string]string
 	path  string // "": only in memory
 	dirty bool
 	timer *time.Timer // a save is waiting
@@ -72,7 +75,7 @@ type Memory struct {
 
 // Open reads dir/auto.json. A missing or unreadable file is an empty memory. dir "" keeps everything in memory only.
 func Open(dir string) *Memory {
-	m := &Memory{nets: map[string]*network{}}
+	m := &Memory{nets: map[string]*network{}, asn: map[string]string{}}
 	if dir != "" {
 		m.path = filepath.Join(dir, "auto.json")
 		if data, err := os.ReadFile(m.path); err == nil {
@@ -96,6 +99,11 @@ func (m *Memory) load(data []byte) {
 		return // without its salt the keys mean nothing
 	}
 	m.salt = salt
+	for sub, key := range f.ASNNets {
+		if sub != "" && key != "" {
+			m.asn[sub] = key
+		}
+	}
 	for key, n := range f.Nets {
 		if n == nil || key == "" {
 			continue
@@ -278,6 +286,36 @@ func (m *Memory) Stats(net string) map[string]Stat {
 	return nil
 }
 
+// SetASNNet notes that the panel gave the ASN of a subscription while the device was in this network.
+// ponytail: one entry per subscription ever synced; Keep does not prune them (a few bytes each).
+func (m *Memory) SetASNNet(sub, net string) {
+	if m == nil || sub == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if net == "" { // the network is not known: the old note says nothing about this ASN
+		if _, had := m.asn[sub]; had {
+			delete(m.asn, sub)
+			m.touch()
+		}
+	} else if m.asn[sub] != net {
+		m.asn[sub] = net
+		m.touch()
+	}
+}
+
+// ASNNet is the network where the ASN of the subscription was given; "" when not known. The ASN is the network's, so
+// it goes into a report only when the device is in this network now.
+func (m *Memory) ASNNet(sub string) string {
+	if m == nil {
+		return ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.asn[sub]
+}
+
 // Keep forgets the paths that are not in ids any more (removed from the subscriptions). An empty list is no news: it is
 // what a subscription that failed to load looks like.
 func (m *Memory) Keep(ids []string) {
@@ -354,7 +392,7 @@ func (m *Memory) Flush() {
 		m.mu.Unlock()
 		return
 	}
-	data, err := json.Marshal(file{Salt: hex.EncodeToString(m.salt), Nets: m.nets})
+	data, err := json.Marshal(file{Salt: hex.EncodeToString(m.salt), Nets: m.nets, ASNNets: m.asn})
 	m.dirty, m.saved = false, time.Now()
 	m.mu.Unlock()
 	if err == nil && save(m.path, data) != nil {

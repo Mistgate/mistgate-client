@@ -164,8 +164,12 @@ func (p *reportPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.probes = append(p.probes, probeCall{r.URL.Path, r.Header.Clone(), body})
 		token := strings.Split(r.URL.Path, "/")[2]
 		if status := p.status[token]; status != 0 {
+			code := "probe_off"
+			if status == http.StatusTooManyRequests {
+				code = "rate_limited"
+			}
 			w.WriteHeader(status)
-			_, _ = w.Write([]byte(`{"error":"probe_off"}`))
+			_, _ = w.Write([]byte(`{"error":"` + code + `"}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"accepted":2}`))

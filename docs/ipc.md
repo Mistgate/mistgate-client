@@ -430,7 +430,7 @@ Subscription:
   reports, `v` the newest report version it reads. The key is left out when the panel did not say (a subscription that is
   not managed, an old panel). The ASN the panel gives the device is not shown anywhere; only a report uses it.
 - `"report": false`: the person's own switch, **off by default** and stored per subscription. It only decides whether a
-  finished network check is sent by itself. It is kept when the panel stops taking reports (then `probe.intake` is false
+  finished network check, and what Auto learns, is sent by itself. It is kept when the panel stops taking reports (then `probe.intake` is false
   and the switch cannot be turned on).
 - `"report_last": {"at_unix": 0, "accepted": 0, "error": ""}`: how the latest send of this subscription ended; kept in
   memory only (gone when the service restarts), left out before the first send. `error` is empty on success, else the code
@@ -459,6 +459,11 @@ The same send runs by itself when a network check ends in `done`, for a subscrip
 `probe.intake` is true. At most one send per subscription in 10 minutes (`too_soon`, the check's result is not kept
 for later), and none before a `Retry-After` of the panel has passed. A request that never reached the panel (`offline`,
 `fetch_failed`) does not start the wait. The request uses the same HTTP client as the sync, with a 15 second timeout.
+
+With the same switch on, the service also sends, about once an hour and only while the tunnel is up on a path Auto picked,
+what Auto's memory of the current network holds (a path that carried nothing, a path that answered): each finding once,
+without the person's action; the outcome shows in `report_last` like any send. See `client-api.md`,
+"probe: v1", "What Auto sends".
 
 The service log gets only a fact and a code (`block report sent: accepted N`, `block report failed: <code>`): never
 the link, the token, a host or port, the ASN or the body. See `client-api.md`, "probe: v1", for what the body holds.

@@ -148,6 +148,9 @@ type Store struct {
 	clock   func() time.Time // nil: time.Now (tests)
 	// Direct says that a request now leaves outside the tunnel. Set before Run; nil: never (X-Mistgate-Direct is not sent).
 	Direct func() bool
+	// ASNSeen is called with the subscription's id when a sync that left outside the tunnel brought an ASN: it is the
+	// network the device is in now. It runs in the syncing goroutine and takes no store lock. May be nil.
+	ASNSeen func(sub string)
 
 	reportMu sync.Mutex // after mu, never before it
 	reports  map[string]*reportState

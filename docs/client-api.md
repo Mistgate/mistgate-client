@@ -247,7 +247,8 @@ answers `401 device_removed` (a second `leave` too). The client forgets the devi
 
 ### probe: v1, as the panel takes it today
 
-`POST <link>/probe` takes a report of the client's network check. `<link>` is the subscription link the person pasted
+`POST <link>/probe` takes a report of the client's network check, and of what its Auto mode learned by itself (see "What
+Auto sends" below). `<link>` is the subscription link the person pasted
 (the token in it is the only authorisation; no page password, no device key). Headers: `Content-Type: application/json`,
 `Probe-Report: 1`, and the User-Agent and caps of every request. At most 128 KiB and 256 servers. The panel's owner has
 a switch for app reports (off by default, kept 7 days); `sync` says whether it is on (`probe.intake`) and which version
@@ -279,9 +280,9 @@ switch (`report`, off by default, per subscription), except when the person pres
 - `servers`: one per path of the subscription that the check could judge, `type` the path's protocol (`hysteria2`,
   `awg`, `vless`), `host` (lower case) and `port` as the profile of the path has them, as the subscription gave them.
   `delay_ms`: the handshake's round trip, only for `ok` and when it is a millisecond or more.
-  Not sent, because the client has no honest value: `flaky`, `tcp_ok`, `tcp_tries`, `tcp_ms`, `dl_bytes`, `dl_stalled`
-  (the client's freeze check downloads from foreign sites, not from the servers) and `dns` (its DNS check asks about
-  blocked sites, not the servers' names).
+  Not sent, because the client has no honest value: `flaky`, `tcp_ok`, `tcp_tries`, `tcp_ms`, `dl_bytes` and `dns` (its
+  DNS check asks about blocked sites, not the servers' names). `dl_stalled` is not sent from a network check either (its
+  freeze check downloads from foreign sites, not from the servers); only Auto's findings carry it.
 
 | The client's check | `verdict` |
 |---|---|
@@ -291,10 +292,40 @@ switch (`report`, off by default, per subscription), except when the person pres
 | `blocked`, `no_answer` (VLESS: a cut TCP connect and a failed handshake look the same) | left out |
 | `down`, `not_found` (the client could not resolve the name), `config` (`auth_rejected`, `bad_config`), `app` | left out |
 
-`freeze` and `tcp_blocked` are not produced: the check has no per-server freeze test and no TCP-only probe. A path that
-reaches the node through a relay (`via: relay`) is left out too: its host and port are the relay's, and the panel would
-match them to the wrong server. A check older than 24 hours is not sent. The report holds the subscription's paths only; the
-rest of the check (route hops, UDP and NAT, DNS, foreign sites) stays on the machine.
+A network check never produces `freeze` or `tcp_blocked`: it has no per-server freeze test and no TCP-only probe. A path
+that reaches the node through a relay (`via: relay`) is left out too: its host and port are the relay's, and the panel
+would match them to the wrong server. A check older than 24 hours is not sent. The report holds the subscription's paths
+only; the rest of the check (route hops, UDP and NAT, DNS, foreign sites) stays on the machine. (The `network.asn` above
+is the last direct sync's, which may be another network than the check's; Auto's reports below check that.)
+
+**What Auto sends.** While the tunnel is up on a path that Auto picked (not one the person named), about once an hour
+(70 to 130 % of an hour, by chance), under the same per-subscription switch and the same panel consent
+(`probe.intake`), the client sends what Auto's memory of the current network holds, in the same body. The panel counts
+reports, not events, so every finding goes once: the client keeps in memory, per path, what it sent and when. Nothing
+goes when there is no line. One line per path of the subscription (`relay` and allowlist paths are left out, at most 256):
+
+- `verdict: "freeze"`, `dl_stalled: true`: the session's own check downloaded 128 KiB through this server, from the
+  person's network, and the connection started and then carried nothing. Once for each new freeze mark of the path
+  (an older one that was already sent is not sent again, whatever its age under 24 hours; one that a later passed check
+  cancelled is not sent). No `dl_bytes` (the client does not keep it) and no `delay_ms` (this check goes through the
+  tunnel).
+- `verdict: "ok"`, `delay_ms`: the handshake's round trip outside the tunnel, noted by Auto at a success that is under
+  an hour old and followed by no failure. Once for a success newer than the one sent, and at most once in 24 hours for
+  a path (right away after a `freeze` line). `dl_stalled: false` is added when the data check of the path passed in this
+  network within 24 hours (and after any freeze mark); when no check was made the field is left out. Both marks come from
+  the same session check as above.
+- A path that failed, or sits in Auto's quarantine, is not sent: Auto makes no TCP probe, so it cannot say honestly
+  whether the host answers (`handshake_failed`) or nothing does (`no_answer`). It would take a TCP probe, or a verdict in
+  this contract for "the path failed to carry a connection".
+- `vpn: true`. `direct_checked: true` whenever there are lines: it means that the checks were made from the person's own
+  network and not from under someone else's VPN. The handshakes leave from the physical adapter, and the data check goes
+  through the server itself, over the person's network.
+- `network.asn` only when the panel gave it in this very network: the client notes which network (the same opaque hash that
+  Auto's memory uses) the device was in when a direct sync brought the ASN, and puts it in only when the current network is
+  that one. `network.type` is `mobile` or left out, as above.
+- A report the panel did not accept (`429` and the rest, with its `Retry-After`) is not counted as sent; the same line
+  goes at the next tick the limits allow. The client makes no quick retry. A restart of the service forgets what was sent,
+  so the first report after it may repeat `ok` lines.
 
 The service log gets a fact and a code, never the link, a host, the ASN or the body. The window shows the person the
 exact body first (`report.preview`, see `ipc.md`, "Block reports").

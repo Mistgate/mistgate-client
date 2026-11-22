@@ -636,6 +636,9 @@ func (s *Store) syncNow(ctx context.Context, st storedSubscription) (storedSubsc
 	// when the person has moved to another network since. Drop it by the network's change when that is known here.
 	if direct || len(b.ASN) != 0 {
 		st.ASN = panelASN(b.ASN)
+		if direct && st.ASN != 0 && s.ASNSeen != nil {
+			s.ASNSeen(st.ID) // the ASN is the network's: the caller notes which network that is
+		}
 	}
 	if b.Devices != nil && b.Devices.Used >= 0 && b.Devices.Limit >= 1 && b.Devices.Limit <= 1000 {
 		st.DevicesUsed, st.DevicesLimit = min(b.Devices.Used, 1000), b.Devices.Limit

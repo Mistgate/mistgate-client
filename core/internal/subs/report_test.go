@@ -61,25 +61,27 @@ func TestSyncSaysDirectOnlyOutsideTheTunnel(t *testing.T) {
 		}
 	}
 	asn := func() uint32 { return store.state.Subscriptions[0].ASN }
+	var seen []string // ASNSeen: the syncs that brought an ASN outside the tunnel
+	store.ASNSeen = func(id string) { seen = append(seen, id) }
 
 	sync() // through the tunnel: no header, so the panel gives no ASN
-	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" || asn() != 0 {
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" || asn() != 0 || len(seen) != 0 {
 		t.Fatalf("header = %q, asn = %d; want none", got, asn())
 	}
 	direct = true
 	sync()
-	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "1" || asn() != 64500 {
-		t.Fatalf("header = %q, asn = %d; want 1 and 64500", got, asn())
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "1" || asn() != 64500 || len(seen) != 1 || seen[0] != sub.ID {
+		t.Fatalf("header = %q, asn = %d, seen = %v; want 1 and 64500", got, asn(), seen)
 	}
 	direct = false
 	sync() // an answer without an asn does not take the last one away
-	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" || asn() != 64500 {
+	if got := panel.syncDirect[len(panel.syncDirect)-1]; got != "" || asn() != 64500 || len(seen) != 1 {
 		t.Fatalf("header = %q, asn = %d; want none and 64500", got, asn())
 	}
 	direct = true
 	panel.set(func() { panel.syncASN = "" })
 	sync() // direct, and the panel does not know the network: the old one goes
-	if asn() != 0 {
+	if asn() != 0 || len(seen) != 1 {
 		t.Fatalf("asn = %d, want 0", asn())
 	}
 	store.Direct = nil

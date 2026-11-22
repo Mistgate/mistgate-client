@@ -66,6 +66,9 @@ func panelASN(raw json.RawMessage) uint32 {
 	return uint32(n)
 }
 
+// SetClock replaces the clock of the report limits (tests of other packages); nil restores time.Now.
+func (s *Store) SetClock(now func() time.Time) { s.clock = now }
+
 func (s *Store) now() time.Time {
 	if s.clock != nil {
 		return s.clock()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/signal"
@@ -166,6 +167,36 @@ func refreshOnRejection(statuses <-chan session.Event, subOf func(serverID strin
 	}
 }
 
+// reportFindings is one tick of the hourly report of what Auto learned: only while the tunnel is up on a path Auto picked
+// (a path the person named says nothing about Auto), and only when the network is known. The switch, the panel's
+// consent and what is new are for send. The call may take the network, so it never runs in the session's actor.
+func reportFindings(ctx context.Context, status func() (session.Status, error), subOf func(serverID string) string,
+	netKey func() (key, kind string), send func(ctx context.Context, sub, key string, mobile bool)) {
+	st, err := status()
+	if err != nil || st.State != "connected" || !st.Auto {
+		return
+	}
+	key, kind := netKey()
+	if sub := subOf(st.ServerID); sub != "" && key != "" {
+		send(ctx, sub, key, kind == "mobile")
+	}
+}
+
+// everyHour runs tick about once an hour (70 to 130 %, by chance, so that the clients of one panel do not report
+// together) until ctx ends. The first tick is one interval after the start.
+func everyHour(ctx context.Context, tick func()) {
+	for {
+		timer := time.NewTimer(time.Hour * time.Duration(70+rand.N(61)) / 100)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			tick()
+		}
+	}
+}
+
 // keepCrashOutput: a service has no console, so what the runtime says when it dies (the panic and the goroutines'
 // stacks) goes to crash.log in the data directory. The file is started again once it is over 256 KiB.
 func keepCrashOutput(dataDir string) {
@@ -313,6 +344,11 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 		status, err := manager.Status(ctx)
 		return err == nil && (status.State == "off" || status.State == "error")
 	}
+	// the panel's ASN is the network's: note which network the device was in when the sync brought it
+	store.ASNSeen = func(sub string) {
+		key, _ := diag.NetworkKey(memory.Salt())
+		memory.SetASNNet(sub, key)
+	}
 	go store.Run(ctx) // after Direct is set: the first refresh is already a sync
 	if powerEvents != nil {
 		go func() {
@@ -356,7 +392,14 @@ func run(ctx context.Context, useFake bool, dataDir, verify string, powerEvents 
 			_, _ = manager.ConnectAtStart(ctx, target)
 		}
 	}
-	reporter := &probereport.Reporter{Subs: store, Log: logger.With("src", "report")}
+	reporter := &probereport.Reporter{Subs: store, Log: logger.With("src", "report"), Memory: memory}
+	go everyHour(ctx, func() {
+		reportFindings(ctx, func() (session.Status, error) { return manager.Status(ctx) }, func(serverID string) string {
+			return subscriptionOf(store.List(), serverID, settingsStore.Get().LastSub)
+		}, func() (string, string) { return diag.NetworkKey(memory.Salt()) }, func(ctx context.Context, sub, key string, mobile bool) {
+			reporter.SendAuto(ctx, sub, key, mobile, time.Now())
+		})
+	})
 	diagnostics := diag.NewRunner(diag.Config{Profiles: store.Profiles, Tunnel: func() bool {
 		status, err := manager.Status(ctx)
 		return err == nil && status.State == "connected"
