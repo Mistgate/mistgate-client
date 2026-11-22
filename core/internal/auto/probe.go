@@ -50,7 +50,8 @@ type ProbeInput struct {
 	Game    bool
 }
 
-// Probes names the paths to probe now: the best (by Score) of the alternatives that are not set aside, no path more
+// Probes names the paths to probe now: the best (by Score) of the alternatives that are not set aside (on the path for
+// allowlists, set aside or not), no path more
 // often than the mode allows, and no more probes than its hour and the day allow. The paths come best first.
 // ponytail: the top is taken before the interval is looked at, so a path outside it is never probed while the top ones
 // stay good; the scores move as the probes write to the memory, and that is what brings the next one in.
@@ -83,7 +84,9 @@ func Probes(in ProbeInput) []string {
 	budget := min(hourCap-hour, probesDay-day)
 	var open []Path
 	for _, c := range in.Paths {
-		if in.Stats[c.ID].Until <= in.Now.Unix() {
+		// On the path for allowlists every ordinary path has failed, and the quarantine grows to hours with each probe
+		// that fails: there the probes are what tells that a path answers again, so they go to it all the same.
+		if in.Mode == ModeWhitelist || in.Stats[c.ID].Until <= in.Now.Unix() {
 			open = append(open, c)
 		}
 	}

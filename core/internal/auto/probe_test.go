@@ -64,6 +64,9 @@ func TestProbes(t *testing.T) {
 		{"degraded: five in the hour leave one", ModeDegraded, false, tried(30*time.Minute, "p5", "p6", "p7", "p8", "p9"), nil, []string{"p1"}},
 		{"degraded: six leave none", ModeDegraded, false, tried(30*time.Minute, "p5", "p6", "p7", "p8", "p9", "pa"), nil, nil},
 		{"whitelist: the two best ordinary paths", ModeWhitelist, false, nil, nil, []string{"p1", "p2"}},
+		{"whitelist: a path in quarantine is probed all the same", ModeWhitelist, false, nil, func(s map[string]Stat) {
+			s["p1"] = Stat{OK: t0.Unix(), RTT: 40, Until: t0.Unix() + 3600}
+		}, []string{"p1", "p2"}},
 		{"whitelist: each every 5 min", ModeWhitelist, false, tried(3*time.Minute, "p1"), nil, []string{"p2"}},
 		{"game: two an hour when healthy", ModeHealthy, true, tried(30*time.Minute, "p9"), nil, []string{"p1"}},
 		{"game: and when degraded", ModeDegraded, true, tried(30*time.Minute, "p8", "p9"), nil, nil},
