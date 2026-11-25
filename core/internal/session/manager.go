@@ -791,7 +791,9 @@ func (m *Manager) connect(state *actorState, target engine.Target, atStart bool)
 	connectingWithTunnel := state.status.State == "connecting" &&
 		(state.target.Hold || state.status.Step == string(engine.StepVerify))
 	switching := (state.status.State == "connected" || connectingWithTunnel) && settingsNow.KillSwitch != "off"
-	if reconnecting || state.status.State == "blocked" {
+	// Only while a session is being brought back: the idle hold of "always" (blocked, kill_switch) is no session, and a
+	// person who picks Auto there after a named server must get Auto.
+	if reconnecting {
 		if target.Server == "" || target.Server == "auto" {
 			target.Server = state.userServer // not state.target.Server: that may be a server "next" moved to
 		}

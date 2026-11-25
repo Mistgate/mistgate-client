@@ -363,3 +363,31 @@ func TestRaceWithoutAnAnswerMarksNoPath(t *testing.T) {
 		t.Fatalf("in quarantine after an outage: %v", got)
 	}
 }
+
+// With "always" the network is held while the VPN is off. Auto picked there, after a named server, is Auto.
+func TestAutoAfterANamedServerInTheIdleHold(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetProfiles(autoProfiles("p1", "p2")...)
+	manager := newManagerWithTimings(fake, testSettings(t, "always").Get, defaultManagerTiming(), []time.Duration{5 * time.Millisecond})
+	t.Cleanup(manager.Close)
+	subscription, err := manager.Events().Subscribe([]string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(subscription.Close)
+	connected := func(s Status) bool { return s.State == "connected" }
+	if _, err := manager.Connect(context.Background(), engine.Target{Server: "p2", Protocol: "auto", Sub: "sub"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, connected)
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, subscription.C, func(s Status) bool { return s.State == "blocked" })
+	connectAuto(t, manager)
+	status := waitForStatus(t, subscription.C, connected)
+	targets := fake.Targets()
+	if last := targets[len(targets)-1]; last.Server != "auto" || !status.Auto {
+		t.Fatalf("the attempt went to %q, auto %v: the named server came back", last.Server, status.Auto)
+	}
+}
