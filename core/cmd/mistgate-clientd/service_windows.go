@@ -198,12 +198,14 @@ func install(args []string) error {
 		return err
 	}
 	defer service.Close()
-	// A crash takes the kill switch's rules with it: come back at once, so the network is not left open for long.
-	// Not fatal if it cannot be set.
+	// A crash takes the kill switch's rules with it, and the network is open until the service is back: measured live,
+	// the old delays (2 s, 10 s, a minute) were exactly how long traffic left outside the tunnel. So it comes back at
+	// once; the last delay repeats for every later crash of the day, and is longer only so that a service that dies at
+	// its start does not spin. Not fatal if it cannot be set.
 	_ = service.SetRecoveryActions([]mgr.RecoveryAction{
-		{Type: mgr.ServiceRestart, Delay: 2 * time.Second},
-		{Type: mgr.ServiceRestart, Delay: 10 * time.Second},
-		{Type: mgr.ServiceRestart, Delay: time.Minute},
+		{Type: mgr.ServiceRestart, Delay: time.Second},
+		{Type: mgr.ServiceRestart, Delay: time.Second},
+		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 	}, 24*3600)
 	if err := service.Start(); err != nil && !errors.Is(err, windows.ERROR_SERVICE_ALREADY_RUNNING) {
 		return err

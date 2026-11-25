@@ -911,7 +911,9 @@ With `while` or `always`, the firewall (WFP, a dynamic session) lets through onl
 and NDP, optionally the local network (private and link-local ranges; not its DNS), the service's own sockets, and
 DNS to the tunnel's resolvers. With `off`, a connected tunnel keeps only its DNS rules. The rules name the service
 SID, so a console run cannot install them. The dynamic session ends with the process, so a service crash opens the
-network.
+network until Windows has started the service again: it is told to do that after 1 second (the first two crashes of a
+day) and after 5 seconds (every later one), and the service holds the network and reconnects as soon as it is up.
+Measured on a test machine: 1.2 to 1.4 seconds of open network, 5.3 on the third crash.
 
 Choosing another server while connected (a `connect` in the `connected` state, or while an attempt has its tunnel
 up) keeps the network held for the new attempt when the kill switch is not `off`: the old tunnel goes, the filters
