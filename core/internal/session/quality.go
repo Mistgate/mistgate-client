@@ -314,9 +314,11 @@ func (m *Manager) searchDone(state *actorState, r searchResult) {
 	now := m.auto.now()
 	state.searching = false
 	if r.server == "" {
+		slog.Info("auto: search state=none") // no other path answered: the line itself is the likelier fault
 		state.nextSearch = now.Add(m.timing.searchEvery)
 		return
 	}
+	slog.Info("auto: search state=found path=" + r.server)
 	state.candidate, state.candidateSince, state.quietSince = r.server, now, time.Time{}
 }
 
@@ -341,6 +343,7 @@ func (m *Manager) switchNow(state *actorState, now time.Time) {
 	state.candidate, state.quietSince = "", time.Time{}
 	configured := m.currentSettings()
 	if !configured.AutoSwitch || !m.poor(state, now, configured) || !auto.MaySwitch(state.switches, to, now) {
+		slog.Info("auto: stay path=" + state.status.ServerID) // the connection got better meanwhile, or a limit or the setting says no
 		return
 	}
 	state.switches = auto.Moved(state.switches, now, state.status.ServerID)
@@ -471,4 +474,29 @@ func (m *Manager) measureDone(state *actorState, r measureResult) {
 	if count != 0 {
 		slog.Info("auto: probed count=" + strconv.Itoa(count))
 	}
+}
+
+// shortLife: a connection that died sooner than this died young.
+const shortLife = 10 * time.Minute
+
+// noteDeath is called when a connection of Auto dies. One death says little (a change of Wi-Fi is no fault of the
+// server), so the first retry goes to the same path. But a path whose connections die young twice in a row is a poor one
+// here: it is marked in the memory and left out of the next attempt. Found live: on a line that cut out for seconds at a
+// time the connection died every minute or so, came back to the same path each time, and never lived long enough to be
+// found degraded.
+func (m *Manager) noteDeath(state *actorState) {
+	path, now := state.status.ServerID, m.auto.now()
+	if now.Sub(state.liveSince) >= shortLife {
+		state.shortDeath = ""
+		return
+	}
+	if state.shortDeath != path {
+		state.shortDeath = path
+		return
+	}
+	state.shortDeath = ""
+	m.auto.Paths.Failure(state.liveNet, path, now)
+	m.auto.Paths.Failure(state.liveNet, path, now) // two in a row: the path is set aside for a while
+	state.roundFailures[path] = 2
+	slog.Info("auto: dead path=" + path + " reason=short")
 }

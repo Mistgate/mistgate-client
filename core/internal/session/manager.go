@@ -146,6 +146,8 @@ type actorState struct {
 	connectStarted  time.Time
 	// deadPath is the path of the connection that died and was not replaced yet: another one is a failover.
 	deadPath string
+	// shortDeath is the path whose last connection died young (see noteDeath); "" when the last one lived long or none died.
+	shortDeath string
 	// autoNet and autoPath: the network and path of the last success that has not had its round trip noted yet.
 	autoNet, autoPath string
 	// The watch of the connection that is up (quality.go).
@@ -817,6 +819,7 @@ func (m *Manager) connect(state *actorState, target engine.Target, atStart bool)
 	m.setChoice(state, target)
 	m.endLive(state)
 	state.nextReason, state.prefer, state.proofFreezes, state.returned = "", "", 0, false
+	state.shortDeath = ""
 	state.bootConnect = atStart
 	state.connectAttempts, state.connectStarted = 0, time.Now()
 
@@ -1090,6 +1093,9 @@ func (m *Manager) beginReconnect(state *actorState, hold bool) {
 	}
 	state.probePending = false
 	resetProbeStreak(state)
+	if m.autoOwn(state) {
+		m.noteDeath(state)
+	}
 	m.endLive(state)
 	if state.status.State == "connected" {
 		state.deadPath = state.status.ServerID

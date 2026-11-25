@@ -157,3 +157,29 @@ func testStallPinned(t *testing.T) {
 		t.Fatalf("status %#v (%d starts), %v: a named server keeps the window of 20 s", status, fake.StartCount(), err)
 	}
 }
+
+// A path whose connections die young twice in a row is left: the first death goes back to it, the second does not.
+func TestTwoYoungDeathsLeaveThePath(t *testing.T) {
+	fake := engine.NewFake(engine.FakeConfig{StepDelay: time.Millisecond})
+	fake.SetProfiles(autoProfiles("p1", "p2")...)
+	c, mem := newClock(), auto.Open("")
+	manager, subscription, _ := qualityManager(t, fake, mem, c, func(timing *managerTiming) {
+		quickProbes(timing)
+		timing.probeFailureWindow = 20 * time.Millisecond
+	})
+	connectAuto(t, manager)
+	first := waitForStatus(t, subscription.C, connected)
+	for range 2 {
+		fake.SetProbeErr(errors.New("the probe failed"))
+		waitForStatus(t, subscription.C, func(s Status) bool { return s.State == "reconnecting" })
+		fake.SetProbeErr(nil)
+		waitForStatus(t, subscription.C, connected)
+	}
+	status, err := manager.Status(context.Background())
+	if err != nil || status.ServerID == first.ServerID {
+		t.Fatalf("after two young deaths on %q the session is on %q (%v)", first.ServerID, status.ServerID, err)
+	}
+	if avoid := mem.Avoid("net", c.now()); len(avoid) != 1 || avoid[0] != first.ServerID {
+		t.Fatalf("set aside: %v, want the path that died twice", avoid)
+	}
+}

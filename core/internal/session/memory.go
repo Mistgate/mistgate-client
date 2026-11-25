@@ -70,8 +70,11 @@ func (m *Manager) pathUp(state *actorState, r attemptResult) {
 		failover := !back && (len(state.roundFailures) > 0 || state.deadPath != "")
 		state.status.Auto = true
 		state.status.Reason = autoReason(r.prefer, path, len(state.selection.Order), failover)
-		if back {
+		switch {
+		case back:
 			state.status.Reason = "known"
+		case state.deadPath != "":
+			state.status.Reason = "failover" // the memory may have named the new path, but it is there because the old one died
 		}
 		if state.nextReason != "" {
 			state.status.Reason = state.nextReason
