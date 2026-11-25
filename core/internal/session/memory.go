@@ -65,9 +65,14 @@ func (m *Manager) pathUp(state *actorState, r attemptResult) {
 	}
 	state.status.Auto, state.status.Reason = false, ""
 	if isAuto(state.target.Server) {
-		failover := len(state.roundFailures) > 0 || state.deadPath != "" && state.deadPath != path
+		// back on the path the connection died on (the network went and came back) is no failover, whatever failed meanwhile
+		back := state.deadPath != "" && state.deadPath == path
+		failover := !back && (len(state.roundFailures) > 0 || state.deadPath != "")
 		state.status.Auto = true
 		state.status.Reason = autoReason(r.prefer, path, len(state.selection.Order), failover)
+		if back {
+			state.status.Reason = "known"
+		}
 		if state.nextReason != "" {
 			state.status.Reason = state.nextReason
 		}

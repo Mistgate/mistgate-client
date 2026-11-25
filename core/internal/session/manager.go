@@ -1060,6 +1060,10 @@ func (m *Manager) networkChanged(state *actorState, _ string, asleep time.Durati
 			m.startProbe(state)
 		}
 	} else if state.status.State == "reconnecting" && state.runCancel == nil {
+		// The network is another one now: how long the old one was silent says nothing about it. Found live: the adapter
+		// came back after three minutes, the attempt made at once failed (no name service yet), and the next waited the
+		// 30 s that the dead network had earned.
+		state.retryIndex = 0
 		target := state.target
 		target.Hold = m.retryHold(state, m.currentSettings())
 		m.startAttempt(state, target)
